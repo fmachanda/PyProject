@@ -18,7 +18,7 @@ config = ConfigParser()
 config.read('./config.ini')
 
 systemid = 0
-mav_conn = mavutil.mavlink_connection(config.get('main', 'mavlink_conn_gcs'), source_system=systemid)
+mav_conn = mavutil.mavlink_connection(config.get('mavlink', 'mavlink_conn_gcs'), source_system=systemid)
 
 ids = []
 

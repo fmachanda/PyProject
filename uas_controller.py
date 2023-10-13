@@ -1155,7 +1155,7 @@ class Main:
         logging.warning(f'Creating instance #{self.systemid}, waiting for boot command from GCS')
 
         try:
-            await asyncio.sleep(1)#self.boot.wait()
+            await self.boot.wait()
         except asyncio.CancelledError or KeyboardInterrupt:
             controller_manager.cancel()
             await asyncio.sleep(0)
