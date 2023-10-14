@@ -79,7 +79,7 @@ class XPConnect:
 
     def __init__(self, freq:int=XP_FREQ) -> None:
 
-        import find_xp
+        import ext.find_xp as find_xp
 
         self._freq = freq
 
@@ -133,7 +133,9 @@ class XPConnect:
 
                 try:
                     await asyncio.sleep(1 / self._freq)
-                except asyncio.exceptions.CancelledError: stop.set()
+                except asyncio.exceptions.CancelledError: 
+                    stop.set()
+                    raise
 
             except KeyboardInterrupt:
                 stop.set()
@@ -204,7 +206,9 @@ class TestXPConnect:
 
                 try:
                     await asyncio.sleep(1 / self._freq)
-                except asyncio.exceptions.CancelledError: stop.set()
+                except asyncio.exceptions.CancelledError: 
+                    stop.set()
+                    raise
             except KeyboardInterrupt:
                 stop.set()
 
@@ -297,7 +301,9 @@ class ServoIO:
                 ))
 
                 await asyncio.sleep(1 / self._freq)
-            except asyncio.exceptions.CancelledError: stop.set()
+            except asyncio.exceptions.CancelledError: 
+                stop.set()
+                raise
             except KeyboardInterrupt: stop.set()
             except Exception as e:
                 logging.error(f'Error in SRV: {e}')
@@ -395,7 +401,9 @@ class ESCIO:
                 ))
 
                 await asyncio.sleep(1 / self._freq)
-            except asyncio.exceptions.CancelledError: stop.set()
+            except asyncio.exceptions.CancelledError: 
+                stop.set()
+                raise
             except KeyboardInterrupt: stop.set()
             except Exception as e:
                 logging.error(f'Error in ESC: {e}')
@@ -495,7 +503,9 @@ class AttitudeSensor:
                 try:
                     await self._pub_att.publish(m)
                     await asyncio.sleep(1 / self._freq)
-                except asyncio.exceptions.CancelledError: stop.set()
+                except asyncio.exceptions.CancelledError: 
+                    stop.set()
+                    raise
 
             except KeyboardInterrupt:
                 stop.set()
@@ -578,7 +588,9 @@ class AltitudeSensor:
                 try:
                     await self._pub_alt.publish(m)
                     await asyncio.sleep(1 / self._freq)
-                except asyncio.exceptions.CancelledError: stop.set()
+                except asyncio.exceptions.CancelledError: 
+                    stop.set()
+                    raise
 
             except KeyboardInterrupt:
                 stop.set()
@@ -685,7 +697,9 @@ class GPSSensor:
                 try:
                     await self._pub_gps.publish(m)
                     await asyncio.sleep(1 / self._freq)
-                except asyncio.exceptions.CancelledError: stop.set()
+                except asyncio.exceptions.CancelledError: 
+                    stop.set()
+                    raise
 
             except KeyboardInterrupt:
                 stop.set()
@@ -739,7 +753,9 @@ class IASSensor:
                 try:
                     await self._pub_ias.publish(m)
                     await asyncio.sleep(1 / self._freq)
-                except asyncio.exceptions.CancelledError: stop.set()
+                except asyncio.exceptions.CancelledError: 
+                    stop.set()
+                    raise
 
             except KeyboardInterrupt:
                 stop.set()
@@ -794,7 +810,9 @@ class AOASensor:
                 try:
                     await self._pub_aoa.publish(m)
                     await asyncio.sleep(1 / self._freq)
-                except asyncio.exceptions.CancelledError: stop.set()
+                except asyncio.exceptions.CancelledError: 
+                    stop.set()
+                    raise
 
             except KeyboardInterrupt:
                 stop.set()
@@ -848,7 +866,9 @@ class SlipSensor:
                 try:
                     await self._pub_slip.publish(m)
                     await asyncio.sleep(1 / self._freq)
-                except asyncio.exceptions.CancelledError: stop.set()
+                except asyncio.exceptions.CancelledError: 
+                    stop.set()
+                    raise
 
             except KeyboardInterrupt:
                 stop.set()
@@ -917,7 +937,9 @@ class Clock:
             try:
                 try:
                     await self._pub_sync_time_last.publish(uavcan.time.Synchronization_1(int(self._sync_time))) # Last timestamp
-                except asyncio.exceptions.CancelledError: stop.set()
+                except asyncio.exceptions.CancelledError: 
+                    stop.set()
+                    raise
 
                 xpsecs = rx_data[18][1]
 
@@ -936,7 +958,9 @@ class Clock:
 
                 try:
                     await self._pub_sync_time.publish(uavcan.time.SynchronizedTimestamp_1(int(self._sync_time))) # Current timestamp
-                except asyncio.exceptions.CancelledError: stop.set()
+                except asyncio.exceptions.CancelledError: 
+                    stop.set()
+                    raise
 
             except KeyboardInterrupt:
                 stop.set()
@@ -993,8 +1017,11 @@ class Camera:
 
                 await asyncio.sleep(0)
 
-            except KeyboardInterrupt or asyncio.exceptions.CancelledError:
+            except KeyboardInterrupt:
                 self.close()
+            except asyncio.exceptions.CancelledError:
+                self.close()
+                raise
                 
             except Exception as e:
                 logging.error(f'Error in CAM: {e}')
@@ -1055,8 +1082,11 @@ class Camera:
                 
                 await asyncio.sleep(1)
 
-            except KeyboardInterrupt or asyncio.exceptions.CancelledError:
+            except KeyboardInterrupt:
                 self.close()
+            except asyncio.exceptions.CancelledError:
+                self.close()
+                raise
 
     def close(self) -> None:
         logging.info('Closing CAM')
@@ -1102,8 +1132,11 @@ class TestCamera:
 
                 await asyncio.sleep(0)
 
-            except KeyboardInterrupt or asyncio.exceptions.CancelledError:
+            except KeyboardInterrupt:
                 self.close()
+            except asyncio.exceptions.CancelledError:
+                self.close()
+                raise
                 
             except Exception as e:
                 logging.error(f'Error in CAM: {e}')
@@ -1143,8 +1176,11 @@ class TestCamera:
                 
                 await asyncio.sleep(1)
 
-            except KeyboardInterrupt or asyncio.exceptions.CancelledError:
+            except KeyboardInterrupt:
                 self.close()
+            except asyncio.exceptions.CancelledError:
+                self.close()
+                raise
         
         self.close()
 
@@ -1183,7 +1219,8 @@ async def main():
 
     try:
         await asyncio.gather(*tasks)
-    except asyncio.exceptions.CancelledError: stop.set()
+    except asyncio.exceptions.CancelledError: 
+        stop.set()
 
     logging.warning('Nodes closed')
 

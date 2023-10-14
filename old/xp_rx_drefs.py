@@ -14,7 +14,7 @@ time_boot=time.time_ns()//1000
 FREQ = 60
 
 print("Looking for X-Plane")
-import find_xp as xp
+import ext.find_xp as xp
 beacon=xp.find_xp(wait=0)
 X_PLANE_IP=beacon['ip']
 UDP_PORT=beacon['port']

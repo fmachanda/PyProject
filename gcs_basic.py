@@ -10,6 +10,7 @@ from configparser import ConfigParser
 os.environ['MAVLINK20'] = '1'
 
 from pymavlink import mavutil
+m = mavutil.mavlink
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 logging.getLogger('pymavlink').setLevel(logging.ERROR)
@@ -76,8 +77,11 @@ class Connect:
 
         except KeyboardInterrupt:
             self.close()
+    
+    async def _command(self, name:str, *params, acknowledge:bool=True, period:float=1) -> None:
 
-    def boot(self) -> None:
+        params_full = (list(params)+[0]*7)[:7]
+        command = eval(f'm.MAV_CMD_{name}')
 
         try:
 
@@ -87,63 +91,175 @@ class Connect:
                 if msg is None:
                     break
             
-            logging.warning(f"Booting #{self.target}...")
+            logging.warning(f"{name} sent to #{self.target}...")
+            logging.debug(f'    {name} params: {params}')
 
             mav_conn.mav.command_long_send(
                 self.target,
                 0,
-                mavutil.mavlink.MAV_CMD_DO_SET_MODE,
+                command,
                 0,
-                mavutil.mavlink.MAV_MODE_PREFLIGHT,
-                1,
-                10,
-                0,0,0,0
+                params_full[0],
+                params_full[1],
+                params_full[2],
+                params_full[3],
+                params_full[4],
+                params_full[5],
+                params_full[6],
             )
 
-            time.sleep(1)
+            await asyncio.sleep(period)
 
-            while True:
+            if acknowledge:
 
-                msg = mav_conn.recv_msg()
+                while True:
 
-                if msg is not None and msg.get_type() == 'COMMAND_ACK' and msg.get_srcSystem()==self.target and msg.target_system==systemid and msg.command==mavutil.mavlink.MAV_CMD_DO_SET_MODE:
-                    if msg.result==mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                        logging.info(f'Booted #{self.target}')
-                        break
-                    else:
-                        logging.info(f'Boot failed on #{self.target}')
-                        break
+                    msg = mav_conn.recv_msg()
 
-                mav_conn.mav.command_long_send(
-                    self.target,
-                    0,
-                    mavutil.mavlink.MAV_CMD_DO_SET_MODE,
-                    0,
-                    mavutil.mavlink.MAV_MODE_PREFLIGHT,
-                    1,
-                    10,
-                    0,0,0,0
-                )
-                time.sleep(1)
+                    if msg is not None and msg.get_type() == 'COMMAND_ACK' and msg.get_srcSystem()==self.target and msg.target_system==systemid and msg.command==command:
+                        if msg.result in [m.MAV_RESULT_ACCEPTED, m.MAV_RESULT_IN_PROGRESS]:
+                            logging.info(f'{name} #{self.target}')
+                            break
+                        elif msg.result==m.MAV_RESULT_TEMPORARILY_REJECTED:
+                            pass
+                        elif msg.result==m.MAV_RESULT_COMMAND_INT_ONLY:
+                            self._command_int(name, *params)
+                            break
+                        else:
+                            logging.info(f'{name} failed on #{self.target}')
+                            break
+
+                    mav_conn.mav.command_long_send(
+                        self.target,
+                        0,
+                        command,
+                        0,
+                        params_full[0],
+                        params_full[1],
+                        params_full[2],
+                        params_full[3],
+                        params_full[4],
+                        params_full[5],
+                        params_full[6],
+                    )
+
+                    await asyncio.sleep(period)
 
         except KeyboardInterrupt:
             self.close()
+
+    async def _command_int(self, name:str, *params, acknowledge:bool=True, period:float=1, frame:int=m.MAV_FRAME_GLOBAL) -> None:
+
+            params_full = (list(params)+[0]*7)[:7]
+            command = eval(f'm.MAV_CMD_{name}')
+
+            try:
+
+                # Flush buffer
+                while True:
+                    msg = mav_conn.recv_match(blocking=False)
+                    if msg is None:
+                        break
+                
+                logging.warning(f"{name} sent to #{self.target}...")
+                logging.debug(f'    {name} params: {params}')
+
+                mav_conn.mav.command_int_send(
+                    self.target,
+                    0,
+                    frame,
+                    command,
+                    0,0,
+                    params_full[0],
+                    params_full[1],
+                    params_full[2],
+                    params_full[3],
+                    params_full[4],
+                    params_full[5],
+                    params_full[6],
+                )
+
+                await asyncio.sleep(period)
+
+                if acknowledge:
+
+                    while True:
+
+                        msg = mav_conn.recv_msg()
+
+                        if msg is not None and msg.get_type() == 'COMMAND_ACK' and msg.get_srcSystem()==self.target and msg.target_system==systemid and msg.command==command:
+                            if msg.result in [m.MAV_RESULT_ACCEPTED, m.MAV_RESULT_IN_PROGRESS]:
+                                logging.info(f'{name} #{self.target}')
+                                break
+                            elif msg.result==m.MAV_RESULT_TEMPORARILY_REJECTED:
+                                pass
+                            elif msg.result==m.MAV_RESULT_COMMAND_INT_ONLY:
+                                self._command(name, *params)
+                                break
+                            else:
+                                logging.info(f'{name} failed on #{self.target}')
+                                break
+
+                        mav_conn.mav.command_int_send(
+                            self.target,
+                            0,
+                            frame,
+                            command,
+                            0,0,
+                            params_full[0],
+                            params_full[1],
+                            params_full[2],
+                            params_full[3],
+                            params_full[4],
+                            params_full[5],
+                            params_full[6],
+                        )
+
+                        await asyncio.sleep(period)
+
+            except KeyboardInterrupt:
+                self.close()
+
+
+    def boot(self) -> None:
+        asyncio.run(self._command('DO_SET_MODE', m.MAV_MODE_PREFLIGHT, 1, 10))
+
+    def set_mode(self, mode:int, custom_mode:int, custom_submode:int) -> None:
+        asyncio.run(self._command('DO_SET_MODE', mode, custom_mode, custom_submode))
+
+    def set_alt(self, alt:float) -> None:
+        asyncio.run(self._command('DO_CHANGE_ALTITUDE', alt, m.MAV_FRAME_GLOBAL_TERRAIN_ALT))
+
+    def set_speed(self, airspeed:float) -> None:
+        asyncio.run(self._command('DO_CHANGE_SPEED', m.SPEED_TYPE_AIRSPEED, airspeed, -1))
+
+    def reposition(self, latitude:float, longitude:float, altitude:float, speed:float=-1, radius:float=0, yaw:float=1):
+        asyncio.run(self._command_int('DO_REPOSITION', speed, 0, radius, yaw, latitude, longitude, altitude))
+
+    def f_takeoff(self, latitude:float, longitude:float, altitude:float, yaw:float=float('nan'), pitch:float=10):
+        asyncio.run(self._command_int('NAV_TAKEOFF', pitch, 0,0, yaw, latitude, longitude, altitude))
+
+    def v_takeoff(self, latitude:float, longitude:float, altitude:float, transit_heading:float=m.VTOL_TRANSITION_HEADING_TAKEOFF, yaw:float=float('nan')):
+        asyncio.run(self._command_int('NAV_TAKEOFF', 0, transit_heading, 0, yaw, latitude, longitude, altitude))
 
     async def _heartbeat(self) -> None:
         while True:
             try:
                 mav_conn.mav.heartbeat_send(
-                            mavutil.mavlink.MAV_TYPE_GCS,
-                            mavutil.mavlink.MAV_AUTOPILOT_INVALID,
-                            mavutil.mavlink.MAV_MODE_PREFLIGHT,
+                            m.MAV_TYPE_GCS,
+                            m.MAV_AUTOPILOT_INVALID,
+                            m.MAV_MODE_PREFLIGHT,
                             0,
-                            mavutil.mavlink.MAV_STATE_ACTIVE
+                            m.MAV_STATE_ACTIVE
                         )
                 
                 await asyncio.sleep(1)
 
-            except KeyboardInterrupt or asyncio.exceptions.CancelledError:
+            except KeyboardInterrupt: 
                 self.close()
+            except asyncio.exceptions.CancelledError:
+                self.close()
+                raise
 
     def close(self) -> None:
 

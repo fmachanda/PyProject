@@ -4,12 +4,15 @@ import logging
 import numpy as np
 import math
 from configparser import ConfigParser
+from ext.pid import PID
 
 os.environ['CYPHAL_PATH']='./data_types/custom_data_types;./data_types/public_regulated_data_types'
 os.environ['PYCYPHAL_PATH']='./pycyphal_generated'
 os.environ['MAVLINK20'] = '1'
 
 from pymavlink import mavutil
+m = mavutil.mavlink
+from ext.state_manager import GlobalState as g
 
 import pycyphal
 import pycyphal.application
@@ -26,88 +29,6 @@ DEFAULT_FREQ = 60
 
 system_ids = []
 
-class PID:
-
-    def __init__(self, 
-                 kp:float=0.0, 
-                 ti:float=0.0, 
-                 td:float=0.0, 
-                 integral_limit:(float, None)=None, 
-                 minimum:(float, None)=None, 
-                 maximum:(float, None)=None
-                 ) -> None:
-        
-        self.kp = kp
-        self.ti = ti
-        self.td = td
-
-        self.integral_limit = integral_limit
-        self.minimum = minimum
-        self.maximum = maximum
-
-        self._proportional = 0.0
-        self._integral = 0.0
-        self._derivative = 0.0
-
-        self._error = 0.0
-        self.output = 0.0
-
-    def set(self, 
-            kp:(float, None)=None, 
-            ti:(float, None)=None, 
-            td:(float, None)=None, 
-            integral_limit:(float, None)=None, 
-            minimum:(float, None)=None, 
-            maximum:(float, None)=None
-            ) -> None:
-        
-        if kp is not None: self.kp = kp
-        if ti is not None: self.ti = ti
-        if td is not None: self.td = td
-
-        if integral_limit is not None: self.integral_limit = integral_limit
-        if minimum is not None: self.minimum = minimum
-        if maximum is not None: self.maximum = maximum
-
-    def reset(self) -> None:
-        self._proportional = 0.0
-        self._integral = 0.0
-        self._derivative = 0.0
-
-        self._error = 0.0
-        self.output = 0.0
-
-    def cycle(self, value:float, setpoint:float, time_step:float) -> float:
-
-        ki = (self.kp / self.ti) if (self.ti != 0.0) else 0.0
-
-        time_step /= 1e6
-        time_step = max(1e-6, time_step)
-
-        error = setpoint - value
-
-        self._proportional = error
-
-        self._integral += (ki * error * time_step)
-
-        if self.integral_limit is not None:
-            self._integral = min(self._integral,  abs(self.integral_limit))
-            self._integral = max(self._integral, -abs(self.integral_limit))
-
-        self._derivative = self.td * (error - self._error) / time_step
-
-        output = (self._proportional + self._integral + self._derivative) * self.kp
-        
-        self._error = error
-
-        if self.minimum is not None:
-            output = max(output, self.minimum)
-
-        if self.maximum is not None:
-            output = min(output, self.maximum)
-
-        self.output = output
-        return self.output
 
 class GlobalRx:
     class Time:
@@ -340,254 +261,6 @@ class GlobalTx:
                         int(0.0 * 8191)  # Throttle 4
                     ])
 
-class GlobalState:
-
-    CUSTOM_MODE_UNINIT = 0
-    CUSTOM_MODE_BOOT = 1
-    CUSTOM_MODE_GROUND = 2
-    CUSTOM_MODE_TAKEOFF = 3
-    CUSTOM_MODE_FLIGHT = 4
-    CUSTOM_MODE_LANDING = 5
-
-    CUSTOM_SUBMODE_UNINIT = 0
-    CUSTOM_SUBMODE_BOOT = 10
-    CUSTOM_SUBMODE_SHUTDOWN = 11
-    CUSTOM_SUBMODE_GROUND_DISARMED = 20
-    CUSTOM_SUBMODE_GROUND_ARMED = 21
-    CUSTOM_SUBMODE_TAKEOFF_ASCENT = 30
-    CUSTOM_SUBMODE_TAKEOFF_HOVER = 31
-    CUSTOM_SUBMODE_TAKEOFF_TRANSIT = 32
-    CUSTOM_SUBMODE_FLIGHT_NORMAL = 40
-    CUSTOM_SUBMODE_FLIGHT_MANUAL = 41
-    CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE = 42
-    CUSTOM_SUBMODE_LANDING_TRANSIT = 50
-    CUSTOM_SUBMODE_LANDING_HOVER = 51
-    CUSTOM_SUBMODE_LANDING_DESCENT = 52
-
-
-    MAV_MODES = [
-        mavutil.mavlink.MAV_MODE_PREFLIGHT,
-        mavutil.mavlink.MAV_MODE_MANUAL_ARMED,
-        # mavutil.mavlink.MAV_MODE_MANUAL_DISARMED,
-        mavutil.mavlink.MAV_MODE_GUIDED_ARMED,
-        # mavutil.mavlink.MAV_MODE_GUIDED_DISARMED,
-        mavutil.mavlink.MAV_MODE_AUTO_ARMED,
-        mavutil.mavlink.MAV_MODE_AUTO_DISARMED,
-    ]
-
-    MAV_STATES_NOMINAL = [
-        mavutil.mavlink.MAV_STATE_UNINIT,
-        mavutil.mavlink.MAV_STATE_BOOT,
-        mavutil.mavlink.MAV_STATE_CALIBRATING,
-        mavutil.mavlink.MAV_STATE_STANDBY,
-        mavutil.mavlink.MAV_STATE_ACTIVE,
-    ]
-
-    MAV_STATES_ABNORMAL = [
-        mavutil.mavlink.MAV_STATE_CRITICAL,
-        mavutil.mavlink.MAV_STATE_EMERGENCY,
-        mavutil.mavlink.MAV_STATE_POWEROFF,
-        # mavutil.mavlink.MAV_STATE_FLIGHT_TERMINATION,
-    ]
-
-    CUSTOM_MODES = [
-        CUSTOM_MODE_UNINIT,
-        CUSTOM_MODE_BOOT,
-        CUSTOM_MODE_GROUND,
-        CUSTOM_MODE_TAKEOFF,
-        CUSTOM_MODE_FLIGHT,
-        CUSTOM_MODE_LANDING,
-    ]
-
-    CUSTOM_SUBMODES = [
-        CUSTOM_SUBMODE_UNINIT,
-        CUSTOM_SUBMODE_BOOT,
-        CUSTOM_SUBMODE_SHUTDOWN,
-        CUSTOM_SUBMODE_GROUND_DISARMED,
-        CUSTOM_SUBMODE_GROUND_ARMED,
-        CUSTOM_SUBMODE_TAKEOFF_ASCENT,
-        CUSTOM_SUBMODE_TAKEOFF_HOVER,
-        CUSTOM_SUBMODE_TAKEOFF_TRANSIT,
-        CUSTOM_SUBMODE_FLIGHT_NORMAL,
-        CUSTOM_SUBMODE_FLIGHT_MANUAL,
-        CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE,
-        CUSTOM_SUBMODE_LANDING_TRANSIT,
-        CUSTOM_SUBMODE_LANDING_HOVER,
-        CUSTOM_SUBMODE_LANDING_DESCENT,
-    ]
-
-
-    # Index 0 is default for that submode
-    ALLOWED_CUSTOM_MODES = {
-        CUSTOM_SUBMODE_UNINIT:[CUSTOM_MODE_UNINIT],
-        CUSTOM_SUBMODE_BOOT:[CUSTOM_MODE_BOOT],
-        CUSTOM_SUBMODE_SHUTDOWN:[CUSTOM_MODE_BOOT],
-        CUSTOM_SUBMODE_GROUND_DISARMED:[CUSTOM_MODE_GROUND],
-        CUSTOM_SUBMODE_GROUND_ARMED:[CUSTOM_MODE_GROUND],
-        CUSTOM_SUBMODE_TAKEOFF_ASCENT:[CUSTOM_MODE_TAKEOFF],
-        CUSTOM_SUBMODE_TAKEOFF_HOVER:[CUSTOM_MODE_TAKEOFF],
-        CUSTOM_SUBMODE_TAKEOFF_TRANSIT:[CUSTOM_MODE_TAKEOFF],
-        CUSTOM_SUBMODE_FLIGHT_NORMAL:[CUSTOM_MODE_FLIGHT],
-        CUSTOM_SUBMODE_FLIGHT_MANUAL:[CUSTOM_MODE_FLIGHT],
-        CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE:[CUSTOM_MODE_FLIGHT],
-        CUSTOM_SUBMODE_LANDING_TRANSIT:[CUSTOM_MODE_LANDING],
-        CUSTOM_SUBMODE_LANDING_HOVER:[CUSTOM_MODE_LANDING],
-        CUSTOM_SUBMODE_LANDING_DESCENT:[CUSTOM_MODE_LANDING],
-    }
-
-    ALLOWED_MODES = {
-        CUSTOM_SUBMODE_UNINIT:[mavutil.mavlink.MAV_MODE_PREFLIGHT],
-        CUSTOM_SUBMODE_BOOT:[mavutil.mavlink.MAV_MODE_PREFLIGHT],
-        CUSTOM_SUBMODE_SHUTDOWN:[mavutil.mavlink.MAV_MODE_PREFLIGHT],
-        CUSTOM_SUBMODE_GROUND_DISARMED:[mavutil.mavlink.MAV_MODE_PREFLIGHT, mavutil.mavlink.MAV_MODE_AUTO_DISARMED],
-        CUSTOM_SUBMODE_GROUND_ARMED:[mavutil.mavlink.MAV_MODE_GUIDED_ARMED, mavutil.mavlink.MAV_MODE_AUTO_ARMED],
-        CUSTOM_SUBMODE_TAKEOFF_ASCENT:[mavutil.mavlink.MAV_MODE_GUIDED_ARMED, mavutil.mavlink.MAV_MODE_AUTO_ARMED],
-        CUSTOM_SUBMODE_TAKEOFF_HOVER:[mavutil.mavlink.MAV_MODE_GUIDED_ARMED, mavutil.mavlink.MAV_MODE_AUTO_ARMED],
-        CUSTOM_SUBMODE_TAKEOFF_TRANSIT:[mavutil.mavlink.MAV_MODE_GUIDED_ARMED, mavutil.mavlink.MAV_MODE_AUTO_ARMED],
-        CUSTOM_SUBMODE_FLIGHT_NORMAL:[mavutil.mavlink.MAV_MODE_GUIDED_ARMED, mavutil.mavlink.MAV_MODE_AUTO_ARMED],
-        CUSTOM_SUBMODE_FLIGHT_MANUAL:[mavutil.mavlink.MAV_MODE_MANUAL_ARMED],
-        CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE:[mavutil.mavlink.MAV_MODE_GUIDED_ARMED, mavutil.mavlink.MAV_MODE_AUTO_ARMED],
-        CUSTOM_SUBMODE_LANDING_TRANSIT:[mavutil.mavlink.MAV_MODE_GUIDED_ARMED, mavutil.mavlink.MAV_MODE_AUTO_ARMED],
-        CUSTOM_SUBMODE_LANDING_HOVER:[mavutil.mavlink.MAV_MODE_GUIDED_ARMED, mavutil.mavlink.MAV_MODE_AUTO_ARMED],
-        CUSTOM_SUBMODE_LANDING_DESCENT:[mavutil.mavlink.MAV_MODE_GUIDED_ARMED, mavutil.mavlink.MAV_MODE_AUTO_ARMED],
-    }
-
-    ALLOWED_STATES = {
-        CUSTOM_SUBMODE_UNINIT:[mavutil.mavlink.MAV_STATE_UNINIT, mavutil.mavlink.MAV_STATE_POWEROFF, mavutil.mavlink.MAV_STATE_CRITICAL],
-        CUSTOM_SUBMODE_BOOT:[mavutil.mavlink.MAV_STATE_BOOT, mavutil.mavlink.MAV_STATE_CALIBRATING, mavutil.mavlink.MAV_STATE_STANDBY, mavutil.mavlink.MAV_STATE_CRITICAL],
-        CUSTOM_SUBMODE_SHUTDOWN:[mavutil.mavlink.MAV_STATE_POWEROFF, mavutil.mavlink.MAV_STATE_BOOT, mavutil.mavlink.MAV_STATE_CRITICAL],
-        CUSTOM_SUBMODE_GROUND_DISARMED:[mavutil.mavlink.MAV_STATE_STANDBY, mavutil.mavlink.MAV_STATE_CRITICAL],
-        CUSTOM_SUBMODE_GROUND_ARMED:[mavutil.mavlink.MAV_STATE_ACTIVE, mavutil.mavlink.MAV_STATE_CRITICAL, mavutil.mavlink.MAV_STATE_EMERGENCY],
-        CUSTOM_SUBMODE_TAKEOFF_ASCENT:[mavutil.mavlink.MAV_STATE_ACTIVE, mavutil.mavlink.MAV_STATE_CRITICAL, mavutil.mavlink.MAV_STATE_EMERGENCY],
-        CUSTOM_SUBMODE_TAKEOFF_HOVER:[mavutil.mavlink.MAV_STATE_ACTIVE, mavutil.mavlink.MAV_STATE_CRITICAL, mavutil.mavlink.MAV_STATE_EMERGENCY],
-        CUSTOM_SUBMODE_TAKEOFF_TRANSIT:[mavutil.mavlink.MAV_STATE_ACTIVE, mavutil.mavlink.MAV_STATE_CRITICAL, mavutil.mavlink.MAV_STATE_EMERGENCY],
-        CUSTOM_SUBMODE_FLIGHT_NORMAL:[mavutil.mavlink.MAV_STATE_ACTIVE, mavutil.mavlink.MAV_STATE_CRITICAL, mavutil.mavlink.MAV_STATE_EMERGENCY],
-        CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE:[mavutil.mavlink.MAV_STATE_ACTIVE, mavutil.mavlink.MAV_STATE_CRITICAL, mavutil.mavlink.MAV_STATE_EMERGENCY],
-        CUSTOM_SUBMODE_LANDING_TRANSIT:[mavutil.mavlink.MAV_STATE_ACTIVE, mavutil.mavlink.MAV_STATE_CRITICAL, mavutil.mavlink.MAV_STATE_EMERGENCY],
-        CUSTOM_SUBMODE_LANDING_HOVER:[mavutil.mavlink.MAV_STATE_ACTIVE, mavutil.mavlink.MAV_STATE_CRITICAL, mavutil.mavlink.MAV_STATE_EMERGENCY],
-        CUSTOM_SUBMODE_LANDING_DESCENT:[mavutil.mavlink.MAV_STATE_ACTIVE, mavutil.mavlink.MAV_STATE_CRITICAL, mavutil.mavlink.MAV_STATE_EMERGENCY],
-    }
-
-
-    # Index 0 is default step up, index 1 is default step down (if applicable)
-    ALLOWED_SUBMODE_CHANGES = {
-        CUSTOM_SUBMODE_UNINIT:[CUSTOM_SUBMODE_BOOT],
-        CUSTOM_SUBMODE_BOOT:[CUSTOM_SUBMODE_GROUND_DISARMED, CUSTOM_SUBMODE_SHUTDOWN],
-        CUSTOM_SUBMODE_SHUTDOWN:[CUSTOM_SUBMODE_UNINIT, CUSTOM_SUBMODE_BOOT],
-        CUSTOM_SUBMODE_GROUND_DISARMED:[CUSTOM_SUBMODE_GROUND_ARMED, CUSTOM_SUBMODE_SHUTDOWN],
-        CUSTOM_SUBMODE_GROUND_ARMED:[CUSTOM_SUBMODE_TAKEOFF_ASCENT, CUSTOM_SUBMODE_GROUND_DISARMED],
-        CUSTOM_SUBMODE_TAKEOFF_ASCENT:[CUSTOM_SUBMODE_TAKEOFF_HOVER, CUSTOM_SUBMODE_LANDING_DESCENT],
-        CUSTOM_SUBMODE_TAKEOFF_HOVER:[CUSTOM_SUBMODE_TAKEOFF_TRANSIT, CUSTOM_SUBMODE_LANDING_HOVER],
-        CUSTOM_SUBMODE_TAKEOFF_TRANSIT:[CUSTOM_SUBMODE_FLIGHT_NORMAL, CUSTOM_SUBMODE_LANDING_TRANSIT],
-        CUSTOM_SUBMODE_FLIGHT_NORMAL:[CUSTOM_SUBMODE_LANDING_TRANSIT, CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE, CUSTOM_SUBMODE_FLIGHT_MANUAL],
-        CUSTOM_SUBMODE_FLIGHT_MANUAL:[CUSTOM_SUBMODE_FLIGHT_NORMAL],
-        CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE:[CUSTOM_SUBMODE_FLIGHT_NORMAL, CUSTOM_SUBMODE_FLIGHT_MANUAL],
-        CUSTOM_SUBMODE_LANDING_TRANSIT:[CUSTOM_SUBMODE_LANDING_HOVER, CUSTOM_SUBMODE_TAKEOFF_TRANSIT],
-        CUSTOM_SUBMODE_LANDING_HOVER:[CUSTOM_SUBMODE_LANDING_DESCENT, CUSTOM_SUBMODE_TAKEOFF_HOVER],
-        CUSTOM_SUBMODE_LANDING_DESCENT:[CUSTOM_SUBMODE_GROUND_ARMED, CUSTOM_SUBMODE_TAKEOFF_ASCENT],
-    }
-
-
-    def __init__(self, state:int, mode:int, custom_mode:int, custom_submode:int, boot:asyncio.Event) -> None:
-
-        state = int(state)
-        mode = int(mode)
-        custom_mode = int(custom_mode)
-        custom_submode = int(custom_submode)
-
-        assert state in GlobalState.MAV_STATES_NOMINAL or state in GlobalState.MAV_STATES_ABNORMAL, 'GlobalState input \'state\' must be MAV_STATE int'
-        assert mode in GlobalState.MAV_MODES, 'GlobalState input \'mode\' must be MAV_MODE int'
-        assert custom_mode in GlobalState.CUSTOM_MODES, 'GlobalState input \'custom_mode\' must be GlobalState.CUSTOM_MODE int'
-        assert custom_submode in GlobalState.CUSTOM_SUBMODES, 'GlobalState input \'custom_submode\' must be GlobalState.CUSTOM_SUBMODE int'
-        
-        self.state = state
-        self.mode = mode
-        self.custom_mode = custom_mode
-        self.custom_submode = custom_submode
-        logging.warning(f'Submode set to: {self.custom_submode}')
-
-        self.boot = boot
-
-    def set_mode(self, mode:int, custom_mode:int, custom_submode:int) -> bool:
-       
-        try:
-
-            mode = int(mode)
-            custom_mode = int(custom_mode)
-            custom_submode = int(custom_submode)
-
-            if mode == mavutil.mavlink.MAV_MODE_MANUAL_ARMED and self.custom_mode == GlobalState.CUSTOM_MODE_FLIGHT:
-
-                self.custom_submode = GlobalState.CUSTOM_SUBMODE_FLIGHT_MANUAL
-                logging.warning(f'Submode set to: {self.custom_submode}')
-                self.mode = mode
-                self.state = mavutil.mavlink.MAV_STATE_ACTIVE
-
-                return True
-
-            if self.custom_submode == GlobalState.CUSTOM_SUBMODE_UNINIT and custom_submode == GlobalState.CUSTOM_SUBMODE_BOOT:
-                self.boot.set()
-
-            if custom_submode != self.custom_submode:
-                assert custom_submode in GlobalState.ALLOWED_SUBMODE_CHANGES[self.custom_submode]
-                self.custom_submode = custom_submode
-                logging.warning(f'Submode set to: {self.custom_submode}')
-
-                if self.state not in GlobalState.MAV_STATES_ABNORMAL:
-                    self.state = GlobalState.ALLOWED_STATES[self.custom_submode][0]
-
-            if mode != self.mode:
-                if mode in GlobalState.ALLOWED_MODES[self.custom_submode]:
-                    self.mode = mode
-                else:
-                    self.mode = GlobalState.ALLOWED_MODES[self.custom_submode][0]
-
-            if custom_mode != self.custom_mode:
-                if custom_mode in GlobalState.ALLOWED_CUSTOM_MODES[self.custom_submode]:
-                    self.custom_mode = custom_mode
-                else:
-                    self.custom_mode = GlobalState.ALLOWED_CUSTOM_MODES[self.custom_submode][0]
-
-            return True
-    
-        except AssertionError:
-
-            return False
-
-    def inc_mode(self) -> None:
-        
-        self.custom_submode = GlobalState.ALLOWED_SUBMODE_CHANGES[self.custom_submode][0]
-        logging.warning(f'Submode set to: {self.custom_submode}')
-        self.mode = GlobalState.ALLOWED_MODES[self.custom_submode][0]
-        self.custom_mode = GlobalState.ALLOWED_CUSTOM_MODES[self.custom_submode][0]
-
-        if self.state not in GlobalState.MAV_STATES_ABNORMAL:
-            self.state = GlobalState.ALLOWED_STATES[self.custom_submode][0]
-
-    def dec_mode(self) -> None:
-
-        if self.custom_submode not in [GlobalState.CUSTOM_SUBMODE_FLIGHT_MANUAL, GlobalState.CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE, GlobalState.CUSTOM_SUBMODE_UNINIT]:
-           
-            self.custom_submode = GlobalState.ALLOWED_SUBMODE_CHANGES[self.custom_submode][1]
-            logging.warning(f'Submode set to: {self.custom_submode}')
-            self.mode = GlobalState.ALLOWED_MODES[self.custom_submode][0]
-            self.custom_mode = GlobalState.ALLOWED_CUSTOM_MODES[self.custom_submode][0]
-
-            if self.state not in GlobalState.MAV_STATES_ABNORMAL:
-                self.state = GlobalState.ALLOWED_STATES[self.custom_submode][0]
-
-        else:
-            
-            logging.debug('Invalid submode for GlobalState.dec_mode(), running GlobalState.inc_mode() instead')
-            self.inc_mode()
-
-    def set_state(self, state:int) -> None:
-
-        if (state in GlobalState.MAV_STATES_NOMINAL or state in GlobalState.MAV_STATES_ABNORMAL) and state in GlobalState.ALLOWED_STATES[self.custom_submode]:
-            self.state = state
-        else:
-            logging.debug('Invalid state passed into GlobalState.set_state()')
-
 
 class MainIO:
 
@@ -706,7 +379,9 @@ class MainIO:
                 await self._pub_servos.publish(self.main.txdata.servo)
                 await self._pub_escs.publish(self.main.txdata.esc)
                 await asyncio.sleep(1 / self._freq)
-            except asyncio.exceptions.CancelledError: self.main.stop.set()
+            except asyncio.exceptions.CancelledError:
+                self.main.stop.set()
+                raise
             except KeyboardInterrupt: self.main.stop.set()
             except Exception as e:
                 logging.error(f'Error in MainIO: {e}')
@@ -839,9 +514,16 @@ class Processor:
         while not self.main.stop.is_set():
             try:
 
-                # NOTE MIXING PLACEHOLDER vvv
-                self._servos = np.sum(np.array([1.0 * self._flight_servos(), 0.0 * self._vtol_servos()]), axis=0, dtype=np.float16)
-                self._throttles = np.sum(np.array([1.0 * self._flight_throttles(), 0.0 * self._vtol_throttles()]), axis=0, dtype=np.float16)
+                if self.main.state.custom_mode in [g.CUSTOM_MODE_TAKEOFF, g.CUSTOM_MODE_LANDING]:
+                    # NOTE MIXING PLACEHOLDER vvv
+                    self._servos = np.sum(np.array([1.0 * self._flight_servos(), 0.0 * self._vtol_servos()]), axis=0, dtype=np.float16)
+                    self._throttles = np.sum(np.array([1.0 * self._flight_throttles(), 0.0 * self._vtol_throttles()]), axis=0, dtype=np.float16)
+                elif self.main.state.custom_mode == g.CUSTOM_MODE_FLIGHT and self.main.state.custom_submode != g.CUSTOM_SUBMODE_FLIGHT_MANUAL:
+                    self._servos = self._flight_servos()
+                    self._throttles = self._flight_throttles()
+                else:
+                    self._servos = np.zeros(4, dtype=np.float16).fill(0.0)
+                    self._throttles = np.zeros(4, dtype=np.float16).fill(0.0)
 
                 self.main.txdata.servo = actuator.ArrayCommand_1([
                     actuator.Command_1(0, actuator.Command_1.COMMAND_TYPE_POSITION, self._servos[0]), # Elevon 1
@@ -861,6 +543,7 @@ class Processor:
 
             except asyncio.exceptions.CancelledError:
                 self.main.stop.set()
+                raise
             except KeyboardInterrupt:
                 self.main.stop.set()
             except Exception as e:
@@ -882,7 +565,7 @@ class Controller:
         self._txfreq = tx_freq
         self._heartbeatfreq = heartbeat_freq
 
-        self._mav_conn_gcs = mavutil.mavlink_connection(self.main.config.get('mavlink', 'mavlink_conn'), source_system=self.main.systemid, source_component=mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1)
+        self._mav_conn_gcs = mavutil.mavlink_connection(self.main.config.get('mavlink', 'mavlink_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1)
 
         self._gcs_id = None
 
@@ -908,6 +591,7 @@ class Controller:
 
             except asyncio.exceptions.CancelledError:
                 self.main.stop.set()
+                raise
             except KeyboardInterrupt:
                 self.main.stop.set()
             except Exception as e:
@@ -964,15 +648,15 @@ class Controller:
 
                         if msg.get_type() == 'COMMAND_LONG':
 
-                            if msg.command == mavutil.mavlink.MAV_CMD_DO_SET_MODE:
+                            if msg.command == m.MAV_CMD_DO_SET_MODE:
 
                                 logging.info('Mode change requested')
                                     
                                 if self.main.state.set_mode(msg.param1, msg.param2, msg.param3): # TODO Add safety check to verify message like below
 
                                     self._mav_conn_gcs.mav.command_ack_send(
-                                        mavutil.mavlink.MAV_CMD_DO_SET_MODE,
-                                        mavutil.mavlink.MAV_RESULT_ACCEPTED,
+                                        m.MAV_CMD_DO_SET_MODE,
+                                        m.MAV_RESULT_ACCEPTED,
                                         255,
                                         0,
                                         0, # Target system FIXME
@@ -982,8 +666,8 @@ class Controller:
                                 else:
 
                                     self._mav_conn_gcs.mav.command_ack_send(
-                                        mavutil.mavlink.MAV_CMD_DO_SET_MODE,
-                                        mavutil.mavlink.MAV_RESULT_DENIED,
+                                        m.MAV_CMD_DO_SET_MODE,
+                                        m.MAV_RESULT_DENIED,
                                         255,
                                         0,
                                         0, # Target system FIXME
@@ -992,8 +676,8 @@ class Controller:
 
                             elif msg.command in ["""list of commands that only use COMMAND_INT"""]:
                                 self._mav_conn_gcs.mav.command_ack_send(
-                                    mavutil.mavlink.MAV_CMD_DO_SET_MODE,
-                                    mavutil.mavlink.MAV_RESULT_COMMAND_INT_ONLY,
+                                    m.MAV_CMD_DO_SET_MODE,
+                                    m.MAV_RESULT_COMMAND_INT_ONLY,
                                     255,
                                     0,
                                     0, # Target system FIXME
@@ -1002,8 +686,8 @@ class Controller:
 
                             else:
                                 self._mav_conn_gcs.mav.command_ack_send(
-                                    mavutil.mavlink.MAV_CMD_DO_SET_MODE,
-                                    mavutil.mavlink.MAV_RESULT_UNSUPPORTED,
+                                    m.MAV_CMD_DO_SET_MODE,
+                                    m.MAV_RESULT_UNSUPPORTED,
                                     255,
                                     0,
                                     0, # Target system FIXME
@@ -1014,10 +698,10 @@ class Controller:
                             if msg.command == """command""":
                                 pass
 
-                            elif msg.command in [mavutil.mavlink.MAV_CMD_DO_SET_MODE]:
+                            elif msg.command in [m.MAV_CMD_DO_SET_MODE]:
                                 self._mav_conn_gcs.mav.command_ack_send(
-                                    mavutil.mavlink.MAV_CMD_DO_SET_MODE,
-                                    mavutil.mavlink.MAV_RESULT_COMMAND_LONG_ONLY,
+                                    m.MAV_CMD_DO_SET_MODE,
+                                    m.MAV_RESULT_COMMAND_LONG_ONLY,
                                     255,
                                     0,
                                     0, # Target system FIXME
@@ -1026,8 +710,8 @@ class Controller:
 
                             else:
                                 self._mav_conn_gcs.mav.command_ack_send(
-                                    mavutil.mavlink.MAV_CMD_DO_SET_MODE,
-                                    mavutil.mavlink.MAV_RESULT_UNSUPPORTED,
+                                    m.MAV_CMD_DO_SET_MODE,
+                                    m.MAV_RESULT_UNSUPPORTED,
                                     255,
                                     0,
                                     0, # Target system FIXME
@@ -1038,6 +722,7 @@ class Controller:
 
             except asyncio.exceptions.CancelledError:
                 self.main.stop.set()
+                raise
             except KeyboardInterrupt:
                 self.main.stop.set()
             except Exception as e:
@@ -1059,6 +744,7 @@ class Controller:
 
             except asyncio.exceptions.CancelledError:
                 self.main.stop.set()
+                raise
             except KeyboardInterrupt:
                 self.main.stop.set()
             except Exception as e:
@@ -1076,8 +762,8 @@ class Controller:
         while not self.main.stop.is_set():
             try:
                 self._mav_conn_gcs.mav.heartbeat_send(
-                    mavutil.mavlink.MAV_TYPE_VTOL_RESERVED4, # 24
-                    mavutil.mavlink.MAV_AUTOPILOT_GENERIC_WAYPOINTS_AND_SIMPLE_NAVIGATION_ONLY,
+                    m.MAV_TYPE_VTOL_RESERVED4, # 24
+                    m.MAV_AUTOPILOT_GENERIC_WAYPOINTS_AND_SIMPLE_NAVIGATION_ONLY,
                     int(self.main.state.mode),
                     int(self.main.state.custom_mode),
                     int(self.main.state.state)
@@ -1089,6 +775,7 @@ class Controller:
 
             except asyncio.exceptions.CancelledError:
                 self.main.stop.set()
+                raise
             except KeyboardInterrupt:
                 self.main.stop.set()
             except Exception as e:
@@ -1119,11 +806,11 @@ class Main:
         self.rxdata = GlobalRx()
         self.txdata = GlobalTx()
 
-        self.state = GlobalState(mavutil.mavlink.MAV_STATE_UNINIT, mavutil.mavlink.MAV_MODE_PREFLIGHT, GlobalState.CUSTOM_MODE_UNINIT, GlobalState.CUSTOM_SUBMODE_UNINIT, self.boot)
+        self.state = g(m.MAV_STATE_UNINIT, m.MAV_MODE_PREFLIGHT, g.CUSTOM_MODE_UNINIT, g.CUSTOM_SUBMODE_UNINIT, self.boot)
 
     async def _graph(self, name:str='0.0', freq:int=10) -> None:
 
-        import grapher
+        import ext.grapher as grapher
 
         self._grapher = grapher.Grapher(deque_len=50)
 
@@ -1135,6 +822,7 @@ class Main:
 
             except asyncio.exceptions.CancelledError:
                 self.stop.set()
+                raise
             except KeyboardInterrupt:
                 self.stop.set()
             except Exception as e:
@@ -1156,7 +844,7 @@ class Main:
 
         try:
             await self.boot.wait()
-        except asyncio.CancelledError or KeyboardInterrupt:
+        except asyncio.exceptions.CancelledError or KeyboardInterrupt:
             controller_manager.cancel()
             await asyncio.sleep(0)
             logging.warning(f'Never booted, closing instance #{self.systemid}')
@@ -1198,7 +886,8 @@ class Main:
 
         try:
             await asyncio.gather(*tasks)
-        except asyncio.exceptions.CancelledError: self.stop.set()
+        except asyncio.exceptions.CancelledError: 
+            self.stop.set()
 
         logging.warning(f'Closing instance #{self.systemid}')
 
