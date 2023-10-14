@@ -8,9 +8,7 @@ from pymavlink import mavutil
 m = mavutil.mavlink
 
 
-
 class GlobalState:
-
     CUSTOM_MODE_UNINIT = 0
     CUSTOM_MODE_BOOT = 1
     CUSTOM_MODE_GROUND = 2
@@ -32,7 +30,6 @@ class GlobalState:
     CUSTOM_SUBMODE_LANDING_TRANSIT = 50
     CUSTOM_SUBMODE_LANDING_HOVER = 51
     CUSTOM_SUBMODE_LANDING_DESCENT = 52
-
 
     MAV_MODES = [
         m.MAV_MODE_PREFLIGHT,
@@ -85,7 +82,6 @@ class GlobalState:
         CUSTOM_SUBMODE_LANDING_DESCENT,
     ]
 
-
     # Index 0 is default for that submode
     ALLOWED_CUSTOM_MODES = {
         CUSTOM_SUBMODE_UNINIT:[CUSTOM_MODE_UNINIT],
@@ -137,7 +133,6 @@ class GlobalState:
         CUSTOM_SUBMODE_LANDING_DESCENT:[m.MAV_STATE_ACTIVE, m.MAV_STATE_CRITICAL, m.MAV_STATE_EMERGENCY],
     }
 
-
     # Index 0 is default step up, index 1 is default step down (if applicable)
     ALLOWED_SUBMODE_CHANGES = {
         CUSTOM_SUBMODE_UNINIT:[CUSTOM_SUBMODE_BOOT],
@@ -156,9 +151,7 @@ class GlobalState:
         CUSTOM_SUBMODE_LANDING_DESCENT:[CUSTOM_SUBMODE_GROUND_ARMED, CUSTOM_SUBMODE_TAKEOFF_ASCENT],
     }
 
-
-    def __init__(self, state:int, mode:int, custom_mode:int, custom_submode:int, boot:asyncio.Event) -> None:
-
+    def __init__(self, state: int, mode: int, custom_mode: int, custom_submode: int, boot: asyncio.Event) -> None:
         state = int(state)
         mode = int(mode)
         custom_mode = int(custom_mode)
@@ -177,21 +170,17 @@ class GlobalState:
 
         self.boot = boot
 
-    def set_mode(self, mode:int, custom_mode:int, custom_submode:int) -> bool:
-       
+    def set_mode(self, mode: int, custom_mode: int, custom_submode: int) -> bool:
         try:
-
             mode = int(mode)
             custom_mode = int(custom_mode)
             custom_submode = int(custom_submode)
 
             if mode == m.MAV_MODE_MANUAL_ARMED and self.custom_mode == GlobalState.CUSTOM_MODE_FLIGHT:
-
                 self.custom_submode = GlobalState.CUSTOM_SUBMODE_FLIGHT_MANUAL
                 logging.warning(f'Submode set to: {self.custom_submode}')
                 self.mode = mode
                 self.state = m.MAV_STATE_ACTIVE
-
                 return True
 
             if self.custom_submode == GlobalState.CUSTOM_SUBMODE_UNINIT and custom_submode == GlobalState.CUSTOM_SUBMODE_BOOT:
@@ -218,13 +207,10 @@ class GlobalState:
                     self.custom_mode = GlobalState.ALLOWED_CUSTOM_MODES[self.custom_submode][0]
 
             return True
-    
         except AssertionError:
-
             return False
 
     def inc_mode(self) -> None:
-        
         self.custom_submode = GlobalState.ALLOWED_SUBMODE_CHANGES[self.custom_submode][0]
         logging.warning(f'Submode set to: {self.custom_submode}')
         self.mode = GlobalState.ALLOWED_MODES[self.custom_submode][0]
@@ -234,9 +220,7 @@ class GlobalState:
             self.state = GlobalState.ALLOWED_STATES[self.custom_submode][0]
 
     def dec_mode(self) -> None:
-
         if self.custom_submode not in [GlobalState.CUSTOM_SUBMODE_FLIGHT_MANUAL, GlobalState.CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE, GlobalState.CUSTOM_SUBMODE_UNINIT]:
-           
             self.custom_submode = GlobalState.ALLOWED_SUBMODE_CHANGES[self.custom_submode][1]
             logging.warning(f'Submode set to: {self.custom_submode}')
             self.mode = GlobalState.ALLOWED_MODES[self.custom_submode][0]
@@ -244,14 +228,11 @@ class GlobalState:
 
             if self.state not in GlobalState.MAV_STATES_ABNORMAL:
                 self.state = GlobalState.ALLOWED_STATES[self.custom_submode][0]
-
         else:
-            
             logging.debug('Invalid submode for GlobalState.dec_mode(), running GlobalState.inc_mode() instead')
             self.inc_mode()
 
-    def set_state(self, state:int) -> None:
-
+    def set_state(self, state: int) -> None:
         if (state in GlobalState.MAV_STATES_NOMINAL or state in GlobalState.MAV_STATES_ABNORMAL) and state in GlobalState.ALLOWED_STATES[self.custom_submode]:
             self.state = state
         else:

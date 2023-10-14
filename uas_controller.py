@@ -5,20 +5,20 @@ import numpy as np
 import math
 from configparser import ConfigParser
 from ext.pid import PID
-
-os.environ['CYPHAL_PATH']='./data_types/custom_data_types;./data_types/public_regulated_data_types'
-os.environ['PYCYPHAL_PATH']='./pycyphal_generated'
-os.environ['MAVLINK20'] = '1'
-
 from pymavlink import mavutil
-m = mavutil.mavlink
 from ext.state_manager import GlobalState as g
+
+os.environ['CYPHAL_PATH'] = './data_types/custom_data_types;./data_types/public_regulated_data_types'
+os.environ['PYCYPHAL_PATH'] = './pycyphal_generated'
+os.environ['MAVLINK20'] = '1'
 
 import pycyphal
 import pycyphal.application
 import uavcan_archived
 from uavcan_archived.equipment import actuator, esc, ahrs, gnss, range_sensor, air_data
 import uavcan
+
+m = mavutil.mavlink
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 logging.getLogger('pymavlink').setLevel(logging.ERROR)
@@ -43,9 +43,7 @@ class GlobalRx:
             self.dt = self.time - self._last_time
 
     class Att:
-
         def __init__(self) -> None:
-
             self.time = 0.0
             self.pitch = 0.0
             self.pitchspeed = 0.0
@@ -53,7 +51,6 @@ class GlobalRx:
             self.rollspeed = 0.0
             self.yaw = 0.0
             self.yawspeed = 0.0
-
             self._last_time = 0.0
             self.dt = 0.0
             # self._last_pitch = 0.0
@@ -64,18 +61,28 @@ class GlobalRx:
             # self._last_yawspeed = 0.0
 
         @staticmethod
-        def quaternion_to_euler(q:tuple[float, float, float, float]) -> tuple[float, float, float]:
+        def quaternion_to_euler(q: tuple[float, float, float, float]) -> tuple[float, float, float]:
+            """Convert a quaternion angle to Euler. 
+
+            Copied on 10/2/2023 from automaticaddison.com
+            
+            Parameters
+            ----------
+            q : tuple
+                The quaternion values x, y, z, w
+            
+            Returns
+            -------
+            tuple
+                A tuple of roll, pitch, yaw as radians in Euler format
+            
+            Raises
+            ------
+            ValueError
+                If the input is not of length 4
             """
-            Convert an quaternion angle to Euler. Copied 10/2/2023 from automaticaddison.com
-            
-            Input
-                :q: Tuple of length 4 with quaternion values [x, y, z, w]
-            
-            Output
-                :return roll, pitch, yaw: The orientation in Euler format
-            """
-            
-            if len(q)!=4: raise ValueError('Quaternion input must be tuple with length 4')
+            if len(q)!=4:
+                raise ValueError('Quaternion input must be tuple with length 4')
 
             x, y, z, w = q
 
@@ -95,7 +102,6 @@ class GlobalRx:
             return roll, pitch, yaw # in radians
 
         def dump(self, msg: ahrs.Solution_1) -> None:
-
             self._last_time = self.time
             # self._last_pitch = self.pitch
             # self._last_pitchspeed = self.pitchspeed
@@ -106,15 +112,15 @@ class GlobalRx:
 
             self.time = msg.timestamp.usec
             self.roll, self.pitch, self.yaw = GlobalRx.Att.quaternion_to_euler(msg.orientation_xyzw)
-            if self.yaw < 0: self.yaw += 2*math.pi
-            self.rollspeed, self.pitchspeed, self.yawspeed = msg.angular_velocity
 
+            if self.yaw < 0:
+                self.yaw += 2*math.pi
+
+            self.rollspeed, self.pitchspeed, self.yawspeed = msg.angular_velocity
             self.dt = self.time - self._last_time
 
     class Alt:
-
         def __init__(self) -> None:
-
             self.time = 0.0
             self.altitude = 0.0
             self.vs = 0.0
@@ -125,23 +131,22 @@ class GlobalRx:
             self._last_vs = 0.0
 
         def dump(self, msg: range_sensor.Measurement_1) -> None:
-
             self._last_time = self.time
             self._last_altitude = self.altitude
             self._last_vs = self.vs
 
             self.time = msg.timestamp.usec
-            self.altitude = msg.range_
+            self.altitude = msg.range_ # 'range' becomes 'range_'
 
-            try: self.vs = (self.altitude - self._last_altitude) / (self.time - self._last_time)
-            except ZeroDivisionError: self.vs = self._last_vs
+            try:
+                self.vs = (self.altitude - self._last_altitude) / (self.time - self._last_time)
+            except ZeroDivisionError:
+                self.vs = self._last_vs
 
             self.dt = self.time - self._last_time
 
     class Gps:
-
         def __init__(self) -> None:
-
             self.time = 0.0
             self.latitude = 0.0
             self.longitude = 0.0
@@ -160,7 +165,6 @@ class GlobalRx:
             # self._last_zspeed = 0.0
 
         def dump(self, msg: gnss.Fix2_1) -> None:
-
             self._last_time = self.time
             # self._last_latitude = self.latitude
             # self._last_longitude = self.longitude
@@ -178,7 +182,6 @@ class GlobalRx:
             self.dt = self.time - self._last_time
 
     class Ias:
-
         def __init__(self) -> None:
             self.time = 0.0
             self.ias = 0.0
@@ -197,7 +200,6 @@ class GlobalRx:
             self.dt = self.time - self._last_time
 
     class Aoa:
-
         def __init__(self) -> None:
             self.time = 0.0
             self.aoa = 0.0
@@ -216,7 +218,6 @@ class GlobalRx:
             self.dt = self.time - self._last_time
 
     class Slip:
-
         def __init__(self) -> None:
             self.time = 0.0
             self.slip = 0.0
@@ -243,31 +244,27 @@ class GlobalRx:
         self.aoa =  GlobalRx.Aoa()
         self.slip = GlobalRx.Slip()
 
-class GlobalTx:
 
+class GlobalTx:
     def __init__(self) -> None:
-        
         self.servo = actuator.ArrayCommand_1([
-                        actuator.Command_1(0, actuator.Command_1.COMMAND_TYPE_POSITION, 0.0), # Elevon 1
-                        actuator.Command_1(1, actuator.Command_1.COMMAND_TYPE_POSITION, 0.0), # Elevon 2
-                        actuator.Command_1(2, actuator.Command_1.COMMAND_TYPE_POSITION, 0.0), # Rudder
-                        actuator.Command_1(3, actuator.Command_1.COMMAND_TYPE_POSITION, 0.0)  # Wing-tilt
-                    ])
+            actuator.Command_1(0, actuator.Command_1.COMMAND_TYPE_POSITION, 0.0), # Elevon 1
+            actuator.Command_1(1, actuator.Command_1.COMMAND_TYPE_POSITION, 0.0), # Elevon 2
+            actuator.Command_1(2, actuator.Command_1.COMMAND_TYPE_POSITION, 0.0), # Rudder
+            actuator.Command_1(3, actuator.Command_1.COMMAND_TYPE_POSITION, 0.0)  # Wing-tilt
+        ])
         
         self.esc = esc.RawCommand_1([
-                        int(0.0 * 8191), # Throttle 1
-                        int(0.0 * 8191), # Throttle 2
-                        int(0.0 * 8191), # Throttle 3
-                        int(0.0 * 8191)  # Throttle 4
-                    ])
+            int(0.0 * 8191), # Throttle 1
+            int(0.0 * 8191), # Throttle 2
+            int(0.0 * 8191), # Throttle 3
+            int(0.0 * 8191)  # Throttle 4
+        ])
 
 
 class MainIO:
-
-    def __init__(self, main:'Main', freq:int=DEFAULT_FREQ) -> None:
-
+    def __init__(self, main:'Main', freq: int = DEFAULT_FREQ) -> None:
         self.main = main
-
         self._freq = freq
 
         logging.info('Initializing UAVCAN Node...')
@@ -299,7 +296,7 @@ class MainIO:
         
         node_info = uavcan.node.GetInfo_1.Response(
             software_version=uavcan.node.Version_1(major=1, minor=0),
-            name=f"fmuas.uasmain{self.main.systemid}.mainio",
+            name=f'fmuas.uasmain{self.main.systemid}.mainio',
         )
 
         self._node = pycyphal.application.make_node(node_info, self._registry)
@@ -332,39 +329,38 @@ class MainIO:
         logging.info('MainIO initialized')
 
     async def boot(self) -> None:
-        # TODO do boot stuff here, maybe read a different .ini?
+        # TODO: do boot stuff here, maybe read a different .ini?
         await asyncio.sleep(0)
 
     async def run(self) -> None:
-
         # region Subscriptions
-        def on_time(msg: uavcan.time.SynchronizedTimestamp_1, _:pycyphal.transport.TransferFrom) -> None:
+        def on_time(msg: uavcan.time.SynchronizedTimestamp_1, _: pycyphal.transport.TransferFrom) -> None:
             self.main.rxdata.time.dump(msg)
         self._sub_clock_sync_time.receive_in_background(on_time)
 
-        def on_att(msg: ahrs.Solution_1, _:pycyphal.transport.TransferFrom) -> None:
+        def on_att(msg: ahrs.Solution_1, _: pycyphal.transport.TransferFrom) -> None:
             self.main.rxdata.att.dump(msg)
         self._sub_att.receive_in_background(on_att)
 
-        def on_alt(msg: range_sensor.Measurement_1, _:pycyphal.transport.TransferFrom) -> None:
+        def on_alt(msg: range_sensor.Measurement_1, _: pycyphal.transport.TransferFrom) -> None:
             self.main.rxdata.alt.dump(msg)
         self._sub_alt.receive_in_background(on_alt)
 
-        def on_gps(msg: gnss.Fix2_1, _:pycyphal.transport.TransferFrom) -> None:
+        def on_gps(msg: gnss.Fix2_1, _: pycyphal.transport.TransferFrom) -> None:
             self.main.rxdata.gps.dump(msg)
         self._sub_gps.receive_in_background(on_gps)
 
-        def on_ias(msg: air_data.IndicatedAirspeed_1, _:pycyphal.transport.TransferFrom) -> None:
+        def on_ias(msg: air_data.IndicatedAirspeed_1, _: pycyphal.transport.TransferFrom) -> None:
             t = self.main.rxdata.time.time
             self.main.rxdata.ias.dump(msg, t)
         self._sub_ias.receive_in_background(on_ias)
 
-        def on_aoa(msg: air_data.AngleOfAttack_1, _:pycyphal.transport.TransferFrom) -> None:
+        def on_aoa(msg: air_data.AngleOfAttack_1, _: pycyphal.transport.TransferFrom) -> None:
             t = self.main.rxdata.time.time
             self.main.rxdata.aoa.dump(msg, t)
         self._sub_aoa.receive_in_background(on_aoa)
 
-        def on_slip(msg: air_data.Sideslip_1, _:pycyphal.transport.TransferFrom) -> None:
+        def on_slip(msg: air_data.Sideslip_1, _: pycyphal.transport.TransferFrom) -> None:
             t = self.main.rxdata.time.time
             self.main.rxdata.slip.dump(msg, t)
         self._sub_slip.receive_in_background(on_slip)
@@ -372,30 +368,32 @@ class MainIO:
         
         self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
 
-        logging.warning('UAVCAN Node Running...\n----- Ctrl-C to exit -----') # NOTE no verification
+        logging.warning('UAVCAN Node Running...\n----- Ctrl-C to exit -----') # TODO: no verification
 
-        while not self.main.stop.is_set():
-            try:
-                await self._pub_servos.publish(self.main.txdata.servo)
-                await self._pub_escs.publish(self.main.txdata.esc)
-                await asyncio.sleep(1 / self._freq)
-            except asyncio.exceptions.CancelledError:
-                self.main.stop.set()
-                raise
-            except KeyboardInterrupt: self.main.stop.set()
-            except Exception as e:
-                logging.error(f'Error in MainIO: {e}')
-
-        self.close()
+        try:
+            while not self.main.stop.is_set():
+                try:
+                    await self._pub_servos.publish(self.main.txdata.servo)
+                    await self._pub_escs.publish(self.main.txdata.esc)
+                    await asyncio.sleep(1 / self._freq)
+                except asyncio.exceptions.CancelledError:
+                    self.main.stop.set()
+                    raise
+                except Exception as e:
+                    logging.error(f'Error in MainIO: {e}')
+        except KeyboardInterrupt:
+            self.main.stop.set()
+            raise
+        finally:
+            self.close()
 
     def close(self) -> None:
-        logging.info('Closing MainIO') # NOTE Change to logging.debug()
+        logging.info('Closing MainIO') # TODO: Change to logging.debug()
         self._node.close()
 
+
 class Processor:
-
-    def __init__(self, main:'Main') -> None:
-
+    def __init__(self, main: 'Main') -> None:
         self.main = main
 
         self._fservos = np.zeros(4, dtype=np.float16) # elevons*2, rudder, wingtilt
@@ -433,25 +431,23 @@ class Processor:
         self._outf_throttle = 0.0
 
     async def boot(self) -> None:
-        # TODO do boot stuff here, maybe read a different .ini?
+        # TODO: do boot stuff here, maybe read a different .ini?
         await asyncio.sleep(0)
 
     # region Calculations
     @staticmethod
-    def _calc_dyaw(value:float, setpoint:float) -> float: # FIXME if negative radians sent by uavcan
+    def _calc_dyaw(value: float, setpoint: float) -> float: # TODO: if negative radians sent by uavcan
         dyaw = value - setpoint
         dyaw = dyaw - 2*math.pi if dyaw > math.pi else dyaw
         dyaw = dyaw + 2*math.pi if dyaw <= -math.pi else dyaw
         return -dyaw
 
     def _flight_servos(self) -> np.ndarray:
-
         if self.main.rxdata.alt.dt > 0.0:
             self._spf_vpath = 0.0 # self._pidf_alt_vpa.cycle(self.main.rxdata.alt.altitude, self.spf_altitude, self.main.rxdata.alt.dt)
             self.main.rxdata.alt.dt = 0.0
 
         if self.main.rxdata.att.dt > 0.0 or self.main.rxdata.aoa.dt > 0.0:
-
             if not self.main.rxdata.aoa.dt > 0.0:
                 dt = self.main.rxdata.att.dt
             elif not self.main.rxdata.att.dt > 0.0:
@@ -460,10 +456,9 @@ class Processor:
                 dt = (self.main.rxdata.att.dt + self.main.rxdata.aoa.dt) / 2
 
             vpath = self.main.rxdata.att.pitch - math.cos(self.main.rxdata.att.roll) * self.main.rxdata.aoa.aoa
-            self._spf_aoa = 0.14 # self._pidf_vpa_aoa.cycle(vpath, self._spf_vpath, dt) # FIXME?
+            self._spf_aoa = 0.14 # self._pidf_vpa_aoa.cycle(vpath, self._spf_vpath, dt) # TODO
 
         if self.main.rxdata.att.dt > 0.0:
-
             dyaw = Processor._calc_dyaw(self.main.rxdata.att.yaw, self.spf_heading)
 
             self._spf_roll = 0.0 # self._pidf_yaw_rol.cycle(dyaw, 0.0, self.main.rxdata.att.dt)
@@ -480,19 +475,17 @@ class Processor:
             self._outf_yaw = 0.0 # self._pidf_slp_out.cycle(self.main.rxdata.slip.slip, 0.0, self.main.rxdata.slip.dt)
             self.main.rxdata.slip.dt = 0.0
 
-        self._fservos[0] = self._outf_pitch + self._outf_roll # FIXME
-        self._fservos[1] = self._outf_pitch - self._outf_roll # FIXME
+        self._fservos[0] = self._outf_pitch + self._outf_roll # TODO
+        self._fservos[1] = self._outf_pitch - self._outf_roll # TODO
         self._fservos[2] = self._outf_yaw
 
         return self._fservos
 
     def _vtol_servos(self) -> np.ndarray:
-
-        # calculate and write to self._vservos
+        """Calculate and write to self._vservos"""
         return self._vservos
 
     def _flight_throttles(self) -> np.ndarray:
-
         if self.main.rxdata.ias.dt > 0.0:
             self._outf_throttle = self._pidf_ias_out.cycle(self.main.rxdata.ias.ias, self.spf_ias, self.main.rxdata.ias.dt)
             self.main.rxdata.ias.dt = 0.0
@@ -502,287 +495,264 @@ class Processor:
         return self._fthrottles
 
     def _vtol_throttles(self) -> np.ndarray:
-
-        # calculate and write to self._vthrottles
+        """Calculate and write to self._vthrottles"""
         return self._vthrottles
     # endregion
 
     async def run(self) -> None:
-
         logging.info('Starting Processor')
-        
-        while not self.main.stop.is_set():
-            try:
 
-                if self.main.state.custom_mode in [g.CUSTOM_MODE_TAKEOFF, g.CUSTOM_MODE_LANDING]:
-                    # NOTE MIXING PLACEHOLDER vvv
-                    self._servos = np.sum(np.array([1.0 * self._flight_servos(), 0.0 * self._vtol_servos()]), axis=0, dtype=np.float16)
-                    self._throttles = np.sum(np.array([1.0 * self._flight_throttles(), 0.0 * self._vtol_throttles()]), axis=0, dtype=np.float16)
-                elif self.main.state.custom_mode == g.CUSTOM_MODE_FLIGHT and self.main.state.custom_submode != g.CUSTOM_SUBMODE_FLIGHT_MANUAL:
-                    self._servos = self._flight_servos()
-                    self._throttles = self._flight_throttles()
-                else:
-                    self._servos = np.zeros(4, dtype=np.float16).fill(0.0)
-                    self._throttles = np.zeros(4, dtype=np.float16).fill(0.0)
+        try:
+            while not self.main.stop.is_set():
+                try:
+                    if self.main.state.custom_mode in [g.CUSTOM_MODE_TAKEOFF, g.CUSTOM_MODE_LANDING]:
+                        # TODO: MIXING PLACEHOLDER vvv
+                        self._servos = np.sum(np.array([1.0 * self._flight_servos(), 0.0 * self._vtol_servos()]), axis=0, dtype=np.float16)
+                        self._throttles = np.sum(np.array([1.0 * self._flight_throttles(), 0.0 * self._vtol_throttles()]), axis=0, dtype=np.float16)
+                    elif self.main.state.custom_mode == g.CUSTOM_MODE_FLIGHT and self.main.state.custom_submode != g.CUSTOM_SUBMODE_FLIGHT_MANUAL:
+                        self._servos = self._flight_servos()
+                        self._throttles = self._flight_throttles()
+                    else:
+                        self._servos = np.zeros(4, dtype=np.float16).fill(0.0)
+                        self._throttles = np.zeros(4, dtype=np.float16).fill(0.0)
 
-                self.main.txdata.servo = actuator.ArrayCommand_1([
-                    actuator.Command_1(0, actuator.Command_1.COMMAND_TYPE_POSITION, self._servos[0]), # Elevon 1
-                    actuator.Command_1(1, actuator.Command_1.COMMAND_TYPE_POSITION, self._servos[1]), # Elevon 2
-                    actuator.Command_1(2, actuator.Command_1.COMMAND_TYPE_POSITION, self._servos[2]), # Rudder
-                    actuator.Command_1(3, actuator.Command_1.COMMAND_TYPE_POSITION, self._servos[3])  # Wing-tilt
+                    self.main.txdata.servo = actuator.ArrayCommand_1([
+                        actuator.Command_1(0, actuator.Command_1.COMMAND_TYPE_POSITION, self._servos[0]), # Elevon 1
+                        actuator.Command_1(1, actuator.Command_1.COMMAND_TYPE_POSITION, self._servos[1]), # Elevon 2
+                        actuator.Command_1(2, actuator.Command_1.COMMAND_TYPE_POSITION, self._servos[2]), # Rudder
+                        actuator.Command_1(3, actuator.Command_1.COMMAND_TYPE_POSITION, self._servos[3])  # Wing-tilt
                     ])
-                
-                self.main.txdata.esc = esc.RawCommand_1([
-                    int(self._throttles[0] * 8191), # Throttle 1
-                    int(self._throttles[1] * 8191), # Throttle 2
-                    int(self._throttles[2] * 8191), # Throttle 3
-                    int(self._throttles[3] * 8191)  # Throttle 4
+                    
+                    self.main.txdata.esc = esc.RawCommand_1([
+                        int(self._throttles[0] * 8191), # Throttle 1
+                        int(self._throttles[1] * 8191), # Throttle 2
+                        int(self._throttles[2] * 8191), # Throttle 3
+                        int(self._throttles[3] * 8191)  # Throttle 4
                     ])
-                
-                await asyncio.sleep(0)
 
-            except asyncio.exceptions.CancelledError:
-                self.main.stop.set()
-                raise
-            except KeyboardInterrupt:
-                self.main.stop.set()
-            except Exception as e:
-                logging.error(f'Error in Processor: {e}')
-
-        
-        logging.info('Closing Processor') # NOTE Change to logging.debug()
+                    try:
+                        await asyncio.sleep(0)
+                    except asyncio.exceptions.CancelledError:
+                        self.main.stop.set()
+                        raise
+                except Exception as e:
+                    logging.error(f'Error in Processor: {e}')
+        except KeyboardInterrupt:
+            self.main.stop.set()
+            raise
+        finally:
+            logging.info('Closing Processor') # TODO: Change to logging.debug()
 
 
 class Controller:
-    # Use mavlink to send/recieve information to GCS
-    # Send commands to Processor
-    # Regulate master modes, boot sequences, handle failures
-    
-    def __init__(self, main:'Main', tx_freq:int=DEFAULT_FREQ, heartbeat_freq:int=1) -> None:
-
+    def __init__(self, main: 'Main', tx_freq: int = DEFAULT_FREQ, heartbeat_freq: int = 1) -> None:
         self.main = main
 
         self._txfreq = tx_freq
         self._heartbeatfreq = heartbeat_freq
 
         self._mav_conn_gcs = mavutil.mavlink_connection(self.main.config.get('mavlink', 'mavlink_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1)
+        assert isinstance(self._mav_conn_gcs, mavutil.mavfile) # TODO: remove
 
         self._gcs_id = None
 
-        assert isinstance(self._mav_conn_gcs, mavutil.mavfile) # TODO remove
-
         import key
-        self.__key = key.KEY
+        self.__key = key.KEY # TODO: mangled is not secure
 
         self._mav_conn_gcs.setup_signing(self.__key.encode('utf-8'))
 
     async def manager(self) -> None:
-        
         asyncio.create_task(self.heartbeat())
         asyncio.create_task(self.rx())
         asyncio.create_task(self.tx())
 
         logging.info('Starting Controller')
 
-        while not self.main.stop.is_set():
-            try:
-                # self.main.boot.set()
-                await asyncio.sleep(0)
-
-            except asyncio.exceptions.CancelledError:
-                self.main.stop.set()
-                raise
-            except KeyboardInterrupt:
-                self.main.stop.set()
-            except Exception as e:
-                logging.error(f'Error in Controller: {e}')
-        
-        self.close()
+        try:
+            while not self.main.stop.is_set():
+                try:
+                    # self.main.boot.set()
+                    await asyncio.sleep(0)
+                except asyncio.exceptions.CancelledError:
+                    self.main.stop.set()
+                    raise
+                except Exception as e:
+                    logging.error(f'Error in Controller: {e}')
+        except KeyboardInterrupt:
+            self.main.stop.set()
+            raise
+        finally:
+            self.close()
 
     async def rx(self) -> None:
-
         logging.debug('Starting Controller (RX)')
 
-        while not self.main.stop.is_set():
-            try:
-                msg = self._mav_conn_gcs.recv_msg()
+        try:
+            while not self.main.stop.is_set():
+                try:
+                    msg = self._mav_conn_gcs.recv_msg()
 
-                # General messages
-                if msg is not None and msg.get_type() == 'HEARTBEAT':
-                    logging.debug(f'Heartbeat message from link #{msg.get_srcSystem()}')
-
-                elif msg is not None and msg.get_type() == 'BAD_DATA':
-                    pass
-                
-                # Specific messages
-                elif msg is not None and msg.target_system == self.main.systemid:
+                    # General messages
+                    if msg is not None and msg.get_type() == 'HEARTBEAT':
+                        logging.debug(f'Heartbeat message from link #{msg.get_srcSystem()}')
+                    elif msg is not None and msg.get_type() == 'BAD_DATA':
+                        pass
                     
-                    # Connection
-                    if msg.get_type() == 'CHANGE_OPERATOR_CONTROL':
-                        
-                        if msg.control_request == 0 and msg.passkey==self.__key:
-                            if self._gcs_id is None or self._gcs_id==msg.get_srcSystem():
-                                # Accepted
-                                if self._gcs_id!=msg.get_srcSystem(): logging.info(f'Accepting control request from GCS ({msg.get_srcSystem()})')
-                                self._gcs_id = msg.get_srcSystem()
+                    # Specific messages
+                    elif msg is not None and msg.target_system == self.main.systemid:
+                        # Connection
+                        if msg.get_type() == 'CHANGE_OPERATOR_CONTROL':
+                            
+                            if msg.control_request == 0 and msg.passkey==self.__key:
+                                if self._gcs_id is None or self._gcs_id==msg.get_srcSystem():
+                                    # Accepted
+                                    if self._gcs_id!=msg.get_srcSystem():
+                                        logging.info(f'Accepting control request from GCS ({msg.get_srcSystem()})')
+                                    self._gcs_id = msg.get_srcSystem()
+                                    self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
+
+                                else:
+                                    # Already controlled
+                                    logging.info(f'Rejecting second control request from {msg.get_srcSystem()}')
+                                    self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 3)
+
+                            elif msg.control_request == 1 and msg.passkey==self.__key:# and self._gcs_id is not None:
+                                # Accepted (released)
+                                logging.info(f'Releasing from GCS ({self._gcs_id})')
+                                self._gcs_id = None
                                 self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
 
                             else:
-                                # Already controlled
-                                logging.info(f'Rejecting second control request from {msg.get_srcSystem()}')
-                                self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 3)
+                                # Bad key
+                                logging.info(f'Bad key in GCS control request')
+                                self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 1)
 
-                        elif msg.control_request == 1 and msg.passkey==self.__key:# and self._gcs_id is not None:
-                            # Accepted (released)
-                            logging.info(f'Releasing from GCS ({self._gcs_id})')
-                            self._gcs_id = None
-                            self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
-
-                        else:
-                            # Bad key
-                            logging.info(f'Bad key in GCS control request')
-                            self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 1)
-
-                    # GCS messages
-                    if msg.get_srcSystem() == self._gcs_id:
-
-                        if msg.get_type() == 'COMMAND_LONG':
-
-                            if msg.command == m.MAV_CMD_DO_SET_MODE:
-
-                                logging.info('Mode change requested')
-                                    
-                                if self.main.state.set_mode(msg.param1, msg.param2, msg.param3): # TODO Add safety check to verify message like below
-
+                        # GCS messages
+                        if msg.get_srcSystem() == self._gcs_id:
+                            if msg.get_type() == 'COMMAND_LONG':
+                                if msg.command == m.MAV_CMD_DO_SET_MODE:
+                                    logging.info('Mode change requested')
+                                        
+                                    if self.main.state.set_mode(msg.param1, msg.param2, msg.param3): # TODO: Add safety check to verify message like below
+                                        self._mav_conn_gcs.mav.command_ack_send(
+                                            m.MAV_CMD_DO_SET_MODE,
+                                            m.MAV_RESULT_ACCEPTED,
+                                            255,
+                                            0,
+                                            0, # TODO: Target system
+                                            0, # TODO: Target component
+                                        )
+                                    else:
+                                        self._mav_conn_gcs.mav.command_ack_send(
+                                            m.MAV_CMD_DO_SET_MODE,
+                                            m.MAV_RESULT_DENIED,
+                                            255,
+                                            0,
+                                            0, # TODO: Target system
+                                            0, # TODO: Target component
+                                        )
+                                elif msg.command in []: # List of commands that only use COMMAND_INT.
                                     self._mav_conn_gcs.mav.command_ack_send(
                                         m.MAV_CMD_DO_SET_MODE,
-                                        m.MAV_RESULT_ACCEPTED,
+                                        m.MAV_RESULT_COMMAND_INT_ONLY,
                                         255,
                                         0,
-                                        0, # Target system FIXME
-                                        0, # Target component FIXME
+                                        0, # TODO: Target system
+                                        0, # TODO: Target component
                                     )
-
                                 else:
-
                                     self._mav_conn_gcs.mav.command_ack_send(
                                         m.MAV_CMD_DO_SET_MODE,
-                                        m.MAV_RESULT_DENIED,
+                                        m.MAV_RESULT_UNSUPPORTED,
                                         255,
                                         0,
-                                        0, # Target system FIXME
-                                        0, # Target component FIXME
+                                        0, # TODO: Target system
+                                        0, # TODO: Target component
                                     )
-
-                            elif msg.command in ["""list of commands that only use COMMAND_INT"""]:
-                                self._mav_conn_gcs.mav.command_ack_send(
-                                    m.MAV_CMD_DO_SET_MODE,
-                                    m.MAV_RESULT_COMMAND_INT_ONLY,
-                                    255,
-                                    0,
-                                    0, # Target system FIXME
-                                    0, # Target component FIXME
-                                )
-
-                            else:
-                                self._mav_conn_gcs.mav.command_ack_send(
-                                    m.MAV_CMD_DO_SET_MODE,
-                                    m.MAV_RESULT_UNSUPPORTED,
-                                    255,
-                                    0,
-                                    0, # Target system FIXME
-                                    0, # Target component FIXME
-                                )
-                        
-                        elif msg.get_type() == 'COMMAND_INT':
-                            if msg.command == """command""":
-                                pass
-
-                            elif msg.command in [m.MAV_CMD_DO_SET_MODE]:
-                                self._mav_conn_gcs.mav.command_ack_send(
-                                    m.MAV_CMD_DO_SET_MODE,
-                                    m.MAV_RESULT_COMMAND_LONG_ONLY,
-                                    255,
-                                    0,
-                                    0, # Target system FIXME
-                                    0, # Target component FIXME
-                                )
-
-                            else:
-                                self._mav_conn_gcs.mav.command_ack_send(
-                                    m.MAV_CMD_DO_SET_MODE,
-                                    m.MAV_RESULT_UNSUPPORTED,
-                                    255,
-                                    0,
-                                    0, # Target system FIXME
-                                    0, # Target component FIXME
-                                )
-
-                await asyncio.sleep(0)
-
-            except asyncio.exceptions.CancelledError:
-                self.main.stop.set()
-                raise
-            except KeyboardInterrupt:
-                self.main.stop.set()
-            except Exception as e:
-                logging.error(f'Error in Controller (RX): {e}')
-
-        logging.debug('Closing Controller (RX)')
+                            elif msg.get_type() == 'COMMAND_INT':
+                                if msg.command == 'MAV_CMD': # TODO
+                                    pass
+                                elif msg.command in [m.MAV_CMD_DO_SET_MODE]:
+                                    self._mav_conn_gcs.mav.command_ack_send(
+                                        m.MAV_CMD_DO_SET_MODE,
+                                        m.MAV_RESULT_COMMAND_LONG_ONLY,
+                                        255,
+                                        0,
+                                        0, # TODO: Target system
+                                        0, # TODO: Target component
+                                    )
+                                else:
+                                    self._mav_conn_gcs.mav.command_ack_send(
+                                        m.MAV_CMD_DO_SET_MODE,
+                                        m.MAV_RESULT_UNSUPPORTED,
+                                        255,
+                                        0,
+                                        0, # TODO: Target system
+                                        0, # TODO: Target component
+                                    )
+                    try:
+                        await asyncio.sleep(0)
+                    except asyncio.exceptions.CancelledError:
+                        self.main.stop.set()
+                        raise
+                except Exception as e:
+                    logging.error(f'Error in Controller (RX): {e}')
+        except KeyboardInterrupt:
+            self.main.stop.set()
+            raise
+        finally:
+            logging.debug('Closing Controller (RX)')
 
     async def tx(self) -> None:
-
-        # Used for transmitting continuous messages,
-        # other transmissions should be called as needed
-                
+        """Used for transmitting continuous messages"""
         logging.debug('Starting Controller (TX)')
 
-        while not self.main.stop.is_set():
-            try:
-                # self._mav_conn_gcs.msg_send(None)
-                await asyncio.sleep(1 / self._txfreq)
+        try:
+            while not self.main.stop.is_set():
+                try:
+                    pass # self._mav_conn_gcs.msg_send(None)
 
-            except asyncio.exceptions.CancelledError:
-                self.main.stop.set()
-                raise
-            except KeyboardInterrupt:
-                self.main.stop.set()
-            except Exception as e:
-                logging.error(f'Error in Controller (TX): {e}')
-
-        logging.debug('Closing Controller (TX)')
+                    try:
+                        await asyncio.sleep(1 / self._txfreq)
+                    except asyncio.exceptions.CancelledError:
+                        self.main.stop.set()
+                        raise
+                except Exception as e:
+                    logging.error(f'Error in Controller (TX): {e}')
+        except KeyboardInterrupt:
+            self.main.stop.set()
+            raise
+        finally:
+            logging.debug('Closing Controller (TX)')
 
     async def heartbeat(self) -> None:
-
-        # Used for transmitting eternal messages,
-        # other transmissions should be called as needed
-                
         logging.debug('Starting Controller (Heartbeat)')
 
-        while not self.main.stop.is_set():
-            try:
-                self._mav_conn_gcs.mav.heartbeat_send(
-                    m.MAV_TYPE_VTOL_RESERVED4, # 24
-                    m.MAV_AUTOPILOT_GENERIC_WAYPOINTS_AND_SIMPLE_NAVIGATION_ONLY,
-                    int(self.main.state.mode),
-                    int(self.main.state.custom_mode),
-                    int(self.main.state.state)
-                )
-                
-                logging.debug('TX Heartbeat')
-                
-                await asyncio.sleep(1 / self._heartbeatfreq)
+        try:
+            while not self.main.stop.is_set():
+                try:
+                    self._mav_conn_gcs.mav.heartbeat_send(
+                        m.MAV_TYPE_VTOL_RESERVED4, # 24
+                        m.MAV_AUTOPILOT_GENERIC_WAYPOINTS_AND_SIMPLE_NAVIGATION_ONLY,
+                        int(self.main.state.mode),
+                        int(self.main.state.custom_mode),
+                        int(self.main.state.state)
+                    )
+                    
+                    logging.debug('TX Heartbeat')
 
-            except asyncio.exceptions.CancelledError:
-                self.main.stop.set()
-                raise
-            except KeyboardInterrupt:
-                self.main.stop.set()
-            except Exception as e:
-                logging.error(f'Error in Controller (Heartbeat): {e}')
-
-        self._mav_conn_gcs.close()
-        logging.debug('Closing Controller (Heartbeat)')
+                    try:
+                        await asyncio.sleep(1 / self._heartbeatfreq)
+                    except asyncio.exceptions.CancelledError:
+                        self.main.stop.set()
+                        raise
+                except Exception as e:
+                    logging.error(f'Error in Controller (Heartbeat): {e}')
+        except KeyboardInterrupt:
+            self.main.stop.set()
+            raise
+        finally:
+            logging.debug('Closing Controller (Heartbeat)')
 
     def close(self) -> None:
         self._mav_conn_gcs.close()
@@ -790,10 +760,8 @@ class Controller:
 
 
 class Main:
-
-    def __init__(self, systemid:int=1, config:str='./config.ini') -> None:
-
-        assert (isinstance(systemid, int)) and (systemid > 0) and (systemid.bit_length() <= 8), "System ID must be UINT8"
+    def __init__(self, systemid: int = 1, config: str = './config.ini') -> None:
+        assert isinstance(systemid, int) and systemid>0 and systemid.bit_length()<=8, 'System ID must be UINT8'
 
         self.systemid = systemid
 
@@ -808,31 +776,32 @@ class Main:
 
         self.state = g(m.MAV_STATE_UNINIT, m.MAV_MODE_PREFLIGHT, g.CUSTOM_MODE_UNINIT, g.CUSTOM_SUBMODE_UNINIT, self.boot)
 
-    async def _graph(self, name:str='0.0', freq:int=10) -> None:
-
+    async def _graph(self, name: str = '0.0', freq: int = 10) -> None:
         import ext.grapher as grapher
 
         self._grapher = grapher.Grapher(deque_len=50)
 
-        while not self.stop.is_set():
-            try:
-                self._grapher.add(eval(name))
-                self._grapher.graph()
-                await asyncio.sleep(1 / freq)
+        try:
+            while not self.stop.is_set():
+                try:
+                    self._grapher.add(eval(name))
+                    self._grapher.graph()
 
-            except asyncio.exceptions.CancelledError:
-                self.stop.set()
-                raise
-            except KeyboardInterrupt:
-                self.stop.set()
-            except Exception as e:
-                logging.error(f'Error in Grapher: {e}')
+                    try:
+                        await asyncio.sleep(1 / freq)
+                    except asyncio.exceptions.CancelledError:
+                        self.stop.set()
+                        raise
+                except Exception as e:
+                    logging.error(f'Error in Grapher: {e}')
+        except KeyboardInterrupt:
+            self.stop.set()
+            raise
+        finally:
+            self._grapher.close()
+            logging.info('Closing Grapher')
 
-        self._grapher.close()
-        logging.info('Closing Grapher')
-
-    async def run(self, graph:str=None) -> None:
-
+    async def run(self, graph: str = None) -> None:
         self.controller = Controller(self)
         self.io = MainIO(self)
         self.processor = Processor(self)
@@ -844,7 +813,7 @@ class Main:
 
         try:
             await self.boot.wait()
-        except asyncio.exceptions.CancelledError or KeyboardInterrupt:
+        except asyncio.exceptions.CancelledError:
             controller_manager.cancel()
             await asyncio.sleep(0)
             logging.warning(f'Never booted, closing instance #{self.systemid}')
@@ -853,10 +822,8 @@ class Main:
         logging.warning(f'Booting instance #{self.systemid}...')
 
         boot_tasks = [
-
             asyncio.create_task(self.processor.boot()),
             asyncio.create_task(self.io.boot()),
-
         ]
 
         try:
@@ -874,10 +841,8 @@ class Main:
             self.state.inc_mode()
 
         tasks = [
-
             asyncio.create_task(self.processor.run()),
             asyncio.create_task(self.io.run()),
-
         ]
 
         if graph is not None: 
@@ -886,12 +851,12 @@ class Main:
 
         try:
             await asyncio.gather(*tasks)
-        except asyncio.exceptions.CancelledError: 
+        except asyncio.exceptions.CancelledError:
             self.stop.set()
 
         logging.warning(f'Closing instance #{self.systemid}')
 
-if __name__ == "__main__":
 
-    main = Main(132)
+if __name__ == '__main__':
+    main = Main(201)
     asyncio.run(main.run(graph='main.rxdata.att.rollspeed'))
