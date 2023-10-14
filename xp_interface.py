@@ -9,19 +9,19 @@ import time
 import datetime
 import calendar
 from configparser import ConfigParser
-from pymavlink import mavutil
 import shutil
 
 os.environ['CYPHAL_PATH']='./data_types/custom_data_types;./data_types/public_regulated_data_types'
 os.environ['PYCYPHAL_PATH']='./pycyphal_generated'
 os.environ['UAVCAN__DIAGNOSTIC__SEVERITY'] = '2'
-
 import pycyphal
 import pycyphal.application
 import uavcan_archived
 from uavcan_archived.equipment import actuator, esc, ahrs, gnss, range_sensor, air_data
 import uavcan
 
+os.environ['MAVLINK20'] = '1'
+from pymavlink import mavutil
 m = mavutil.mavlink
 
 config = ConfigParser()

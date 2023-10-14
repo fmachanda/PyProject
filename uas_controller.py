@@ -5,20 +5,19 @@ import numpy as np
 import math
 from configparser import ConfigParser
 from ext.pid import PID
-from pymavlink import mavutil
 from ext.state_manager import GlobalState as g
+
+os.environ['MAVLINK20'] = '1'
+from pymavlink import mavutil
+m = mavutil.mavlink
 
 os.environ['CYPHAL_PATH'] = './data_types/custom_data_types;./data_types/public_regulated_data_types'
 os.environ['PYCYPHAL_PATH'] = './pycyphal_generated'
-os.environ['MAVLINK20'] = '1'
-
 import pycyphal
 import pycyphal.application
 import uavcan_archived
 from uavcan_archived.equipment import actuator, esc, ahrs, gnss, range_sensor, air_data
 import uavcan
-
-m = mavutil.mavlink
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 logging.getLogger('pymavlink').setLevel(logging.ERROR)
@@ -551,15 +550,11 @@ class Controller:
         self._txfreq = tx_freq
         self._heartbeatfreq = heartbeat_freq
 
+        self._gcs_id = None
         self._mav_conn_gcs = mavutil.mavlink_connection(self.main.config.get('mavlink', 'mavlink_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1)
         assert isinstance(self._mav_conn_gcs, mavutil.mavfile) # TODO: remove
-
-        self._gcs_id = None
-
         import key
-        self.__key = key.KEY # TODO: mangled is not secure
-
-        self._mav_conn_gcs.setup_signing(self.__key.encode('utf-8'))
+        self._mav_conn_gcs.setup_signing(key.KEY.encode('utf-8'))
 
     async def manager(self) -> None:
         asyncio.create_task(self.heartbeat())
@@ -585,6 +580,27 @@ class Controller:
             self.close()
 
     async def rx(self) -> None:
+        """Recieve messages from GCS over mavlink.
+        
+        'if' statements structure
+        ├── HEARTBEAT
+        ├── BAD_DATA
+        └── * Target messages
+            ├── CHANGE_OPERATOR_CONTROL
+            └── * GCS messages
+                ├── COMMAND_LONG
+                    ├── DO_SET_MODE
+                    ├── DO_CHANGE_ALTITUDE
+                    ├── DO_CHANGE_SPEED
+                    ├── * Command int only
+                    └── * Command unsupported
+                └── COMMAND_INT
+                    ├── DO_REPOSITION
+                    ├── NAV_TAKEOFF
+                    ├── NAV_VTOL_TAKEOFF
+                    ├── * Command long only
+                    └── * Command unsupported
+        """
         logging.debug('Starting Controller (RX)')
 
         try:
@@ -592,104 +608,98 @@ class Controller:
                 try:
                     msg = self._mav_conn_gcs.recv_msg()
 
-                    # General messages
-                    if msg is not None and msg.get_type() == 'HEARTBEAT':
-                        logging.debug(f'Heartbeat message from link #{msg.get_srcSystem()}')
-                    elif msg is not None and msg.get_type() == 'BAD_DATA':
-                        pass
-                    
-                    # Specific messages
-                    elif msg is not None and msg.target_system == self.main.systemid:
-                        # Connection
-                        if msg.get_type() == 'CHANGE_OPERATOR_CONTROL':
-                            
-                            if msg.control_request == 0 and msg.passkey==self.__key:
-                                if self._gcs_id is None or self._gcs_id==msg.get_srcSystem():
-                                    # Accepted
-                                    if self._gcs_id!=msg.get_srcSystem():
-                                        logging.info(f'Accepting control request from GCS ({msg.get_srcSystem()})')
-                                    self._gcs_id = msg.get_srcSystem()
-                                    self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
-
-                                else:
-                                    # Already controlled
-                                    logging.info(f'Rejecting second control request from {msg.get_srcSystem()}')
-                                    self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 3)
-
-                            elif msg.control_request == 1 and msg.passkey==self.__key:# and self._gcs_id is not None:
-                                # Accepted (released)
-                                logging.info(f'Releasing from GCS ({self._gcs_id})')
-                                self._gcs_id = None
-                                self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
-
-                            else:
-                                # Bad key
-                                logging.info(f'Bad key in GCS control request')
-                                self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 1)
-
-                        # GCS messages
-                        if msg.get_srcSystem() == self._gcs_id:
-                            if msg.get_type() == 'COMMAND_LONG':
-                                if msg.command == m.MAV_CMD_DO_SET_MODE:
-                                    logging.info('Mode change requested')
-                                        
-                                    if self.main.state.set_mode(msg.param1, msg.param2, msg.param3): # TODO: Add safety check to verify message like below
-                                        self._mav_conn_gcs.mav.command_ack_send(
-                                            m.MAV_CMD_DO_SET_MODE,
-                                            m.MAV_RESULT_ACCEPTED,
-                                            255,
-                                            0,
-                                            0, # TODO: Target system
-                                            0, # TODO: Target component
-                                        )
+                    if msg is not None:
+                        # HEARTBEAT
+                        if msg.get_type() == 'HEARTBEAT':
+                            logging.debug(f'Heartbeat message from link #{msg.get_srcSystem()}')
+                        # BAD_DATA
+                        elif msg.get_type() == 'BAD_DATA':
+                            pass
+                        # Target messages
+                        elif msg.target_system == self.main.systemid:
+                            # CHANGE_OPERATOR_CONTROL
+                            if msg.get_type() == 'CHANGE_OPERATOR_CONTROL':
+                                import key
+                                if msg.control_request == 0 and msg.passkey==key.KEY:
+                                    if self._gcs_id is None or self._gcs_id==msg.get_srcSystem():
+                                        # Accepted
+                                        if self._gcs_id!=msg.get_srcSystem():
+                                            logging.info(f'Accepting control request from GCS ({msg.get_srcSystem()})')
+                                        self._gcs_id = msg.get_srcSystem()
+                                        self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
                                     else:
-                                        self._mav_conn_gcs.mav.command_ack_send(
-                                            m.MAV_CMD_DO_SET_MODE,
-                                            m.MAV_RESULT_DENIED,
-                                            255,
-                                            0,
-                                            0, # TODO: Target system
-                                            0, # TODO: Target component
-                                        )
-                                elif msg.command in []: # List of commands that only use COMMAND_INT.
-                                    self._mav_conn_gcs.mav.command_ack_send(
-                                        m.MAV_CMD_DO_SET_MODE,
-                                        m.MAV_RESULT_COMMAND_INT_ONLY,
-                                        255,
-                                        0,
-                                        0, # TODO: Target system
-                                        0, # TODO: Target component
-                                    )
+                                        # Already controlled
+                                        logging.info(f'Rejecting second control request from {msg.get_srcSystem()}')
+                                        self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 3)
+                                elif msg.control_request == 1 and msg.passkey==key.KEY:# and self._gcs_id is not None:
+                                    # Accepted (released)
+                                    logging.info(f'Releasing from GCS ({self._gcs_id})')
+                                    self._gcs_id = None
+                                    self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
                                 else:
-                                    self._mav_conn_gcs.mav.command_ack_send(
-                                        m.MAV_CMD_DO_SET_MODE,
-                                        m.MAV_RESULT_UNSUPPORTED,
-                                        255,
-                                        0,
-                                        0, # TODO: Target system
-                                        0, # TODO: Target component
-                                    )
-                            elif msg.get_type() == 'COMMAND_INT':
-                                if msg.command == 'MAV_CMD': # TODO
-                                    pass
-                                elif msg.command in [m.MAV_CMD_DO_SET_MODE]:
-                                    self._mav_conn_gcs.mav.command_ack_send(
-                                        m.MAV_CMD_DO_SET_MODE,
-                                        m.MAV_RESULT_COMMAND_LONG_ONLY,
-                                        255,
-                                        0,
-                                        0, # TODO: Target system
-                                        0, # TODO: Target component
-                                    )
-                                else:
-                                    self._mav_conn_gcs.mav.command_ack_send(
-                                        m.MAV_CMD_DO_SET_MODE,
-                                        m.MAV_RESULT_UNSUPPORTED,
-                                        255,
-                                        0,
-                                        0, # TODO: Target system
-                                        0, # TODO: Target component
-                                    )
+                                    # Bad key
+                                    logging.info(f'Bad key in GCS control request')
+                                    self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 1)
+
+                            # GCS messages
+                            if msg.get_srcSystem() == self._gcs_id:
+                                # COMMAND_LONG
+                                if msg.get_type() == 'COMMAND_LONG':
+                                    # DO_SET_MODE
+                                    if msg.command == m.MAV_CMD_DO_SET_MODE:
+                                        logging.info('Mode change requested')
+                                            
+                                        if self.main.state.set_mode(msg.param1, msg.param2, msg.param3): # TODO: Add safety check to verify message like below
+                                            self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_SET_MODE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
+                                        else:
+                                            self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_SET_MODE, m.MAV_RESULT_DENIED, 255, 0, 0, 0)
+                                    # DO_CHANGE_ALTITUDE
+                                    elif msg.command == m.MAV_CMD_DO_CHANGE_ALTITUDE:
+                                        pass # TODO
+                                        try:
+                                            self.main.processor.spf_altitude = msg.param1 # TODO add checks!
+                                            logging.info(f'GCS commanded altitude setpoint to {msg.param1}')
+                                            self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
+                                        except AttributeError:
+                                            self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_RESULT_TEMPORARILY_REJECTED, 255, 0, 0, 0)
+                                    # DO_CHANGE_SPEED
+                                    elif msg.command == m.MAV_CMD_DO_CHANGE_SPEED:
+                                        pass # TODO
+                                        try:
+                                            self.main.processor.spf_ias = msg.param2 # TODO add checks!
+                                            logging.info(f'GCS commanded speed setpoint to {msg.param2}')
+                                            self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_SPEED, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
+                                        except AttributeError:
+                                            self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_SPEED, m.MAV_RESULT_TEMPORARILY_REJECTED, 255, 0, 0, 0)
+                                    # Command int only
+                                    elif msg.command in [m.CMD_DO_REPOSITION, m.CMD_NAV_TAKEOFF, m.MAV_CMD_NAV_VTOL_TAKEOFF, m.MAV_CMD_NAV_LAND, m.MAV_CMD_NAV_VTOL_LAND]:
+                                        self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_COMMAND_INT_ONLY, 255, 0, 0, 0)
+                                    # Command unsupported
+                                    else:
+                                        self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, 0, 0)
+                                elif msg.get_type() == 'COMMAND_INT':
+                                    # DO_REPOSITION
+                                    if msg.command == m.MAV_CMD_DO_REPOSITION: 
+                                        pass # TODO
+                                    # NAV_TAKEOFF
+                                    elif msg.command == m.MAV_CMD_NAV_TAKEOFF:
+                                        pass # TODO
+                                    # NAV_VTOL_TAKEOFF
+                                    elif msg.command == m.MAV_CMD_NAV_VTOL_TAKEOFF:
+                                        pass # TODO
+                                    # NAV_LAND
+                                    elif msg.command == m.MAV_CMD_NAV_LAND:
+                                        pass # TODO
+                                    # NAV_VTOL_LAND
+                                    elif msg.command == m.MAV_CMD_NAV_VTOL_LAND:
+                                        pass # TODO
+                                    # Command long only
+                                    elif msg.command in [m.MAV_CMD_DO_SET_MODE, m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_CMD_DO_CHANGE_SPEED]:
+                                        self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_COMMAND_LONG_ONLY, 255, 0, 0, 0)
+                                    # Command unsupported
+                                    else:
+                                        self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, 0, 0)
+
                     try:
                         await asyncio.sleep(0)
                     except asyncio.exceptions.CancelledError:
@@ -858,5 +868,6 @@ class Main:
 
 
 if __name__ == '__main__':
-    main = Main(201)
-    asyncio.run(main.run(graph='main.rxdata.att.rollspeed'))
+    import random
+    main = Main(random.randint(1, 255))
+    asyncio.run(main.run(graph='main.processor.spf_altitude'))

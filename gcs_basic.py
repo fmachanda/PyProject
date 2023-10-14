@@ -3,11 +3,10 @@ import asyncio
 import logging
 import time
 from configparser import ConfigParser
-from pymavlink import mavutil
-
-m = mavutil.mavlink
 
 os.environ['MAVLINK20'] = '1'
+from pymavlink import mavutil
+m = mavutil.mavlink
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 logging.getLogger('pymavlink').setLevel(logging.ERROR)
@@ -15,13 +14,41 @@ logging.getLogger('pymavlink').setLevel(logging.ERROR)
 config = ConfigParser()
 config.read('./config.ini')
 
+import key
 systemid = 0
+
 mav_conn = mavutil.mavlink_connection(config.get('mavlink', 'mavlink_conn_gcs'), source_system=systemid)
+assert isinstance(mav_conn, mavutil.mavfile) # TODO: remove
+mav_conn.setup_signing(key.KEY.encode('utf-8'))
 
 ids = []
 
-import key
-mav_conn.setup_signing(key.KEY.encode('utf-8'))
+MAX_FLUSH_ITER = int(1e6)
+
+
+class MaxFlushIterationsExceeded(Exception):
+    def __init__(self, message=f'Messages still in buffer after {MAX_FLUSH_ITER} flush cycles'):
+        self.message = message
+        super().__init__(self.message)
+
+
+def _flush() -> None:
+    """Flush buffer
+    
+    Should not be run within a try: ... except Exception: ... statement
+
+    Raises
+    ------
+    MaxFlushIterationsExceeded
+        If the loop cycles more than MAX_FLUSH_ITER cycles.
+    """
+    for i in range(MAX_FLUSH_ITER):
+        msg = mav_conn.recv_match(blocking=False)
+        if msg is None:
+            logging.debug(f'Buffer flushed, {i} messages cleared')
+            break
+        elif i >= MAX_FLUSH_ITER-1:
+            raise MaxFlushIterationsExceeded
 
 
 class Connect:
@@ -34,16 +61,11 @@ class Connect:
         assert 0<target<256 and isinstance(target, int) and target!=systemid and target not in ids, 'System ID target must be unique UINT8'
 
         try:
-            # Flush buffer
-            while True:
-                msg = mav_conn.recv_match(blocking=False)
-                if msg is None:
-                    break
+            _flush()
             
             logging.warning(f'Connecting to #{target}...')
 
             mav_conn.mav.change_operator_control_send(target, 0, 0, key.KEY.encode('utf-8'))
-
             time.sleep(1)
 
             for i in range(timeout_cycles):
@@ -72,16 +94,12 @@ class Connect:
         except KeyboardInterrupt:
             self.close()
     
-    async def _command(self, name: str, *params, acknowledge: bool = True, period: float = 1) -> None:
+    async def _command(self, name: str, *params, acknowledge: bool = True, period: float = 1, timeout_cycles: int = 5) -> None:
         params_full = (list(params)+[0]*7)[:7]
         command = eval(f'm.MAV_CMD_{name}')
 
         try:
-            # Flush buffer
-            while True:
-                msg = mav_conn.recv_match(blocking=False)
-                if msg is None:
-                    break
+            _flush()
             
             logging.warning(f'{name} sent to #{self.target}...')
             logging.debug(f'    {name} params: {params}')
@@ -103,7 +121,7 @@ class Connect:
             await asyncio.sleep(period)
 
             if acknowledge:
-                while True:
+                for i in range(timeout_cycles):
                     msg = mav_conn.recv_msg()
 
                     if msg is not None and msg.get_type()=='COMMAND_ACK' and msg.get_srcSystem()==self.target and msg.target_system==systemid and msg.command==command:
@@ -134,19 +152,18 @@ class Connect:
                     )
 
                     await asyncio.sleep(period)
+
+                    if i >= timeout_cycles-1:
+                        logging.warning(f'{name} on #{self.target} failed (timeout)')
         except KeyboardInterrupt:
             self.close()
 
-    async def _command_int(self, name: str, *params, acknowledge: bool = True, period: float = 1, frame: int = m.MAV_FRAME_GLOBAL) -> None:
+    async def _command_int(self, name: str, *params, acknowledge: bool = True, period: float = 1, timeout_cycles: int = 5, frame: int = m.MAV_FRAME_GLOBAL) -> None:
             params_full = (list(params)+[0]*7)[:7]
             command = eval(f'm.MAV_CMD_{name}')
 
             try:
-                # Flush buffer
-                while True:
-                    msg = mav_conn.recv_match(blocking=False)
-                    if msg is None:
-                        break
+                _flush()
                 
                 logging.warning(f'{name} sent to #{self.target}...')
                 logging.debug(f'    {name} params: {params}')
@@ -169,7 +186,7 @@ class Connect:
                 await asyncio.sleep(period)
 
                 if acknowledge:
-                    while True:
+                    for i in range(timeout_cycles):
                         msg = mav_conn.recv_msg()
 
                         if msg is not None and msg.get_type()=='COMMAND_ACK' and msg.get_srcSystem()==self.target and msg.target_system==systemid and msg.command==command:
@@ -201,30 +218,48 @@ class Connect:
                         )
 
                         await asyncio.sleep(period)
+
+                        if i >= timeout_cycles-1:
+                            logging.warning(f'{name} on #{self.target} failed (timeout)')
             except KeyboardInterrupt:
                 self.close()
 
     def boot(self) -> None:
+        logging.info('Calling boot()')
         asyncio.run(self._command('DO_SET_MODE', m.MAV_MODE_PREFLIGHT, 1, 10))
 
     def set_mode(self, mode: int, custom_mode: int, custom_submode: int) -> None:
+        logging.info('Calling set_mode()')
         asyncio.run(self._command('DO_SET_MODE', mode, custom_mode, custom_submode))
 
     def set_alt(self, alt: float) -> None:
+        logging.info('Calling set_alt()')
         asyncio.run(self._command('DO_CHANGE_ALTITUDE', alt, m.MAV_FRAME_GLOBAL_TERRAIN_ALT))
 
     def set_speed(self, airspeed: float) -> None:
+        logging.info('Calling set_speed()')
         asyncio.run(self._command('DO_CHANGE_SPEED', m.SPEED_TYPE_AIRSPEED, airspeed, -1))
 
     def reposition(self, latitude: float, longitude: float, altitude: float, speed: float = -1, radius: float = 0, yaw: float = 1):
+        logging.info('Calling reposition()')
         asyncio.run(self._command_int('DO_REPOSITION', speed, 0, radius, yaw, latitude, longitude, altitude))
 
     def f_takeoff(self, latitude: float, longitude: float, altitude: float, yaw: float = float('nan'), pitch: float = 10):
+        logging.info('Calling f_takeoff()')
         asyncio.run(self._command_int('NAV_TAKEOFF', pitch, 0,0, yaw, latitude, longitude, altitude))
 
     def v_takeoff(self, latitude: float, longitude: float, altitude: float, transit_heading: float = m.VTOL_TRANSITION_HEADING_TAKEOFF, yaw: float = float('nan')):
-        asyncio.run(self._command_int('NAV_TAKEOFF', 0, transit_heading, 0, yaw, latitude, longitude, altitude))
+        logging.info('Calling v_takeoff()')
+        asyncio.run(self._command_int('NAV_VTOL_TAKEOFF', 0, transit_heading, 0, yaw, latitude, longitude, altitude))
+    
+    def f_land(self, latitude: float, longitude: float, altitude: float, abort_alt: float = 0, yaw: float = float('nan')):
+        logging.info('Calling f_land()')
+        asyncio.run(self._command_int('NAV_LAND', abort_alt, m.PRECISION_LAND_MODE_DISABLED, 0, yaw, latitude, longitude, altitude))
 
+    def v_land(self, latitude: float, longitude: float, altitude: float, approch_alt: float = float('nan'), yaw: float = float('nan')):
+        logging.info('Calling v_land()')
+        asyncio.run(self._command_int('NAV_VTOL_LAND', m.NAV_VTOL_LAND_OPTIONS_DEFAULT, 0, approch_alt, yaw, latitude, longitude, altitude))
+    
     async def _heartbeat(self) -> None:
         while True:
             try:
@@ -244,11 +279,10 @@ class Connect:
                 raise
 
     def close(self) -> None:
-        # Flush buffer
-        while True:
-            msg = mav_conn.recv_match(blocking=False)
-            if msg is None:
-                break
+        try:
+            _flush()
+        except MaxFlushIterationsExceeded:
+            pass
 
         try:
             ids.remove(self.target)
