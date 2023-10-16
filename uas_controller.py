@@ -4,8 +4,8 @@ import logging
 import numpy as np
 import math
 from configparser import ConfigParser
-from ext.pid import PID
-from ext.state_manager import GlobalState as g
+from lib.pid import PID
+from lib.state_manager import GlobalState as g
 
 os.environ['MAVLINK20'] = '1'
 from pymavlink import mavutil
@@ -431,6 +431,7 @@ class Processor:
 
     async def boot(self) -> None:
         # TODO: do boot stuff here, maybe read a different .ini?
+        self.main.state.inc_mode()
         await asyncio.sleep(0)
 
     # region Calculations
@@ -551,7 +552,7 @@ class Controller:
         self._heartbeatfreq = heartbeat_freq
 
         self._gcs_id = None
-        self._mav_conn_gcs = mavutil.mavlink_connection(self.main.config.get('mavlink', 'mavlink_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1)
+        self._mav_conn_gcs = mavutil.mavlink_connection(self.main.config.get('mavlink', 'mavlink_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1, input=False, autoreconnect=True)
         assert isinstance(self._mav_conn_gcs, mavutil.mavfile) # TODO: remove
         import key
         self._mav_conn_gcs.setup_signing(key.KEY.encode('utf-8'))
@@ -604,9 +605,20 @@ class Controller:
         logging.debug('Starting Controller (RX)')
 
         try:
+            i=1
             while not self.main.stop.is_set():
                 try:
-                    msg = self._mav_conn_gcs.recv_msg()
+                    try:
+                        msg = self._mav_conn_gcs.recv_msg()
+                    except ConnectionError:
+                        try:
+                            logging.debug('Controller (rx) connection refused')
+                            await asyncio.sleep(0)
+                        except asyncio.exceptions.CancelledError:
+                            self.main.stop.set()
+                            raise
+                        finally:
+                            continue
 
                     if msg is not None:
                         # HEARTBEAT
@@ -787,7 +799,7 @@ class Main:
         self.state = g(m.MAV_STATE_UNINIT, m.MAV_MODE_PREFLIGHT, g.CUSTOM_MODE_UNINIT, g.CUSTOM_SUBMODE_UNINIT, self.boot)
 
     async def _graph(self, name: str = '0.0', freq: int = 10) -> None:
-        import ext.grapher as grapher
+        import lib.grapher as grapher
 
         self._grapher = grapher.Grapher(deque_len=50)
 
@@ -844,10 +856,9 @@ class Main:
             logging.warning(f'Ctrl-C during boot cycle, closing instance #{self.systemid}')
             quit()
 
-        self.state.inc_mode()
         logging.warning(f'Boot successful on #{self.systemid}')
 
-        for _ in range(6):
+        for _ in range(5):
             self.state.inc_mode()
 
         tasks = [
@@ -870,4 +881,4 @@ class Main:
 if __name__ == '__main__':
     import random
     main = Main(random.randint(1, 255))
-    asyncio.run(main.run(graph='main.processor.spf_altitude'))
+    asyncio.run(main.run())#graph='main.processor.spf_altitude'))

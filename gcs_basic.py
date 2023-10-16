@@ -3,6 +3,7 @@ import asyncio
 import logging
 import time
 from configparser import ConfigParser
+from typing import Any
 
 os.environ['MAVLINK20'] = '1'
 from pymavlink import mavutil
@@ -16,52 +17,46 @@ config.read('./config.ini')
 
 import key
 systemid = 0
-
-mav_conn = mavutil.mavlink_connection(config.get('mavlink', 'mavlink_conn_gcs'), source_system=systemid)
-assert isinstance(mav_conn, mavutil.mavfile) # TODO: remove
-mav_conn.setup_signing(key.KEY.encode('utf-8'))
-
 ids = []
+MAV_CONN_OPEN = False
+MAX_FLUSH_BUFFER = int(1e6)
 
-MAX_FLUSH_ITER = int(1e6)
 
-
-class MaxFlushIterationsExceeded(Exception):
-    def __init__(self, message=f'Messages still in buffer after {MAX_FLUSH_ITER} flush cycles'):
+class PreExistingConnection(Exception):
+    def __init__(self, message=f'A connection is already stored to this instance. Run Connect.close() method first.'):
         self.message = message
         super().__init__(self.message)
 
 
-def _flush() -> None:
-    """Flush buffer
-    
-    Should not be run within a try: ... except Exception: ... statement
-
-    Raises
-    ------
-    MaxFlushIterationsExceeded
-        If the loop cycles more than MAX_FLUSH_ITER cycles.
-    """
-    for i in range(MAX_FLUSH_ITER):
+def flush_buffer() -> None:
+    """Buffer flusher limited by MAX_FLUSH_BUFFER cycles"""
+    for i in range(MAX_FLUSH_BUFFER):
         msg = mav_conn.recv_match(blocking=False)
         if msg is None:
             logging.debug(f'Buffer flushed, {i} messages cleared')
             break
-        elif i >= MAX_FLUSH_ITER-1:
-            raise MaxFlushIterationsExceeded
+        elif i >= MAX_FLUSH_BUFFER-1:
+            logging.error(f'Messages still in buffer after {MAX_FLUSH_BUFFER} flush cycles')
+
+
+def check_mav_conn() -> None:
+    global mav_conn, MAV_CONN_OPEN
+    if not MAV_CONN_OPEN:
+        logging.info('Opening mav_conn')
+        mav_conn = mavutil.mavlink_connection(config.get('mavlink', 'mavlink_conn_gcs'), source_system=systemid, input=True)
+        mav_conn.setup_signing(key.KEY.encode('utf-8'))
+        MAV_CONN_OPEN = True
 
 
 class Connect:
-    def __repr__(self) -> str:
-        self.close()
-        return 'Must store Connect instance'
-
-    def __init__(self, target: int, auto: bool = False, timeout_cycles: int = 5) -> None:
+    def __init__(self, target: int, timeout_cycles: int = 5) -> None:
         self.target = None
-        assert 0<target<256 and isinstance(target, int) and target!=systemid and target not in ids, 'System ID target must be unique UINT8'
+        assert 0<target<256 and isinstance(target, int) and target!=systemid, 'System ID target must be unique UINT8'
+
+        check_mav_conn()
 
         try:
-            _flush()
+            flush_buffer()
             
             logging.warning(f'Connecting to #{target}...')
 
@@ -69,12 +64,16 @@ class Connect:
             time.sleep(1)
 
             for i in range(timeout_cycles):
-                msg = mav_conn.recv_msg()
+                try:
+                    msg = mav_conn.recv_msg()
+                except ConnectionResetError:
+                    raise PreExistingConnection
 
                 if msg is not None and msg.get_type()=='CHANGE_OPERATOR_CONTROL_ACK' and msg.get_srcSystem()==target and msg.gcs_system_id==systemid:
                     if msg.ack == 0:
                         self.target = target        
-                        ids.append(self.target)
+                        if target not in ids:
+                            ids.append(self.target)
                         logging.info(f'Connected to #{self.target}')
                         break
                     elif msg.ack in [1,2]:
@@ -99,7 +98,7 @@ class Connect:
         command = eval(f'm.MAV_CMD_{name}')
 
         try:
-            _flush()
+            flush_buffer()
             
             logging.warning(f'{name} sent to #{self.target}...')
             logging.debug(f'    {name} params: {params}')
@@ -163,7 +162,7 @@ class Connect:
             command = eval(f'm.MAV_CMD_{name}')
 
             try:
-                _flush()
+                flush_buffer()
                 
                 logging.warning(f'{name} sent to #{self.target}...')
                 logging.debug(f'    {name} params: {params}')
@@ -224,6 +223,7 @@ class Connect:
             except KeyboardInterrupt:
                 self.close()
 
+    # region user functions
     def boot(self) -> None:
         logging.info('Calling boot()')
         asyncio.run(self._command('DO_SET_MODE', m.MAV_MODE_PREFLIGHT, 1, 10))
@@ -259,7 +259,8 @@ class Connect:
     def v_land(self, latitude: float, longitude: float, altitude: float, approch_alt: float = float('nan'), yaw: float = float('nan')):
         logging.info('Calling v_land()')
         asyncio.run(self._command_int('NAV_VTOL_LAND', m.NAV_VTOL_LAND_OPTIONS_DEFAULT, 0, approch_alt, yaw, latitude, longitude, altitude))
-    
+    # endregion
+
     async def _heartbeat(self) -> None:
         while True:
             try:
@@ -279,15 +280,19 @@ class Connect:
                 raise
 
     def close(self) -> None:
-        try:
-            _flush()
-        except MaxFlushIterationsExceeded:
-            pass
+        global MAV_CONN_OPEN
+
+        flush_buffer()
 
         try:
             ids.remove(self.target)
             mav_conn.mav.change_operator_control_send(self.target, 1, 0, key.KEY.encode('utf-8'))
             logging.warning('Closing GCS')
+
+            if not ids:
+                logging.info('Closing mav_conn')
+                mav_conn.close()
+                MAV_CONN_OPEN = False
         except ValueError:
             logging.error('Connection not open')
 

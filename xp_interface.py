@@ -76,7 +76,7 @@ KT_TO_MS = 5.14444e-1
 
 class XPConnect:
     def __init__(self, freq: int = XP_FREQ) -> None:
-        import ext.find_xp as find_xp
+        import lib.find_xp as find_xp
 
         self._freq = freq
 
