@@ -2,5 +2,5 @@
 	path = data_types/public_regulated_data_types
 	url = https://github.com/OpenCyphal/public_regulated_data_types
 [submodule "UAS-Project-XP-Files"]
-	path = UAS-Project-XP-Files
+	path = fmuas-xp
 	url = https://github.com/fmachanda/UAS-Project-XP-Files.git
