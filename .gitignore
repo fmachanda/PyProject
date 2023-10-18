@@ -1,2 +1,5 @@
 fmuas.code-workspace
 pycyphal_generated
+.yakut
+.vscode
+__pycache__

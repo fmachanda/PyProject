@@ -1,7 +1,0 @@
-#
-# Lights control command.
-#
-
-SingleLightCommand.1.0[<=20] commands
-
-@sealed
