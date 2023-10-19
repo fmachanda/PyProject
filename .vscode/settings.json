@@ -1,0 +1,13 @@
+{
+    "Lua.diagnostics.globals": [
+        "vvi_cmd",
+        "sweep",
+        "find_dataref"
+    ],
+    "Lua.diagnostics.disable": [
+        "lowercase-global"
+    ],
+    "python.analysis.extraPaths": [
+        "./pycyphal_generated"
+    ]
+}

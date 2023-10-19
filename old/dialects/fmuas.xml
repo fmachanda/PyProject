@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<mavlink>
+
+    <include>ardupilotmega.xml</include>
+    <!-- <version>9</version> -->
+    <dialect>8</dialect>
+
+    <messages>
+        <message id="24000" name="AIR_DATA">
+            <description>ADC Data</description>
+            <field type="uint32_t" name="time_boot_ms" units="ms">Timestamp (time since system boot)</field>
+            <field type="float" name="ias" units="m/s">IAS</field>
+            <field type="float" name="aoa" units="deg">AOA</field>
+            <field type="float" name="slip" units="deg">Slip</field>
+        </message>
+    </messages>
+
+</mavlink>
