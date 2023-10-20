@@ -1,10 +1,22 @@
-import os
-import sys
+"""UAV Main
+
+This script connects to simulated hardware through realistic UAVCAN and 
+MAVLINK protocols. The script recieves data from various sensors and
+publishes desired servo and throttle settings. A method to connect with 
+a GCS over MAVLINK is provided. The UAV is designed to be autonomous.
+
+This script uses values from the common/CONFIG.ini file.
+
+See https://github.com/fmachanda/fmuas-main for more details.
+"""
+
 import asyncio
 import logging
-import numpy as np
 import math
+import os
+import sys
 from configparser import ConfigParser
+import numpy as np
 
 if os.path.basename(os.getcwd()) == 'uav':
     os.chdir('..')
@@ -13,14 +25,16 @@ os.environ['CYPHAL_PATH'] = './common/data_types/custom_data_types;./common/data
 os.environ['PYCYPHAL_PATH'] = './common/pycyphal_generated'
 os.environ['MAVLINK20'] = '1'
 
-from common.pid import PID
-from common.state_manager import GlobalState as g
 import pycyphal
 import pycyphal.application
-import uavcan_archived
-from uavcan_archived.equipment import actuator, esc, ahrs, gnss, range_sensor, air_data
 import uavcan
+import uavcan_archived
 from pymavlink import mavutil
+from uavcan_archived.equipment import actuator, ahrs, air_data, esc, gnss, range_sensor
+
+from common.pid import PID
+from common.state_manager import GlobalState as g
+
 m = mavutil.mavlink
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
@@ -34,18 +48,22 @@ system_ids = []
 
 
 class GlobalRx:
+    """Store sensor data."""
     class Time:
+        """Store clock data."""
         def __init__(self) -> None:
             self.time = 0.0
             self._last_time = 0.0
             self.dt = 0.0
         
         def dump(self, msg: uavcan.time.SynchronizedTimestamp_1) -> None:
+            """Store data from a message."""
             self._last_time = self.time
             self.time = msg.microsecond
             self.dt = self.time - self._last_time
 
     class Att:
+        """Store attitude data."""
         def __init__(self) -> None:
             self.time = 0.0
             self.pitch = 0.0
@@ -105,6 +123,7 @@ class GlobalRx:
             return roll, pitch, yaw # in radians
 
         def dump(self, msg: ahrs.Solution_1) -> None:
+            """Store data from a message."""
             self._last_time = self.time
             # self._last_pitch = self.pitch
             # self._last_pitchspeed = self.pitchspeed
@@ -123,6 +142,7 @@ class GlobalRx:
             self.dt = self.time - self._last_time
 
     class Alt:
+        """Store altimeter data."""
         def __init__(self) -> None:
             self.time = 0.0
             self.altitude = 0.0
@@ -134,6 +154,7 @@ class GlobalRx:
             self._last_vs = 0.0
 
         def dump(self, msg: range_sensor.Measurement_1) -> None:
+            """Store data from a message."""
             self._last_time = self.time
             self._last_altitude = self.altitude
             self._last_vs = self.vs
@@ -149,6 +170,7 @@ class GlobalRx:
             self.dt = self.time - self._last_time
 
     class Gps:
+        """Store GPS data."""
         def __init__(self) -> None:
             self.time = 0.0
             self.latitude = 0.0
@@ -168,6 +190,7 @@ class GlobalRx:
             # self._last_zspeed = 0.0
 
         def dump(self, msg: gnss.Fix2_1) -> None:
+            """Store data from a message."""
             self._last_time = self.time
             # self._last_latitude = self.latitude
             # self._last_longitude = self.longitude
@@ -185,6 +208,7 @@ class GlobalRx:
             self.dt = self.time - self._last_time
 
     class Ias:
+        """Store airspeed data."""
         def __init__(self) -> None:
             self.time = 0.0
             self.ias = 0.0
@@ -194,6 +218,7 @@ class GlobalRx:
             # self._last_ias = 0.0
 
         def dump(self, msg: air_data.IndicatedAirspeed_1, time: 'GlobalRx.Time.time') -> None:
+            """Store data from a message."""
             self._last_time = self.time
             # self._last_ias = self.ias
             
@@ -203,6 +228,7 @@ class GlobalRx:
             self.dt = self.time - self._last_time
 
     class Aoa:
+        """Store AOA data."""
         def __init__(self) -> None:
             self.time = 0.0
             self.aoa = 0.0
@@ -212,6 +238,7 @@ class GlobalRx:
             # self._last_aoa = 0.0
 
         def dump(self, msg: air_data.AngleOfAttack_1, time: 'GlobalRx.Time.time') -> None:
+            """Store data from a message."""
             self._last_time = self.time
             # self._last_aoa = self.aoa
             
@@ -221,6 +248,7 @@ class GlobalRx:
             self.dt = self.time - self._last_time
 
     class Slip:
+        """Store sideslip data."""
         def __init__(self) -> None:
             self.time = 0.0
             self.slip = 0.0
@@ -230,6 +258,7 @@ class GlobalRx:
             # self._last_slip = 0.0
 
         def dump(self, msg: air_data.Sideslip_1, time: 'GlobalRx.Time.time') -> None:
+            """Store data from a message."""
             self._last_time = self.time
             # self._last_slip = self.slip
             
@@ -249,6 +278,7 @@ class GlobalRx:
 
 
 class GlobalTx:
+    """Store control data before publishing."""
     def __init__(self) -> None:
         self.servo = actuator.ArrayCommand_1([
             actuator.Command_1(0, actuator.Command_1.COMMAND_TYPE_POSITION, 0.0), # Elevon 1
@@ -266,7 +296,48 @@ class GlobalTx:
 
 
 class MainIO:
+    """Main Input/Output class for UAVCAN communication.
+
+    This class serves as the interface for communication with UAVCAN devices and nodes.
+    It initializes and runs a UAVCAN node, subscribes to specific topics, and publishes control data.
+
+    Parameters
+    ----------
+    main : 'Main'
+        Reference to the main class.
+    freq : int, optional
+        Frequency setting for the UAVCAN node, by default DEFAULT_FREQ.
+
+    Attributes
+    ----------
+    main : 'Main'
+        Reference to the main class.
+
+    Methods
+    -------
+    boot()
+        Perform boot-related tasks.
+    run()
+        Execute control logic and handle UAVCAN communication.
+    close()
+        Close the MainIO node and release resources.
+    """
+
     def __init__(self, main:'Main', freq: int = DEFAULT_FREQ) -> None:
+        """Initialize the MainIO class.
+
+        Parameters
+        ----------
+        main : 'Main'
+            Reference to the main class.
+        freq : int, optional
+            Frequency setting, by default DEFAULT_FREQ.
+
+        Returns
+        -------
+        None
+        """
+
         self.main = main
         self._freq = freq
 
@@ -332,10 +403,12 @@ class MainIO:
         logging.info('MainIO initialized')
 
     async def boot(self) -> None:
+        """Perform boot-related tasks."""
         # TODO: do boot stuff here, maybe read a different .ini?
         await asyncio.sleep(0)
 
     async def run(self) -> None:
+        """Recieve subscripted data and write to publishers."""
         # region Subscriptions
         def on_time(msg: uavcan.time.SynchronizedTimestamp_1, _: pycyphal.transport.TransferFrom) -> None:
             self.main.rxdata.time.dump(msg)
@@ -391,12 +464,55 @@ class MainIO:
             self.close()
 
     def close(self) -> None:
+        """Close the instance."""
         logging.info('Closing MainIO') # TODO: Change to logging.debug()
         self._node.close()
 
 
 class Processor:
+    """The Processor class manages various calculations and control strategies for the system.
+
+    This class handles the calculation of servo commands and throttle outputs based on sensor data and
+    control setpoints.
+
+    Attributes
+    ----------
+    main : 'Main'
+        The main object representing the core of the system.
+    spf_altitude : float
+        Setpoint for altitude.
+    spf_heading : float
+        Setpoint for heading.
+    spf_ias : float
+        Setpoint for indicated airspeed.
+
+    Methods
+    -------
+    boot(self)
+        Initialize and perform boot-related tasks.
+    _calc_dyaw(self, value, setpoint)
+        Calculate yaw error.
+    _flight_servos(self)
+        Calculate flight servo commands.
+    _vtol_servos(self)
+        Calculate VTOL servo commands.
+    _flight_throttles(self)
+        Calculate flight throttle outputs.
+    _vtol_throttles(self)
+        Calculate VTOL throttle outputs.
+    run(self)
+        Run the Processor and execute control logic.
+    """
+
     def __init__(self, main: 'Main') -> None:
+        """Initialize the Processor class.
+
+        Parameters
+        ----------
+        main : 'Main'
+            The main object.
+        """
+
         self.main = main
 
         self._fservos = np.zeros(4, dtype=np.float16) # elevons*2, rudder, wingtilt
@@ -434,6 +550,7 @@ class Processor:
         self._outf_throttle = 0.0
 
     async def boot(self) -> None:
+        """Perform boot-related tasks."""
         # TODO: do boot stuff here, maybe read a different .ini?
         self.main.state.inc_mode()
         await asyncio.sleep(0)
@@ -441,12 +558,31 @@ class Processor:
     # region Calculations
     @staticmethod
     def _calc_dyaw(value: float, setpoint: float) -> float: # TODO: if negative radians sent by uavcan
+        """Calculate yaw error.
+
+        This static method calculates the yaw error based on a given value and setpoint, taking into account wraparound
+        at +/- pi radians.
+
+        Parameters
+        ----------
+        value : float
+            Current yaw value.
+        setpoint : float
+            Desired yaw setpoint.
+
+        Returns
+        -------
+        float
+            Yaw error.
+        """
+
         dyaw = value - setpoint
         dyaw = dyaw - 2*math.pi if dyaw > math.pi else dyaw
         dyaw = dyaw + 2*math.pi if dyaw <= -math.pi else dyaw
         return -dyaw
 
     def _flight_servos(self) -> np.ndarray:
+        """Calculate flight servo commands from sensors."""
         if self.main.rxdata.alt.dt > 0.0:
             self._spf_vpath = 0.0 # self._pidf_alt_vpa.cycle(self.main.rxdata.alt.altitude, self.spf_altitude, self.main.rxdata.alt.dt)
             self.main.rxdata.alt.dt = 0.0
@@ -486,10 +622,12 @@ class Processor:
         return self._fservos
 
     def _vtol_servos(self) -> np.ndarray:
-        """Calculate and write to self._vservos"""
+        """Calculate VTOL servo commands from sensors."""
+        
         return self._vservos
 
     def _flight_throttles(self) -> np.ndarray:
+        """Calculate flight throttle commands from sensors."""
         if self.main.rxdata.ias.dt > 0.0:
             self._outf_throttle = self._pidf_ias_out.cycle(self.main.rxdata.ias.ias, self.spf_ias, self.main.rxdata.ias.dt)
             self.main.rxdata.ias.dt = 0.0
@@ -499,11 +637,12 @@ class Processor:
         return self._fthrottles
 
     def _vtol_throttles(self) -> np.ndarray:
-        """Calculate and write to self._vthrottles"""
+        """Calculate VTOL throttle commands from sensors."""
         return self._vthrottles
     # endregion
 
     async def run(self) -> None:
+        """Calculate desired control positions."""
         logging.info('Starting Processor')
 
         try:
@@ -549,22 +688,48 @@ class Processor:
 
 
 class Controller:
+    """Controller class for managing communication with Ground Control Station (GCS).
+
+    Attributes
+    ----------
+    main : 'Main'
+        The Main instance to which this controller is associated.
+    _txfreq : int, optional
+        The transmission frequency (default is DEFAULT_FREQ).
+    _heartbeatfreq : int, optional
+        The heartbeat message transmission frequency (default is 1).
+    _gcs_id : None
+        The identifier for the GCS connection.
+    _mav_conn_gcs : mavutil.mavfile
+        The MAVLink connection to the GCS.
+    """
+
     def __init__(self, main: 'Main', tx_freq: int = DEFAULT_FREQ, heartbeat_freq: int = 1) -> None:
+        """Initialize a Controller instance.
+
+        Parameters
+        ----------
+        main : 'Main'
+            The Main instance to which this controller is associated.
+        tx_freq : int, optional
+            The transmission frequency (default is DEFAULT_FREQ).
+        heartbeat_freq : int, optional
+            The heartbeat message transmission frequency (default is 1).
+        """
+
         self.main = main
 
         self._txfreq = tx_freq
         self._heartbeatfreq = heartbeat_freq
 
         self._gcs_id = None
-        self._mav_conn_gcs = mavutil.mavlink_connection(self.main.config.get('mavlink', 'mavlink_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1, input=False, autoreconnect=True)
+        self._mav_conn_gcs = mavutil.mavlink_connection(self.main.config.get('mavlink', 'uav_gcs_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1, input=False, autoreconnect=True)
         assert isinstance(self._mav_conn_gcs, mavutil.mavfile) # TODO: remove
-        try:
-            import key as key
-        except ModuleNotFoundError:
-            import common.key as key
+        import common.key as key
         self._mav_conn_gcs.setup_signing(key.KEY.encode('utf-8'))
 
     async def manager(self) -> None:
+        """Manage the controller's various operations."""
         asyncio.create_task(self.heartbeat())
         asyncio.create_task(self.rx())
         asyncio.create_task(self.tx())
@@ -733,7 +898,7 @@ class Controller:
             logging.debug('Closing Controller (RX)')
 
     async def tx(self) -> None:
-        """Used for transmitting continuous messages"""
+        """Transmit continuous messages."""
         logging.debug('Starting Controller (TX)')
 
         try:
@@ -755,6 +920,7 @@ class Controller:
             logging.debug('Closing Controller (TX)')
 
     async def heartbeat(self) -> None:
+        """Periodically publish a heartbeat message."""
         logging.debug('Starting Controller (Heartbeat)')
 
         try:
@@ -784,13 +950,56 @@ class Controller:
             logging.debug('Closing Controller (Heartbeat)')
 
     def close(self) -> None:
+        """Close the instance."""
         self._mav_conn_gcs.close()
         logging.info('Closing Controller')
 
 
 class Main:
-    def __init__(self, systemid: int = 1, config: str = './common/config.ini') -> None:
-        assert isinstance(systemid, int) and systemid>0 and systemid.bit_length()<=8, 'System ID must be UINT8'
+    """Main class for handling the operation of a system.
+
+    Parameters
+    ----------
+    systemid : int, optional
+        The system ID for this instance (default is 1).
+    config : str, optional
+        The path to the configuration file (default is './common/CONFIG.ini').
+
+    Attributes
+    ----------
+    systemid : int
+        The system ID.
+    config : ConfigParser
+        The configuration parser.
+    boot : asyncio.Event
+        An event to signal the system boot.
+    stop : asyncio.Event
+        An event to signal the system to stop.
+    rxdata : GlobalRx
+        Global receive data.
+    txdata : GlobalTx
+        Global transmit data.
+    state : g
+        State information.
+    """
+
+    def __init__(self, systemid: int = 1, config: str = './common/CONFIG.ini') -> None:
+        """Initialize a Main instance.
+
+        Parameters
+        ----------
+        systemid : int, optional
+            The system ID for this instance (default is 1).
+        config : str, optional
+            The path to the configuration file (default is './common/CONFIG.ini').
+
+        Raises
+        ------
+        AssertionError
+            If the system ID is not a positive integer less than or equal to 255.
+        """
+
+        assert isinstance(systemid, int) and systemid > 0 and systemid.bit_length() <= 8, 'System ID must be UINT8'
 
         self.systemid = systemid
 
@@ -806,6 +1015,16 @@ class Main:
         self.state = g(m.MAV_STATE_UNINIT, m.MAV_MODE_PREFLIGHT, g.CUSTOM_MODE_UNINIT, g.CUSTOM_SUBMODE_UNINIT, self.boot)
 
     async def _graph(self, name: str = '0.0', freq: int = 10) -> None:
+        """Asynchronously collect and graph data.
+
+        Parameters
+        ----------
+        name : str, optional
+            The name of the data variable to graph (default is '0.0').
+        freq : int, optional
+            The graph update frequency in Hz (default is 10).
+        """
+
         import common.grapher as grapher
 
         self._grapher = grapher.Grapher(deque_len=50)
@@ -831,6 +1050,16 @@ class Main:
             logging.info('Closing Grapher')
 
     async def run(self, graph: str = None) -> None:
+        """Run the main system components.
+
+        Leaving graph set to default will not start a graphing window.
+
+        Parameters
+        ----------
+        graph : str, optional
+            The name of the variable to graph (default is None).
+        """
+
         self.controller = Controller(self)
         self.io = MainIO(self)
         self.processor = Processor(self)
@@ -873,7 +1102,7 @@ class Main:
             asyncio.create_task(self.io.run()),
         ]
 
-        if graph is not None: 
+        if graph is not None:
             logging.info('Grapher on')
             tasks.append(asyncio.create_task(self._graph(name=graph)))
 
@@ -883,7 +1112,6 @@ class Main:
             self.stop.set()
 
         logging.warning(f'Closing instance #{self.systemid}')
-
 
 if __name__ == '__main__':
     import random

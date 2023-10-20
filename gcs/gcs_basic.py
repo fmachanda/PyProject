@@ -1,7 +1,7 @@
-import os
-import sys
 import asyncio
 import logging
+import os
+import sys
 import time
 from configparser import ConfigParser
 from typing import Any
@@ -11,15 +11,17 @@ if os.path.basename(os.getcwd()) == 'gcs':
 sys.path.append(os.getcwd())
 os.environ['MAVLINK20'] = '1'
 
-import common.key as key
 from pymavlink import mavutil
+
+import common.key as key
+
 m = mavutil.mavlink
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 logging.getLogger('pymavlink').setLevel(logging.ERROR)
 
 config = ConfigParser()
-config.read('./common/config.ini')
+config.read('./common/CONFIG.ini')
 systemid = 0
 ids = []
 MAV_CONN_OPEN = False
@@ -47,7 +49,7 @@ def check_mav_conn() -> None:
     global mav_conn, MAV_CONN_OPEN
     if not MAV_CONN_OPEN:
         logging.info('Opening mav_conn')
-        mav_conn = mavutil.mavlink_connection(config.get('mavlink', 'mavlink_conn_gcs'), source_system=systemid, input=True)
+        mav_conn = mavutil.mavlink_connection(config.get('mavlink', 'gcs_uav_conn'), source_system=systemid, input=True)
         mav_conn.setup_signing(key.KEY.encode('utf-8'))
         MAV_CONN_OPEN = True
 

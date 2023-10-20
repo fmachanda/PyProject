@@ -1,16 +1,16 @@
-import os
-import sys
 import asyncio
-import logging
-import numpy as np
-import math
-import struct
-import socket
-import time
-import datetime
 import calendar
-from configparser import ConfigParser
+import datetime
+import logging
+import math
+import os
 import shutil
+import socket
+import struct
+import sys
+import time
+from configparser import ConfigParser
+import numpy as np
 
 if os.path.basename(os.getcwd()) == 'uav':
     os.chdir('..')
@@ -22,14 +22,15 @@ os.environ['MAVLINK20'] = '1'
 
 import pycyphal
 import pycyphal.application
-import uavcan_archived
-from uavcan_archived.equipment import actuator, esc, ahrs, gnss, range_sensor, air_data
 import uavcan
+import uavcan_archived
 from pymavlink import mavutil
+from uavcan_archived.equipment import actuator, ahrs, air_data, esc, gnss, range_sensor
+
 m = mavutil.mavlink
 
 config = ConfigParser()
-config.read('./common/config.ini')
+config.read('./common/CONFIG.ini')
 
 logging.basicConfig(level=logging.INFO)
 os.system('cls' if os.name == 'nt' else 'clear')
@@ -69,11 +70,10 @@ tx_data = [
     [b'fmuas/afcs/output/throttle4', 0.0],
 ]
 
+XP_FIND_TIMEOUT = 5
 TX_DATA_LAST_SERVO = 3 # Index of final servo dref before esc
-
 XP_FREQ = 60
 FREQ = 60
-
 FT_TO_M = 3.048e-1
 KT_TO_MS = 5.14444e-1
 
@@ -85,11 +85,7 @@ class XPConnect:
         self._freq = freq
 
         logging.info('Looking for X-Plane...')
-        try:
-            beacon=find_xp.find_xp(wait=0)
-        except KeyboardInterrupt:
-            logging.warning("Ctrl-C during 'find_xp' cycle, closing...")
-            quit()
+        beacon=find_xp.find_xp(wait=XP_FIND_TIMEOUT)
         self.X_PLANE_IP=beacon['ip']
         self.UDP_PORT=beacon['port']
         logging.warning('X-Plane found at IP: %s, port: %s' % (self.X_PLANE_IP,self.UDP_PORT))
@@ -970,7 +966,7 @@ class Camera:
 
         self.xp_path = config.get('xplane', 'xp_screenshot_path')
         
-        self.camera_mav_conn = mavutil.mavlink_connection(config.get('mavlink', 'camera_conn'))
+        self.camera_mav_conn = mavutil.mavlink_connection(config.get('mavlink', 'camera_uav_conn'))
         
         assert isinstance(id,int) and 0<id<256, 'Camera ID must be UINT8'
         self.id = id
@@ -1082,7 +1078,7 @@ class TestCamera:
 
         self.xp_path = config.get('xplane', 'xp_screenshot_path')
         
-        self.camera_mav_conn = mavutil.mavlink_connection(config.get('mavlink', 'camera_conn'))
+        self.camera_mav_conn = mavutil.mavlink_connection(config.get('mavlink', 'camera_uav_conn'))
 
         assert isinstance(id,int) and 0<id<256, 'Camera ID must be UINT8'
         self.id = id

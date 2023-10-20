@@ -2,7 +2,7 @@
 
 # fmuas-main
 
-> **Quick link**: [fmuas-xp][fmuas-xp-link]
+> Optional X-Plane files can be found at [fmuas-xp][fmuas-xp-link]
 
 **Table of Contents**
 * [Background](#background)
@@ -40,10 +40,10 @@ Initialize the [public_regulated_data_types][prdt-link] submodule
 git submodule update --init --recursive --remote
 ```
 
-X-Plane simulation requires the files from the [fmuas-xp][fmuas-xp-link] repo to be loaded into `/X-Plane 12/Aircraft`.
+X-Plane simulation requires the files from the [fmuas-xp][fmuas-xp-link] repo to be cloned into `/X-Plane 12/Aircraft`.
 
 ```bash
-git clone https://github.com/fmachanda/fmuas-xp.git <xplane-aircraft-directory>
+git clone https://github.com/fmachanda/fmuas-xp.git <aircraft-path>
 ```
 
 ## Important Files
@@ -52,33 +52,32 @@ git clone https://github.com/fmachanda/fmuas-xp.git <xplane-aircraft-directory>
 ├── fmuas-main 
     ├── ...
     ├── uav
-        ├── CONFIG.ini # You can change this!
-        ├── uav_main.py # You can run this!
-        └── xp_interface.py # You can run this!
+        ├── uav_main.py # Run this
+        └── xp_interface.py # Run this
     ├── gcs
-        ├── CONFIG.ini # You can change this!
-        ├── gcs_basic.py # Import this to a python terminal for CLI
-        └── gcs_gui.py # You can run this!
+        ├── gcs_basic.py # Use this in a python terminal
+        └── gcs_gui.py # Run this
     └── common
         ├──  data_types
-            ├── public_regulated_data_types # MUST INIT THIS SUBMODULE!
+            ├── public_regulated_data_types # INIT THIS SUBMODULE!
             └── ...
-        ├── MASTER_CONFIG.ini # DO NOT CHANGE THIS!
+        ├── CONFIG.ini # Change this
         ├── key.py # Shared mavlink encryption key
         └── ...
 └── fmuas-xp
 ```
 
 
-`uav_main.py` runs the UAV  
-`xp_interface.py` runs the connection with X-Plane 12  
-`gcs_gui.py` runs a GCS window  
-`gcs_basic.py` can be used as a [CLI](#gcs-command-line-interface) if imported in a python terminal  
-`CONFIG.ini` in `uav` and `gcs` contain customizable settings for UAV and GCS instances
-`MASTER_CONFIG.ini` contains development settings that should not be changed by most users
-`key.py` contains the shared custom key used by MAVLINK connections
+`uav/uav_main.py` runs the UAV  
+`uav/xp_interface.py` runs the connection with X-Plane 12  
 
-> The `KEY = ...` line in `key.py` can be modified to any desired key (length 25). If using separate folders for GCS and UAV instances, ensure that this key is the same for both.
+`gcs/gcs_gui.py` runs a GCS window  
+`gcs/gcs_basic.py` can be used as a [CLI](#gcs-command-line-interface) if imported in a python terminal  
+
+`common/CONFIG.ini` contains changeable settings for UAV and GCS instances  
+
+`key.py` contains the shared custom key used by MAVLINK connections
+> The `KEY = ...` line in `key.py` can be modified to any desired key (length 25). If using separate folders for GCS and UAV instances, ensure that this key is the same for both.  
 
 **Important:** `data_types/public_regulated_data_types` is a git [submodule][prdt-link] that must be initialized with:
 
@@ -139,7 +138,7 @@ Refer to the `gcs_basic.py` script for further documentation.
 
 *Previous commit history (commits before 10/12/2023) can be found at [fmuas-main-history](https://github.com/fmachanda/fmuas-main-history)*
 
-*Updated 10/19/2023*
+*Updated 10/20/2023*
 
 
 [prdt-link]: https://github.com/OpenCyphal/public_regulated_data_types
