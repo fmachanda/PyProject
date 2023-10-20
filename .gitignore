@@ -3,9 +3,4 @@ pycyphal_generated
 .yakut
 .vscode
 __pycache__
-lib/__pycache__
 .DS_Store
-data_types/.DS_Store
-old/.DS_Store
-old/imaging/test_images/.DS_Store
-lib/.DS_Store
