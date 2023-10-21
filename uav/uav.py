@@ -102,6 +102,7 @@ class GlobalRx:
             ValueError
                 If the input is not of length 4
             """
+            
             if len(q)!=4:
                 raise ValueError('Quaternion input must be tuple with length 4')
 

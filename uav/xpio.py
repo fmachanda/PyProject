@@ -37,26 +37,36 @@ os.system('cls' if os.name == 'nt' else 'clear')
 
 stop = asyncio.Event()
 
-rx_data = [
-    [b'fmuas/gpsins/roll', 0.0], # 0
-    [b'fmuas/gpsins/pitch', 0.0],
-    [b'fmuas/gpsins/yaw', 0.0],
-    [b'fmuas/gpsins/rollrate', 0.0],
-    [b'fmuas/gpsins/pitchrate', 0.0],
-    [b'fmuas/gpsins/yawrate', 0.0], # 5
-    [b'fmuas/radalt/altitude', 0.0],
-    [b'fmuas/gpsins/latitude', 0.0],
-    [b'fmuas/gpsins/longitude', 0.0],
-    [b'fmuas/gpsins/xspeed', 0.0],
-    [b'fmuas/gpsins/yspeed', 0.0], # 10
-    [b'fmuas/adc/ias', 0.0],
-    [b'fmuas/adc/aoa', 0.0],
-    [b'fmuas/adc/slip', 0.0],
-    [b'sim/time/paused', 1.0],
-    [b'sim/time/local_date_days', 0.0], #15
-    [b'sim/time/zulu_time_sec', 0.0],
-    [b'fmuas/clock/time', 0.0],
-]
+rx_data = {
+    b'fmuas/att/attitude_quaternion_x': 0.0, # 0
+    b'fmuas/att/attitude_quaternion_y': 0.0,
+    b'fmuas/att/attitude_quaternion_z': 0.0,
+    b'fmuas/att/attitude_quaternion_w': 0.0,
+    b'fmuas/att/rollrate': 0.0,
+    b'fmuas/att/pitchrate': 0.0,
+    b'fmuas/att/yawrate': 0.0,
+    b'fmuas/att/an': 0.0,
+    b'fmuas/att/ae': 0.0,
+    b'fmuas/att/ad': 0.0,
+
+    b'fmuas/gps/latitude': 0.0,
+    b'fmuas/gps/longitude': 0.0,
+    b'fmuas/gps/altitude': 0.0,
+    b'fmuas/gps/vn': 0.0,
+    b'fmuas/gps/ve': 0.0,
+    b'fmuas/gps/vd': 0.0,
+
+    b'fmuas/radalt/altitude': 0.0,
+
+    b'fmuas/adc/ias': 0.0,
+    b'fmuas/adc/aoa': 0.0,
+    b'fmuas/adc/slip': 0.0,
+    
+    b'sim/time/paused': 1.0,
+    b'sim/time/local_date_days': 0.0,
+    b'sim/time/zulu_time_sec': 0.0,
+    b'fmuas/clock/time': 0.0,
+}
 
 tx_data = [
     [b'fmuas/afcs/output/elevon1', 0.0],
@@ -95,8 +105,8 @@ class XPConnect:
         msg = struct.pack('<4sxf500s', b'DREF', 1.0, b'fmuas/python_running')
         self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
 
-        for index, dref in enumerate(rx_data):
-            msg = struct.pack('<4sxii400s', b'RREF', self._freq, index, dref[0])
+        for index, dref in enumerate(rx_data.keys()):
+            msg = struct.pack('<4sxii400s', b'RREF', self._freq, index, dref)
             self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
 
     async def run(self) -> None:
@@ -116,7 +126,7 @@ class XPConnect:
                             dref_info = data[(5 + 8 * i):(5 + 8 * (i + 1))]
                             (index, value) = struct.unpack('<if', dref_info)
                             if index < len(rx_data):
-                                rx_data[index][1] = value
+                                rx_data[list(rx_data.keys())[index]] = value
 
                     for index, dref in enumerate(tx_data):
                             msg = struct.pack('<4sxf500s', b'DREF', dref[1], dref[0])
@@ -138,8 +148,8 @@ class XPConnect:
     def close(self) -> None:
         logging.debug('Closing XPL')
 
-        for index, dref in enumerate(rx_data):
-            msg = struct.pack('<4sxii400s', b'RREF', 0, index, dref[0])
+        for index, dref in enumerate(rx_data.keys()):
+            msg = struct.pack('<4sxii400s', b'RREF', 0, index, dref)
             self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
         logging.info('Stopped listening for drefs')
 
@@ -182,15 +192,15 @@ class TestXPConnect:
             while not stop.is_set():
                 try:
                     self._time = time.time_ns()//1000 - self._boot_time
-                    rx_data[17][1] = time.time() - self._boot_time/1e6
+                    rx_data[b'fmuas/clock/time'] = time.time() - self._boot_time/1e6
 
                     if self.rx_indices is not None:
                         for i in self.rx_indices:
-                            rx_data[i][1] = 20*math.sin(self._time/2e6)
+                            rx_data[list(rx_data.keys())[i]] = 20*math.sin(self._time/2e6)
 
                     now = datetime.datetime.now()
-                    rx_data[16][1] = (now - now.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds()
-                    rx_data[14][1] = 0
+                    rx_data[b'sim/time/zulu_time_sec'] = (now - now.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds()
+                    rx_data[b'sim/time/paused'] = 0
 
                     try:
                         await asyncio.sleep(1 / self._freq)
@@ -452,33 +462,6 @@ class AttitudeSensor:
 
         self._node.start()
 
-    @staticmethod
-    def euler_to_quaternion(roll: float, pitch: float, yaw: float) -> tuple[float, float, float, float]:
-        """Convert an Euler angle to a quaternion. 
-        
-        Copied 10/2/2023 from automaticaddison.com
-        
-        Parameters
-        ----------
-        roll : float
-            The roll (rotation around x-axis) angle in radians
-        pitch : float
-            The pitch (rotation around y-axis) angle in radians
-        yaw : float
-            The yaw (rotation around z-axis) angle in radians
-        
-        Returns
-        -------
-        tuple
-            The orientation in quaternion x,y,z,w format
-        """
-        qx = np.sin(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) - np.cos(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
-        qy = np.cos(roll/2) * np.sin(pitch/2) * np.cos(yaw/2) + np.sin(roll/2) * np.cos(pitch/2) * np.sin(yaw/2)
-        qz = np.cos(roll/2) * np.cos(pitch/2) * np.sin(yaw/2) - np.sin(roll/2) * np.sin(pitch/2) * np.cos(yaw/2)
-        qw = np.cos(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) + np.sin(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
-        
-        return [qx, qy, qz, qw]
-
     async def run(self) -> None:
         """docstring placeholder"""
         def on_time(msg: uavcan.time.SynchronizedTimestamp_1, _: pycyphal.transport.TransferFrom) -> None:
@@ -490,12 +473,25 @@ class AttitudeSensor:
                 try:
                     m = ahrs.Solution_1(
                         uavcan_archived.Timestamp_1(self._time),
-                        [q for q in AttitudeSensor.euler_to_quaternion(math.radians(rx_data[0][1]), math.radians(rx_data[1][1]), math.radians(rx_data[2][1]))],
-                        [0.0],
-                        [math.radians(rad) for rad in [rx_data[3][1],rx_data[4][1],rx_data[5][1]]],
-                        [0.0],
-                        [0.0,0.0,0.0],
-                        [0.0]
+                        [
+                            rx_data[b'fmuas/att/attitude_quaternion_x'], 
+                            rx_data[b'fmuas/att/attitude_quaternion_y'], 
+                            rx_data[b'fmuas/att/attitude_quaternion_z'], 
+                            rx_data[b'fmuas/att/attitude_quaternion_w']
+                        ],
+                        [float('nan')],
+                        [
+                            rx_data[b'fmuas/att/rollrate'],
+                            rx_data[b'fmuas/att/pitchrate'],
+                            rx_data[b'fmuas/att/yawrate'],
+                        ],
+                        [float('nan')],
+                        [
+                            rx_data[b'fmuas/att/an'],
+                            rx_data[b'fmuas/att/ae'],
+                            rx_data[b'fmuas/att/ad'],
+                        ],
+                        [float('nan')]
                     )
 
                     try:
@@ -572,12 +568,12 @@ class AltitudeSensor:
                 try:
                     m = range_sensor.Measurement_1(
                         uavcan_archived.Timestamp_1(self._time),
-                        0,
-                        uavcan_archived.CoarseOrientation_1([0.0,0.0,0.0], True),
-                        1.5,
+                        0, # Sensor ID
+                        uavcan_archived.CoarseOrientation_1([0.0,0.0,0.0], True), # TODO
+                        1.5, # FOV
                         range_sensor.Measurement_1.SENSOR_TYPE_RADAR,
                         range_sensor.Measurement_1.READING_TYPE_VALID_RANGE,
-                        rx_data[6][1] * FT_TO_M
+                        rx_data[b'fmuas/radalt/altitude']
                     )
 
                     try:
@@ -666,20 +662,26 @@ class GPSSensor:
         try:
             while not stop.is_set():
                 try:
-                    gnss_time = int(1e6*(calendar.timegm(datetime.datetime.strptime(str(datetime.date.today().year), '%Y').timetuple()) + (1+rx_data[15][1])*86400 + rx_data[16][1]))
+                    gnss_time = int(1e6*(calendar.timegm(datetime.datetime.strptime(str(datetime.date.today().year), '%Y').timetuple())
+                                         + (1+rx_data[b'sim/time/local_date_days'])*86400
+                                         + rx_data[b'sim/time/zulu_time_sec']))
 
                     m = gnss.Fix2_1(
                         uavcan_archived.Timestamp_1(self._time),
                         uavcan_archived.Timestamp_1(gnss_time),
                         gnss.Fix2_1.GNSS_TIME_STANDARD_GPS,
                         gnss.Fix2_1.NUM_LEAP_SECONDS_UNKNOWN, # TODO
-                        int(rx_data[8][1]*1e8),
-                        int(rx_data[7][1]*1e8),
-                        0,
-                        0,
-                        [rx_data[9][1], rx_data[10][1], 0.0],
-                        4,
-                        gnss.Fix2_1.STATUS_2D_FIX,
+                        int(rx_data[b'fmuas/gps/longitude']*1e8),
+                        int(rx_data[b'fmuas/gps/latitude']*1e8),
+                        0, # Ellipsoid
+                        int(rx_data[b'fmuas/gps/altitude']),
+                        [
+                            rx_data[b'fmuas/gps/vn'], 
+                            rx_data[b'fmuas/gps/ve'], 
+                            rx_data[b'fmuas/gps/vd'], 
+                        ],
+                        5, # Sats used
+                        gnss.Fix2_1.STATUS_3D_FIX,
                         gnss.Fix2_1.MODE_SINGLE,
                         0, # Submode
                         [float('nan')],
@@ -736,8 +738,8 @@ class IASSensor:
             while not stop.is_set():
                 try:
                     m = air_data.IndicatedAirspeed_1(
-                        rx_data[11][1] * KT_TO_MS,
-                        0.0
+                        rx_data[b'fmuas/adc/ias'],
+                        float('nan')
                     )
 
                     try:
@@ -790,8 +792,8 @@ class AOASensor:
                 try:
                     m = air_data.AngleOfAttack_1(
                         air_data.AngleOfAttack_1.SENSOR_ID_LEFT,
-                        math.radians(rx_data[12][1]),
-                        0.0
+                        math.radians(rx_data[b'fmuas/adc/aoa']),
+                        float('nan')
                     )
 
                     try:
@@ -843,8 +845,8 @@ class SlipSensor:
             while not stop.is_set():
                 try:
                     m = air_data.Sideslip_1(
-                        math.radians(rx_data[13][1]),
-                        0.0
+                        math.radians(rx_data[b'fmuas/adc/slip']),
+                        float('nan')
                     )
 
                     try:
@@ -923,14 +925,14 @@ class Clock:
                         stop.set()
                         raise
 
-                    xpsecs = rx_data[17][1]
+                    xpsecs = rx_data[b'fmuas/clock/time']
 
-                    if abs(xpsecs - last_xpsecs) > 1.0: # time jump
+                    if abs(xpsecs - last_xpsecs) > 1.0: # Time jump
                         logging.debug('XP time jumped')
                         sync_secs += 1e-6
-                    elif xpsecs == last_xpsecs and rx_data[14][1] != 1.0: # no time but running
+                    elif xpsecs == last_xpsecs and rx_data[b'sim/time/paused'] != 1.0: # No time but running
                         sync_secs += time.time() - last_time
-                    elif rx_data[14][1] != 1.0: # normal and running
+                    elif rx_data[b'sim/time/paused'] != 1.0: # Normal and running
                         last_real += xpsecs - last_xpsecs
                         sync_secs = last_real
 
@@ -997,37 +999,37 @@ class Camera:
                     try:
                         await asyncio.sleep(0)
                     except asyncio.exceptions.CancelledError:
-                        self.close()
+                        stop.set()
                         raise
                 except Exception as e:
                     logging.error(f'Error in CAM: {e}')
         except KeyboardInterrupt:
-            self.close()
+            stop.set()
             raise
         finally:
-            self.close()
+            await self.close()
 
     async def _capture(self) -> None:
         delay = 0.5
 
-        previousFileList=[f for f in os.listdir(self.xp_path) if os.path.isfile(os.path.join(self.xp_path, f))]
+        previous_file_list = [f for f in os.listdir(self.xp_path) if os.path.isfile(os.path.join(self.xp_path, f))]
 
         self.sock.sendto(struct.pack('<4sx400s', b'CMND', b'sim/view/forward_with_nothing'), (self.X_PLANE_IP, self.UDP_PORT))
         self.sock.sendto(struct.pack('<4sx400s', b'CMND', b'sim/operation/screenshot'), (self.X_PLANE_IP, self.UDP_PORT))
 
         await asyncio.sleep(delay)
             
-        newFileList = [f for f in os.listdir(self.xp_path) if os.path.isfile(os.path.join(self.xp_path, f))]
+        new_file_list = [f for f in os.listdir(self.xp_path) if os.path.isfile(os.path.join(self.xp_path, f))]
 
-        fileDiff = [x for x in newFileList if x not in previousFileList]
+        file_diff = [x for x in new_file_list if x not in previous_file_list]
 
-        previousFileList = newFileList
+        previous_file_list = new_file_list
 
-        if len(fileDiff) != 0:
+        if len(file_diff) != 0:
             os.chdir(self.xp_path)
-            for f in fileDiff:
+            for f in file_diff:
                 shutil.move(f, './stored_images')
-            print(fileDiff)
+            logging.info(f'Detected file_diff: {file_diff}')
 
     async def _capture_cycle(self, iterations: int, period: float) -> None:
         if iterations != 0:
@@ -1060,14 +1062,14 @@ class Camera:
                     
                     await asyncio.sleep(1)
                 except asyncio.exceptions.CancelledError:
-                    self.close()
+                    stop.set()
                     raise
         except KeyboardInterrupt:
-            self.close()
+            stop.set()
             raise
 
-    def close(self) -> None:
-        logging.info('Closing CAM')
+    async def close(self) -> None:
+        logging.debug('Closing CAM')
         self.camera_mav_conn.close()
 
 
@@ -1109,13 +1111,15 @@ class TestCamera:
                     try:
                         await asyncio.sleep(0)
                     except asyncio.exceptions.CancelledError:
-                        self.close()
+                        stop.set()
                         raise
                 except Exception as e:
                     logging.error(f'Error in CAM: {e}')
         except KeyboardInterrupt:
-            self.close()
+            stop.set()
             raise
+        finally:
+            await self.close()
 
     async def _capture(self) -> None:
         delay=0.5
@@ -1152,21 +1156,20 @@ class TestCamera:
                     
                     await asyncio.sleep(1)
                 except asyncio.exceptions.CancelledError:
-                    self.close()
+                    stop.set()
                     raise
         except KeyboardInterrupt:
-            self.close()
+            stop.set()
             raise
-        finally:
-            self.close()
 
-    def close(self) -> None:
+    async def close(self) -> None:
+        logging.debug('Closing CAM')
         self.camera_mav_conn.close()
 
 
 async def main():
-    xpl = TestXPConnect() #if os.name != 'nt' else XPConnect()
-    cam = TestCamera(xpl) #if os.name != 'nt' else Camera(xpl)
+    xpl = TestXPConnect() if os.name != 'nt' else XPConnect()
+    cam = TestCamera(xpl) if os.name != 'nt' else Camera(xpl)
     clk = Clock()
     att = AttitudeSensor()
     alt = AltitudeSensor()

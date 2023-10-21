@@ -5,14 +5,15 @@
 > Optional X-Plane files can be found at [fmuas-xp][fmuas-xp-link]
 
 **Table of Contents**
-* [Background](#background)
+* [Overview](#overview)
 * [Requirements](#requirements)
 * [Installation](#installation)
 * [Important Files](#important-files)
 * [Usage with X-Plane 12](#usage-with-x-plane-12)
 * [GCS Command Line Interface](#gcs-command-line-interface)
+* [Credits](#credits)
 
-## Background
+## Overview
 This project provides the software for a humanitarian remote-sensing UAV system.  
 
 The software is designed to be simulated using the [X-Plane 12][xplane-link] flight simulator. However, it was produced using real-world protocols, so  it can also be used with UAVCAN and MAVLINK compatible hardware (minor adjustments required).
@@ -40,10 +41,10 @@ Initialize the [public_regulated_data_types][prdt-link] submodule
 git submodule update --init --recursive --remote
 ```
 
-X-Plane simulation requires the files from the [fmuas-xp][fmuas-xp-link] repo to be cloned into `/X-Plane 12/Aircraft`.
+X-Plane simulation requires the files from the [fmuas-xp][fmuas-xp-link] repo to be cloned into `X-Plane 12/Aircraft/`.
 
 ```bash
-git clone https://github.com/fmachanda/fmuas-xp.git <aircraft-path>
+git clone https://github.com/fmachanda/fmuas-xp.git <aircraft-directory>
 ```
 
 ## Important Files
@@ -52,10 +53,10 @@ git clone https://github.com/fmachanda/fmuas-xp.git <aircraft-path>
 ├── fmuas-main 
     ├── ...
     ├── uav
-        ├── uav_main.py # Run this
-        └── xp_interface.py # Run this
+        ├── uav.py # Run this
+        └── xpio.py # Run this
     ├── gcs
-        ├── gcs_basic.py # Use this in a python terminal
+        ├── gcs.py # Use this in a python terminal
         └── gcs_gui.py # Run this
     └── common
         ├──  data_types
@@ -68,18 +69,18 @@ git clone https://github.com/fmachanda/fmuas-xp.git <aircraft-path>
 ```
 
 
-`uav/uav_main.py` runs the UAV  
-`uav/xp_interface.py` runs the connection with X-Plane 12  
+`uav/uav.py` runs the UAV  
+`uav/xpio.py` runs the connection with X-Plane 12  
 
 `gcs/gcs_gui.py` runs a GCS window  
-`gcs/gcs_basic.py` can be used as a [CLI](#gcs-command-line-interface) if imported in a python terminal  
+`gcs/gcs.py` can be used as a [CLI](#gcs-command-line-interface) if imported in a python terminal  
 
 `common/CONFIG.ini` contains changeable settings for UAV and GCS instances  
 
-`key.py` contains the shared custom key used by MAVLINK connections
-> The `KEY = ...` line in `key.py` can be modified to any desired key (length 25). If using separate folders for GCS and UAV instances, ensure that this key is the same for both.  
+`common/key.py` contains the shared custom key used by MAVLINK connections
+> The `KEY = ...` line in `key.py` can be changed to any desired MAVLINK key (must be length 25). If using separate folders for GCS and UAV instances, ensure that this key is the same for both.  
 
-**Important:** `data_types/public_regulated_data_types` is a git [submodule][prdt-link] that must be initialized with:
+**Important:** `data_types/public_regulated_data_types/` is a git [submodule][prdt-link] that must be initialized with:
 
 ```bash
 git submodule update --init --recursive --remote
@@ -99,8 +100,8 @@ To use with X-Plane 12:
 
 4. Run the following scripts:
     * `gcs_gui.py`
-    * `uas_controller.py`
-    * `xp_interface.py`
+    * `uav.py`
+    * `xpio.py`
 
 5. Use the [GCS Interface](#gcs-command-line-interface) to boot and control the UAV.  
 
@@ -109,7 +110,7 @@ To use with X-Plane 12:
 The `gcs_basic.py` script provides a very simple interface that can be used to connect with a UAV running `uav_main.py`. To use the provided commands, open a python terminal and type:
 
 ```python
-import gcs_basic as gcs
+import gcs
 ```
 
 To connect to a UAV, you need to know the System ID of the UAV's MAVLINK node. This can be found in the UAV's terminal. Connect to the UAV with:
@@ -132,7 +133,18 @@ To close the connection with the UAV, run:
 uav1.close()
 ```
 
-Refer to the `gcs_basic.py` script for further documentation.
+Refer to the `gcs.py` script for further documentation.
+
+---
+### Credits
+
+`common/data_types/public_regulated_data_types/` taken from [OpenCyphal/public_regulated_data_types][prdt-link]  
+
+`common/data_types/custom_data_types/uavcan_archived/` taken from [dronecan/DSDL](https://github.com/dronecan/DSDL)  
+
+`common/find_xp.py` copied from the [XPPython3 Docs](https://xppython3.readthedocs.io/en/latest/_static/find_xp.py)  
+
+`GlobalRx.Att.quaternion_to_euler()` method in `uav/uav.py` copied from [automaticaddison](https://automaticaddison.com/how-to-convert-a-quaternion-into-euler-angles-in-python/)  
 
 ##
 
