@@ -53,8 +53,7 @@ rx_data = [
     [b'fmuas/adc/aoa', 0.0],
     [b'fmuas/adc/slip', 0.0],
     [b'sim/time/paused', 1.0],
-    [b'sim/operation/misc/frame_rate_period', 0.0], #15
-    [b'sim/time/local_date_days', 0.0],
+    [b'sim/time/local_date_days', 0.0], #15
     [b'sim/time/zulu_time_sec', 0.0],
     [b'fmuas/clock/time', 0.0],
 ]
@@ -183,14 +182,14 @@ class TestXPConnect:
             while not stop.is_set():
                 try:
                     self._time = time.time_ns()//1000 - self._boot_time
-                    rx_data[18][1] = time.time() - self._boot_time/1e6
+                    rx_data[17][1] = time.time() - self._boot_time/1e6
 
                     if self.rx_indices is not None:
                         for i in self.rx_indices:
                             rx_data[i][1] = 20*math.sin(self._time/2e6)
 
                     now = datetime.datetime.now()
-                    rx_data[17][1] = (now - now.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds()
+                    rx_data[16][1] = (now - now.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds()
                     rx_data[14][1] = 0
 
                     try:
@@ -667,7 +666,7 @@ class GPSSensor:
         try:
             while not stop.is_set():
                 try:
-                    gnss_time = int(1e6*(calendar.timegm(datetime.datetime.strptime(str(datetime.date.today().year), '%Y').timetuple()) + (1+rx_data[16][1])*86400 + rx_data[17][1]))
+                    gnss_time = int(1e6*(calendar.timegm(datetime.datetime.strptime(str(datetime.date.today().year), '%Y').timetuple()) + (1+rx_data[15][1])*86400 + rx_data[16][1]))
 
                     m = gnss.Fix2_1(
                         uavcan_archived.Timestamp_1(self._time),
@@ -683,9 +682,9 @@ class GPSSensor:
                         gnss.Fix2_1.STATUS_2D_FIX,
                         gnss.Fix2_1.MODE_SINGLE,
                         0, # Submode
-                        [0.0],
+                        [float('nan')],
                         3.5,
-                        gnss.ECEFPositionVelocity_1([0.0,0.0,0.0], [0,0,0], [0.0])
+                        gnss.ECEFPositionVelocity_1([float('nan'), float('nan'), float('nan')], [0, 0, 0], [float('nan')])
                     )
 
                     try:
@@ -924,7 +923,7 @@ class Clock:
                         stop.set()
                         raise
 
-                    xpsecs = rx_data[18][1]
+                    xpsecs = rx_data[17][1]
 
                     if abs(xpsecs - last_xpsecs) > 1.0: # time jump
                         logging.debug('XP time jumped')
@@ -980,7 +979,7 @@ class Camera:
         try:
             while not stop.is_set():
                 try:
-                    msg = self.camera_mav_conn.recv_msg()
+                    msg = None # self.camera_mav_conn.recv_msg() TODO
                     if msg is not None and msg.get_srcSystem()==self.target_id and msg.target_system==self.id and msg.get_type() == 'COMMAND_LONG':
                         if msg.command == m.MAV_CMD_IMAGE_START_CAPTURE:
                             cap = asyncio.create_task(self._capture_cycle(msg.param3, msg.param2))
@@ -1092,7 +1091,7 @@ class TestCamera:
         try:
             while not stop.is_set():
                 try:
-                    msg = self.camera_mav_conn.recv_msg()
+                    msg = None # self.camera_mav_conn.recv_msg() TODO
                     if msg is not None and msg.get_srcSystem()==self.target_id and msg.target_system==self.id and msg.get_type() == 'COMMAND_LONG':
                         if msg.command == m.MAV_CMD_IMAGE_START_CAPTURE:
                             cap = asyncio.create_task(self._capture_cycle(msg.param3, msg.param2))
@@ -1166,8 +1165,8 @@ class TestCamera:
 
 
 async def main():
-    xpl = TestXPConnect() if os.name != 'nt' else XPConnect()
-    cam = TestCamera(xpl) if os.name != 'nt' else Camera(xpl)
+    xpl = TestXPConnect() #if os.name != 'nt' else XPConnect()
+    cam = TestCamera(xpl) #if os.name != 'nt' else Camera(xpl)
     clk = Clock()
     att = AttitudeSensor()
     alt = AltitudeSensor()

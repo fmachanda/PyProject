@@ -298,8 +298,9 @@ class GlobalTx:
 class MainIO:
     """Main Input/Output class for UAVCAN communication.
 
-    This class serves as the interface for communication with UAVCAN devices and nodes.
-    It initializes and runs a UAVCAN node, subscribes to specific topics, and publishes control data.
+    This class serves as the interface for communication with UAVCAN 
+    devices and nodes. It initializes and runs a UAVCAN node, subscribes
+    to specific topics, and publishes control data.
 
     Parameters
     ----------
@@ -470,10 +471,10 @@ class MainIO:
 
 
 class Processor:
-    """The Processor class manages various calculations and control strategies for the system.
+    """Manages various calculations and controls for the system.
 
-    This class handles the calculation of servo commands and throttle outputs based on sensor data and
-    control setpoints.
+    This class handles the calculation of servo commands and throttle 
+    outputs based on sensor data and control setpoints.
 
     Attributes
     ----------
@@ -560,8 +561,8 @@ class Processor:
     def _calc_dyaw(value: float, setpoint: float) -> float: # TODO: if negative radians sent by uavcan
         """Calculate yaw error.
 
-        This static method calculates the yaw error based on a given value and setpoint, taking into account wraparound
-        at +/- pi radians.
+        Calculates the yaw error based on a given value and setpoint, 
+        taking into account wraparound at +/- pi radians.
 
         Parameters
         ----------
@@ -688,7 +689,7 @@ class Processor:
 
 
 class Controller:
-    """Controller class for managing communication with Ground Control Station (GCS).
+    """Controller class for managing communication with GCS.
 
     Attributes
     ----------
@@ -963,7 +964,7 @@ class Main:
     systemid : int, optional
         The system ID for this instance (default is 1).
     config : str, optional
-        The path to the configuration file (default is './common/CONFIG.ini').
+        Config file path (default is './common/CONFIG.ini').
 
     Attributes
     ----------
@@ -996,7 +997,7 @@ class Main:
         Raises
         ------
         AssertionError
-            If the system ID is not a positive integer less than or equal to 255.
+            If the system ID is not a positive integer <= 255.
         """
 
         assert isinstance(systemid, int) and systemid > 0 and systemid.bit_length() <= 8, 'System ID must be UINT8'
