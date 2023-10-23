@@ -1,6 +1,6 @@
 import tkinter as tk
 
-from gcs_basic import Connect
+from gcs import Connect
 
 
 class GCSUI:
@@ -22,6 +22,15 @@ class GCSUI:
 
         self.close_button = tk.Button(root, text='Close', command=self.close)
         self.close_button.pack()
+
+        self.command_label = tk.Label(root, text='Enter command(value):')
+        self.command_label.pack()
+
+        self.command_entry = tk.Entry(root)
+        self.command_entry.pack()
+
+        self.command_button = tk.Button(root, text='Send Command', command=self.command)
+        self.command_button.pack()
 
         self.log_text = tk.Text(root, height=10, width=40)
         self.log_text.pack()
@@ -45,6 +54,18 @@ class GCSUI:
                 pass
         else:
             self.log('Error: ID must be UINT8')
+
+    def command(self):
+        cmd = str(self.command_entry.get())
+
+        if self.connect_instance is not None:
+            try:
+                exec(f'self.connect_instance.{cmd}')
+                self.log(f'Sent command \'{cmd}\'')
+            except AttributeError:
+                self.log(f'Command \'{cmd}\' invalid')
+        else:
+            self.log('Connect first')
 
     def boot(self):
         if self.connect_instance is not None:

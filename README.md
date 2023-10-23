@@ -107,7 +107,7 @@ To use with X-Plane 12:
 
 ## GCS Command Line Interface
 
-The `gcs_basic.py` script provides a very simple interface that can be used to connect with a UAV running `uav_main.py`. To use the provided commands, open a python terminal and type:
+The `gcs.py` script provides a very simple interface that can be used to connect with a UAV running `uav.py`. To use the provided commands, open a python terminal and type:
 
 ```python
 import gcs

@@ -354,7 +354,7 @@ class ESCIO:
     async def run(self) -> None:
         """docstring placeholder"""
         def on_esc(msg: esc.RawCommand_1, _: pycyphal.transport.TransferFrom) -> None:
-            for index, value in enumerate(msg.cmd[:3]):
+            for index, value in enumerate(msg.cmd[(TX_DATA_LAST_SERVO+1):]):
                 tx_data[index + 1 + TX_DATA_LAST_SERVO][1] = value / 8192
         self._sub_esc.receive_in_background(on_esc)
 
@@ -671,8 +671,8 @@ class GPSSensor:
                         uavcan_archived.Timestamp_1(gnss_time),
                         gnss.Fix2_1.GNSS_TIME_STANDARD_GPS,
                         gnss.Fix2_1.NUM_LEAP_SECONDS_UNKNOWN, # TODO
-                        int(rx_data[b'fmuas/gps/longitude']*1e8),
-                        int(rx_data[b'fmuas/gps/latitude']*1e8),
+                        int(rx_data[b'fmuas/gps/longitude']),
+                        int(rx_data[b'fmuas/gps/latitude']),
                         0, # Ellipsoid
                         int(rx_data[b'fmuas/gps/altitude']),
                         [
@@ -792,7 +792,7 @@ class AOASensor:
                 try:
                     m = air_data.AngleOfAttack_1(
                         air_data.AngleOfAttack_1.SENSOR_ID_LEFT,
-                        math.radians(rx_data[b'fmuas/adc/aoa']),
+                        rx_data[b'fmuas/adc/aoa'],
                         float('nan')
                     )
 
@@ -845,7 +845,7 @@ class SlipSensor:
             while not stop.is_set():
                 try:
                     m = air_data.Sideslip_1(
-                        math.radians(rx_data[b'fmuas/adc/slip']),
+                        rx_data[b'fmuas/adc/slip'],
                         float('nan')
                     )
 

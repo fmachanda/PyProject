@@ -102,7 +102,7 @@ class GlobalRx:
             ValueError
                 If the input is not of length 4
             """
-            
+
             if len(q)!=4:
                 raise ValueError('Quaternion input must be tuple with length 4')
 
@@ -177,18 +177,18 @@ class GlobalRx:
             self.latitude = 0.0
             self.longitude = 0.0
             self.altitude = 0.0
-            self.xspeed = 0.0
-            self.yspeed = 0.0
-            self.zspeed = 0.0
+            self.nspeed = 0.0
+            self.espeed = 0.0
+            self.dspeed = 0.0
 
             self._last_time = 0.0
             self.dt = 0.0
             # self._last_latitude = 0.0
             # self._last_longitude = 0.0
             # self._last_altitude = 0.0
-            # self._last_xspeed = 0.0
-            # self._last_yspeed = 0.0
-            # self._last_zspeed = 0.0
+            # self._last_nspeed = 0.0
+            # self._last_espeed = 0.0
+            # self._last_dspeed = 0.0
 
         def dump(self, msg: gnss.Fix2_1) -> None:
             """Store data from a message."""
@@ -196,15 +196,15 @@ class GlobalRx:
             # self._last_latitude = self.latitude
             # self._last_longitude = self.longitude
             # self._last_altitude = self.altitude
-            # self._last_xspeed = self.xspeed
-            # self._last_yspeed = self.yspeed
-            # self._last_zspeed = self.zspeed
+            # self._last_nspeed = self.nspeed
+            # self._last_espeed = self.espeed
+            # self._last_dspeed = self.dspeed
 
             self.time = msg.timestamp.usec
             self.latitude = msg.latitude_deg_1e8# / 1e8
             self.longitude = msg.longitude_deg_1e8# / 1e8
             self.altitude = msg.height_msl_mm / 1e3
-            self.xspeed, self.yspeed, self.zspeed= msg.ned_velocity
+            self.nspeed, self.espeed, self.dspeed= msg.ned_velocity
 
             self.dt = self.time - self._last_time
 
@@ -523,23 +523,9 @@ class Processor:
         self._fthrottles = np.zeros(4, dtype=np.float16) # throttles*4
         self._vthrottles = np.zeros(4, dtype=np.float16)
 
-        # self._pid{f or v}_{from}_{to}
-
-        self._pidf_alt_vpa = PID(kp=0.1, td=1.0, ti=2.0, integral_limit=0.2, maximum=4.0, minimum=-3.0)
-        self._pidf_vpa_aoa = PID(kp=1.0, ti=2.5, td=0.03, integral_limit=10.0, maximum=16.0, minimum=-3.0)
-
-        self._pidf_aoa_out = PID(kp=-0.25, ti=-0.1, td=0.1, integral_limit=1, maximum=0.0, minimum=-math.pi/12)
-        self._pidf_slp_out = PID(kp=-0.15, ti=-0.1, td=0.6, maximum=1.0, minimum=-1.0)
-        self._pidf_ias_out = PID(kp=0.04, ti=0.2, td=0.0, integral_limit=0.25, maximum=0.25, minimum=0.02)
-
-        self._pidf_yaw_rol = PID(kp=1.0, ti=1.0, td=0.0, integral_limit=2.0, maximum=30.0, minimum=-30.0)
-
-        self._pidf_rol_rls = PID(kp=5.0, ti=2.5, td=0.01, integral_limit=10.0, maximum=10.0, minimum=-10.0)
-        self._pidf_rls_out = PID(kp=0.03, ti=5.0, td=0.01, integral_limit=0.1, maximum=0.1, minimum=-0.1)
-
-        self.spf_altitude = 200.0
+        self.spf_altitude = 0.0
         self.spf_heading = 0.0
-        self.spf_ias = 80.0
+        self.spf_ias = 0.0
 
         self._spf_vpath = 0.0
         self._spf_aoa = 0.14
@@ -550,6 +536,20 @@ class Processor:
         self._outf_roll = 0.0
         self._outf_yaw = 0.0
         self._outf_throttle = 0.0
+
+        # self._pid{f or v}_{from}_{to}
+
+        self._pidf_alt_vpa = PID(kp=0.0, td=0.0, ti=0.0, integral_limit=0.2, maximum=4.0, minimum=-3.0)
+        self._pidf_vpa_aoa = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=10.0, maximum=16.0, minimum=-3.0)
+
+        self._pidf_aoa_out = PID(kp=-0.22, ti=-0.3, td=0.008, integral_limit=1, maximum=0.0, minimum=-math.pi/12)
+        self._pidf_slp_out = PID(kp=-0.03, ti=-0.001, td=3.0, integral_limit=math.pi/6, maximum=1.0, minimum=-1.0)
+        self._pidf_ias_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=0.25, maximum=0.25, minimum=0.02)
+
+        self._pidf_yaw_rol = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=2.0, maximum=30.0, minimum=-30.0)
+
+        self._pidf_rol_rls = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=10.0, maximum=10.0, minimum=-10.0)
+        self._pidf_rls_out = PID(kp=0.015, ti=0.35, td=0.001, integral_limit=0.1, maximum=0.1, minimum=-0.1)
 
     async def boot(self) -> None:
         """Perform boot-related tasks."""
@@ -598,13 +598,13 @@ class Processor:
                 dt = (self.main.rxdata.att.dt + self.main.rxdata.aoa.dt) / 2
 
             vpath = self.main.rxdata.att.pitch - math.cos(self.main.rxdata.att.roll) * self.main.rxdata.aoa.aoa
-            self._spf_aoa = 0.14 # self._pidf_vpa_aoa.cycle(vpath, self._spf_vpath, dt) # TODO
+            # self._spf_aoa = self._pidf_vpa_aoa.cycle(vpath, self._spf_vpath, dt) # TODO
 
         if self.main.rxdata.att.dt > 0.0:
             dyaw = Processor._calc_dyaw(self.main.rxdata.att.yaw, self.spf_heading)
 
             self._spf_roll = 0.0 # self._pidf_yaw_rol.cycle(dyaw, 0.0, self.main.rxdata.att.dt)
-            self._spf_rollspeed = 0.0 # self._pidf_rol_rls.cycle(self.main.rxdata.att.roll, self._spf_roll, self.main.rxdata.att.dt)
+            # self._spf_rollspeed = self._pidf_rol_rls.cycle(self.main.rxdata.att.roll, self._spf_roll, self.main.rxdata.att.dt)
             self._outf_roll = self._pidf_rls_out.cycle(self.main.rxdata.att.rollspeed, self._spf_rollspeed, self.main.rxdata.att.dt)
 
             self.main.rxdata.att.dt = 0.0
@@ -614,7 +614,7 @@ class Processor:
             self.main.rxdata.aoa.dt = 0.0
 
         if self.main.rxdata.slip.dt > 0.0:
-            self._outf_yaw = 0.0 # self._pidf_slp_out.cycle(self.main.rxdata.slip.slip, 0.0, self.main.rxdata.slip.dt)
+            self._outf_yaw = self._pidf_slp_out.cycle(self.main.rxdata.slip.slip, 0.0, self.main.rxdata.slip.dt)
             self.main.rxdata.slip.dt = 0.0
 
         self._fservos[0] = self._outf_pitch + self._outf_roll # TODO
@@ -650,9 +650,12 @@ class Processor:
         try:
             while not self.main.stop.is_set():
                 try:
+                    # self._spf_aoa = self.spf_altitude
+                    # self._pidf_aoa_out.set(td=self.spf_ias)
+
                     if self.main.state.custom_mode in [g.CUSTOM_MODE_TAKEOFF, g.CUSTOM_MODE_LANDING]:
                         # TODO: MIXING PLACEHOLDER vvv
-                        self._servos = np.sum(np.array([1.0 * self._flight_servos(), 0.0 * self._vtol_servos()]), axis=0, dtype=np.float16)
+                        self._servos = (1296 / (self.main.rxdata.ias.ias**2)) * np.sum(np.array([1.0 * self._flight_servos(), 0.0 * self._vtol_servos()]), axis=0, dtype=np.float16)
                         self._throttles = np.sum(np.array([1.0 * self._flight_throttles(), 0.0 * self._vtol_throttles()]), axis=0, dtype=np.float16)
                     elif self.main.state.custom_mode == g.CUSTOM_MODE_FLIGHT and self.main.state.custom_submode != g.CUSTOM_SUBMODE_FLIGHT_MANUAL:
                         self._servos = self._flight_servos()
@@ -1029,7 +1032,7 @@ class Main:
 
         import common.grapher as grapher
 
-        self._grapher = grapher.Grapher(deque_len=50)
+        self._grapher = grapher.Grapher(deque_len=300)
 
         try:
             while not self.stop.is_set():
@@ -1117,5 +1120,5 @@ class Main:
 
 if __name__ == '__main__':
     import random
-    main = Main(random.randint(1, 255))
-    asyncio.run(main.run())#graph='main.processor.spf_altitude'))
+    main = Main(20)#random.randint(1, 255))
+    asyncio.run(main.run(graph='main.rxdata.aoa.aoa'))
