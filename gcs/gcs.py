@@ -165,7 +165,10 @@ class Connect:
 
     async def _command_int(self, name: str, *params, acknowledge: bool = True, period: float = 1, timeout_cycles: int = 5, frame: int = m.MAV_FRAME_GLOBAL) -> None:
             params_full = (list(params)+[0]*7)[:7]
-            command = eval(f'm.MAV_CMD_{name}')
+            if name != 'PID':
+                command = eval(f'm.MAV_CMD_{name}')
+            else:
+                command = 0
 
             try:
                 flush_buffer()
@@ -248,23 +251,26 @@ class Connect:
 
     def reposition(self, latitude: float, longitude: float, altitude: float, speed: float = -1, radius: float = 0, yaw: float = 1):
         logging.info('Calling reposition()')
-        asyncio.run(self._command_int('DO_REPOSITION', speed, 0, radius, yaw, latitude, longitude, altitude))
+        asyncio.run(self._command_int('DO_REPOSITION', speed, 0, radius, yaw, int(latitude), int(longitude), int(altitude)))
 
     def f_takeoff(self, latitude: float, longitude: float, altitude: float, yaw: float = float('nan'), pitch: float = 10):
         logging.info('Calling f_takeoff()')
-        asyncio.run(self._command_int('NAV_TAKEOFF', pitch, 0,0, yaw, latitude, longitude, altitude))
+        asyncio.run(self._command_int('NAV_TAKEOFF', pitch, 0,0, yaw, int(latitude), int(longitude), int(altitude)))
 
     def v_takeoff(self, latitude: float, longitude: float, altitude: float, transit_heading: float = m.VTOL_TRANSITION_HEADING_TAKEOFF, yaw: float = float('nan')):
         logging.info('Calling v_takeoff()')
-        asyncio.run(self._command_int('NAV_VTOL_TAKEOFF', 0, transit_heading, 0, yaw, latitude, longitude, altitude))
+        asyncio.run(self._command_int('NAV_VTOL_TAKEOFF', 0, transit_heading, 0, yaw, int(latitude), int(longitude), int(altitude)))
     
     def f_land(self, latitude: float, longitude: float, altitude: float, abort_alt: float = 0, yaw: float = float('nan')):
         logging.info('Calling f_land()')
-        asyncio.run(self._command_int('NAV_LAND', abort_alt, m.PRECISION_LAND_MODE_DISABLED, 0, yaw, latitude, longitude, altitude))
+        asyncio.run(self._command_int('NAV_LAND', abort_alt, m.PRECISION_LAND_MODE_DISABLED, 0, yaw, int(latitude), int(longitude), int(altitude)))
 
     def v_land(self, latitude: float, longitude: float, altitude: float, approch_alt: float = float('nan'), yaw: float = float('nan')):
         logging.info('Calling v_land()')
-        asyncio.run(self._command_int('NAV_VTOL_LAND', m.NAV_VTOL_LAND_OPTIONS_DEFAULT, 0, approch_alt, yaw, latitude, longitude, altitude))
+        asyncio.run(self._command_int('NAV_VTOL_LAND', m.NAV_VTOL_LAND_OPTIONS_DEFAULT, 0, approch_alt, yaw, int(latitude), int(longitude), int(altitude)))
+
+    def pid(self, kp: float, ti: float, td: float, setpoint: float):
+        asyncio.run(self._command_int('PID',kp, ti, td, setpoint, int(0), int(0), int(0), acknowledge=False))
     # endregion
 
     async def _heartbeat(self) -> None:

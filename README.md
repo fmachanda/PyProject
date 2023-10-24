@@ -1,4 +1,4 @@
-![status](https://img.shields.io/badge/status-Development-orange)
+[![status](https://img.shields.io/badge/status-Development-orange)](https://trello.com/b/E168SpHn/fmuas)
 
 # fmuas-main
 
@@ -32,13 +32,20 @@ The software is designed to be simulated using the [X-Plane 12][xplane-link] fli
 Clone this repo into a desired directory
 
 ```bash
-git clone https://github.com/fmachanda/fmuas-main.git <desired-directory>
+git clone https://github.com/fmachanda/fmuas-main.git <directory>
+cd <directory>/fmuas-main
 ```
 
 Initialize the [public_regulated_data_types][prdt-link] submodule
 
 ```bash
 git submodule update --init --recursive --remote
+```
+
+Install required python modules with [pip](https://pip.pypa.io/en/stable/installation/)
+
+```bash
+pip install -r requirements.txt
 ```
 
 X-Plane simulation requires the files from the [fmuas-xp][fmuas-xp-link] repo to be cloned into `X-Plane 12/Aircraft/`.
@@ -150,7 +157,7 @@ Refer to the `gcs.py` script for further documentation.
 
 *Previous commit history (commits before 10/12/2023) can be found at [fmuas-main-history](https://github.com/fmachanda/fmuas-main-history)*
 
-*Updated 10/20/2023*
+*Updated 10/24/2023*
 
 
 [prdt-link]: https://github.com/OpenCyphal/public_regulated_data_types

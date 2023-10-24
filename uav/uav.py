@@ -528,7 +528,7 @@ class Processor:
         self.spf_ias = 0.0
 
         self._spf_vpath = 0.0
-        self._spf_aoa = 0.14
+        self._spf_aoa = 0.1
         self._spf_roll = 0.0
         self._spf_rollspeed = 0.0
 
@@ -542,14 +542,16 @@ class Processor:
         self._pidf_alt_vpa = PID(kp=0.0, td=0.0, ti=0.0, integral_limit=0.2, maximum=4.0, minimum=-3.0)
         self._pidf_vpa_aoa = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=10.0, maximum=16.0, minimum=-3.0)
 
-        self._pidf_aoa_out = PID(kp=-0.22, ti=-0.3, td=0.008, integral_limit=1, maximum=0.0, minimum=-math.pi/12)
-        self._pidf_slp_out = PID(kp=-0.03, ti=-0.001, td=3.0, integral_limit=math.pi/6, maximum=1.0, minimum=-1.0)
+        self._pidf_aoa_out = PID(kp=-0.07, ti=-0.008, td=0.02, integral_limit=1, maximum=0.0, minimum=-math.pi/12)
+        # self._pidf_slp_out = PID(kp=-0.03, ti=-0.001, td=3.0, integral_limit=math.pi/6, maximum=1.0, minimum=-1.0)
+        self._pidf_slp_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=math.pi/6, maximum=1.0, minimum=-1.0)
         self._pidf_ias_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=0.25, maximum=0.25, minimum=0.02)
 
         self._pidf_yaw_rol = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=2.0, maximum=30.0, minimum=-30.0)
 
         self._pidf_rol_rls = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=10.0, maximum=10.0, minimum=-10.0)
-        self._pidf_rls_out = PID(kp=0.015, ti=0.35, td=0.001, integral_limit=0.1, maximum=0.1, minimum=-0.1)
+        self._pidf_rls_out = PID(kp=0.008, ti=0.003, td=0.01, integral_limit=0.1, maximum=0.1, minimum=-0.1)
+        # self._pidf_rls_out = PID(kp=0.015, ti=0.35, td=0.001, integral_limit=0.1, maximum=0.1, minimum=-0.1)
 
     async def boot(self) -> None:
         """Perform boot-related tasks."""
@@ -650,9 +652,6 @@ class Processor:
         try:
             while not self.main.stop.is_set():
                 try:
-                    # self._spf_aoa = self.spf_altitude
-                    # self._pidf_aoa_out.set(td=self.spf_ias)
-
                     if self.main.state.custom_mode in [g.CUSTOM_MODE_TAKEOFF, g.CUSTOM_MODE_LANDING]:
                         # TODO: MIXING PLACEHOLDER vvv
                         self._servos = (1296 / (self.main.rxdata.ias.ias**2)) * np.sum(np.array([1.0 * self._flight_servos(), 0.0 * self._vtol_servos()]), axis=0, dtype=np.float16)
@@ -870,6 +869,12 @@ class Controller:
                                     # DO_REPOSITION
                                     if msg.command == m.MAV_CMD_DO_REPOSITION: 
                                         pass # TODO
+                                    # TODO TEMPORARY PID
+                                    elif msg.command == 0:
+                                        # PID TUNER GOTO
+                                        self.main.processor._pidf_rls_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                                        self.main.processor._spf_rollspeed = msg.param4
+                                        logging.info(f"New PID state: {msg.param1}, {msg.param2}, {msg.param3} @ {msg.param4}")
                                     # NAV_TAKEOFF
                                     elif msg.command == m.MAV_CMD_NAV_TAKEOFF:
                                         pass # TODO
@@ -1121,4 +1126,4 @@ class Main:
 if __name__ == '__main__':
     import random
     main = Main(20)#random.randint(1, 255))
-    asyncio.run(main.run(graph='main.rxdata.aoa.aoa'))
+    asyncio.run(main.run(graph='main.rxdata.att.rollspeed'))

@@ -89,4 +89,7 @@ class GCSUI:
 if __name__ == '__main__':
     root = tk.Tk()
     app = GCSUI(root)
-    root.mainloop()
+    try:
+        root.mainloop()
+    except KeyboardInterrupt:
+        pass
