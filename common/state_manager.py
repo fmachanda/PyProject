@@ -8,6 +8,7 @@ m = mavutil.mavlink
 
 
 class GlobalState:
+    """Manages custom modes for a UAV."""
     CUSTOM_MODE_UNINIT = 0
     CUSTOM_MODE_BOOT = 1
     CUSTOM_MODE_GROUND = 2
@@ -177,6 +178,7 @@ class GlobalState:
     }
 
     def __init__(self, state: int, mode: int, custom_mode: int, custom_submode: int, boot: asyncio.Event) -> None:
+        """Inits the state manager."""
         state = int(state)
         mode = int(mode)
         custom_mode = int(custom_mode)
@@ -196,6 +198,7 @@ class GlobalState:
         self.boot = boot
 
     def set_mode(self, mode: int, custom_mode: int, custom_submode: int) -> bool:
+        """Sets a new custom_mode and checks for compatibility."""
         try:
             mode = int(mode)
             custom_mode = int(custom_mode)
@@ -236,6 +239,7 @@ class GlobalState:
             return False
 
     def inc_mode(self) -> None:
+        """Steps the mode up one in the standard flight sequence."""
         self.custom_submode = GlobalState.ALLOWED_SUBMODE_CHANGES[self.custom_submode][0]
         logging.warning(f'Submode set to: {GlobalState.CUSTOM_SUBMODE_NAMES[self.custom_submode]}')
         self.mode = GlobalState.ALLOWED_MODES[self.custom_submode][0]
@@ -245,6 +249,7 @@ class GlobalState:
             self.state = GlobalState.ALLOWED_STATES[self.custom_submode][0]
 
     def dec_mode(self) -> None:
+        """Steps the mode down one in the standard flight sequence."""
         if self.custom_submode not in [GlobalState.CUSTOM_SUBMODE_FLIGHT_MANUAL, GlobalState.CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE, GlobalState.CUSTOM_SUBMODE_UNINIT]:
             self.custom_submode = GlobalState.ALLOWED_SUBMODE_CHANGES[self.custom_submode][1]
             logging.warning(f'Submode set to: {GlobalState.CUSTOM_SUBMODE_NAMES[self.custom_submode]}')
@@ -258,6 +263,7 @@ class GlobalState:
             self.inc_mode()
 
     def set_state(self, state: int) -> None:
+        """Sets a new MAVLINK state."""
         if (state in GlobalState.MAV_STATES_NOMINAL or state in GlobalState.MAV_STATES_ABNORMAL) and state in GlobalState.ALLOWED_STATES[self.custom_submode]:
             self.state = state
         else:

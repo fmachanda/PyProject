@@ -29,20 +29,15 @@ The software is designed to be simulated using the [X-Plane 12][xplane-link] fli
 
 ## Installation
 
-Clone this repo into a desired directory
+Clone this repo into the desired directory. This project contains the [public_regulated_data_types][prdt-link] submodule, so you must use `--recurse-submodules`.
 
 ```bash
-git clone https://github.com/fmachanda/fmuas-main.git <directory>
+git clone https://github.com/fmachanda/fmuas-main.git <directory> --recurse-submodules
+
 cd <directory>/fmuas-main
 ```
 
-Initialize the [public_regulated_data_types][prdt-link] submodule
-
-```bash
-git submodule update --init --recursive --remote
-```
-
-Install required python modules with [pip](https://pip.pypa.io/en/stable/installation/)
+Install required python modules with [pip](https://pip.pypa.io/en/stable/installation/).
 
 ```bash
 pip install -r requirements.txt
@@ -87,11 +82,7 @@ git clone https://github.com/fmachanda/fmuas-xp.git <aircraft-directory>
 `common/key.py` contains the shared custom key used by MAVLINK connections
 > The `KEY = ...` line in `key.py` can be changed to any desired MAVLINK key (must be length 25). If using separate folders for GCS and UAV instances, ensure that this key is the same for both.  
 
-**Important:** `data_types/public_regulated_data_types/` is a git [submodule][prdt-link] that must be initialized with:
-
-```bash
-git submodule update --init --recursive --remote
-```
+**Important:** `data_types/public_regulated_data_types/` is a git [submodule][prdt-link] that must be initialized for scripts to work
 
 ## Usage with X-Plane 12
 
@@ -152,6 +143,8 @@ Refer to the `gcs.py` script for further documentation.
 `common/find_xp.py` copied from the [XPPython3 Docs](https://xppython3.readthedocs.io/en/latest/_static/find_xp.py)  
 
 `GlobalRx.Att.quaternion_to_euler()` method in `uav/uav.py` copied from [automaticaddison](https://automaticaddison.com/how-to-convert-a-quaternion-into-euler-angles-in-python/)  
+
+*All  other code is original.*
 
 ##
 

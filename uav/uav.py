@@ -16,6 +16,7 @@ import math
 import os
 import sys
 from configparser import ConfigParser
+from typing import Any
 import numpy as np
 
 if os.path.basename(os.getcwd()) == 'uav':
@@ -296,6 +297,10 @@ class GlobalTx:
         ])
 
 
+# Declaration to avoid flagged error in Navigator class
+class Waypoint: pass
+
+
 class MainIO:
     """Main Input/Output class for UAVCAN communication.
 
@@ -469,6 +474,48 @@ class MainIO:
         """Close the instance."""
         logging.info('Closing MainIO') # TODO: Change to logging.debug()
         self._node.close()
+
+
+class Navigator:
+    """Converts navigational commands to autopilot commands."""
+    class Waypoint:
+        """Stores information for a waypoint."""
+        count = 0
+        def __init__(self, latitude: float, longitude: float, altitude: float = None, name: str = None) -> None:
+            self.latitude = latitude
+            self.longitude = longitude
+            self.altitude = altitude
+
+            Waypoint.count += 1
+            self.name = name if name is not None else f'Waypoint {Waypoint.count}'
+
+    def __init__(self, main: 'Main') -> None:
+        """Initializes the Navigator class.
+
+        Parameters
+        ----------
+        main : 'Main'
+            The main object.
+        """
+
+        self.main = main
+        self._waypoint_list = []
+
+    async def boot(self) -> None:
+        """Perform boot-related tasks."""
+        # TODO: do boot stuff here, calibrate gps etc
+        # await gps online
+        self.add_wpt(Waypoint(self.main.rxdata.gps.latitude, self.main.rxdata.gps.latitude, self.main.rxdata.gps.altitude, name='Start'))
+        await asyncio.sleep(0)
+
+    def add_wpt(self, wpt: Waypoint) -> None:
+        self._waypoint_list.append(wpt)
+
+    def calc_heading(self) -> None:
+        pass
+
+    async def run(self) -> None:
+        pass
 
 
 class Processor:
@@ -692,7 +739,7 @@ class Processor:
 
 
 class Controller:
-    """Controller class for managing communication with GCS.
+    """Controller class for managing MAVLINK communication with GCS.
 
     Attributes
     ----------
@@ -706,6 +753,13 @@ class Controller:
         The identifier for the GCS connection.
     _mav_conn_gcs : mavutil.mavfile
         The MAVLink connection to the GCS.
+
+    Methods
+    -------
+    manager(self)
+        Manage connection.
+    close(self)
+        Close connection.
     """
 
     def __init__(self, main: 'Main', tx_freq: int = DEFAULT_FREQ, heartbeat_freq: int = 1) -> None:
@@ -734,9 +788,9 @@ class Controller:
 
     async def manager(self) -> None:
         """Manage the controller's various operations."""
-        asyncio.create_task(self.heartbeat())
-        asyncio.create_task(self.rx())
-        asyncio.create_task(self.tx())
+        asyncio.create_task(self._heartbeat())
+        asyncio.create_task(self._rx())
+        asyncio.create_task(self._tx())
 
         logging.info('Starting Controller')
 
@@ -756,9 +810,9 @@ class Controller:
         finally:
             self.close()
 
-    async def rx(self) -> None:
-        """Recieve messages from GCS over mavlink.
-        
+    async def _rx(self) -> None:
+        """Recieve messages from GCS over mavlink."""
+        """
         'if' statements structure
         ├── HEARTBEAT
         ├── BAD_DATA
@@ -907,7 +961,7 @@ class Controller:
         finally:
             logging.debug('Closing Controller (RX)')
 
-    async def tx(self) -> None:
+    async def _tx(self) -> None:
         """Transmit continuous messages."""
         logging.debug('Starting Controller (TX)')
 
@@ -929,7 +983,7 @@ class Controller:
         finally:
             logging.debug('Closing Controller (TX)')
 
-    async def heartbeat(self) -> None:
+    async def _heartbeat(self) -> None:
         """Periodically publish a heartbeat message."""
         logging.debug('Starting Controller (Heartbeat)')
 
@@ -991,6 +1045,11 @@ class Main:
         Global transmit data.
     state : g
         State information.
+    
+    Methods
+    -------
+    run(self, graph: str = None)
+        Run the UAV instance.
     """
 
     def __init__(self, systemid: int = 1, config: str = './common/CONFIG.ini') -> None:
@@ -1073,6 +1132,7 @@ class Main:
         self.controller = Controller(self)
         self.io = MainIO(self)
         self.processor = Processor(self)
+        self.navigator = Navigator(self)
 
         controller_manager = asyncio.create_task(self.controller.manager())
         await asyncio.sleep(0)
@@ -1109,6 +1169,7 @@ class Main:
 
         tasks = [
             asyncio.create_task(self.processor.run()),
+            asyncio.create_task(self.navigator.run()),
             asyncio.create_task(self.io.run()),
         ]
 

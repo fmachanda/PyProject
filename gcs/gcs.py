@@ -29,13 +29,16 @@ MAX_FLUSH_BUFFER = int(1e6)
 
 
 class PreExistingConnection(Exception):
+    """Exception subclass to prevent repeated MAVLINK Connection."""
     def __init__(self, message=f'A connection is already stored to this instance. Run Connect.close() method first.'):
+        """Inits the Excpetion class with a custom message."""
         self.message = message
         super().__init__(self.message)
 
 
 def flush_buffer() -> None:
-    """Buffer flusher limited by MAX_FLUSH_BUFFER cycles"""
+    """Removes any MAV messages still in the connection buffer"""
+    # Buffer flusher limited by MAX_FLUSH_BUFFER to avoid loop.
     for i in range(MAX_FLUSH_BUFFER):
         msg = mav_conn.recv_match(blocking=False)
         if msg is None:
@@ -46,6 +49,7 @@ def flush_buffer() -> None:
 
 
 def check_mav_conn() -> None:
+    """Checks if the global MAVLINK connection is open."""
     global mav_conn, MAV_CONN_OPEN
     if not MAV_CONN_OPEN:
         logging.info('Opening mav_conn')
@@ -55,7 +59,9 @@ def check_mav_conn() -> None:
 
 
 class Connect:
+    """Runs a connection to a MAVLINK node on the UAV."""
     def __init__(self, target: int, timeout_cycles: int = 5) -> None:
+        """Initialize the connection and send command change."""
         self.target = None
         assert 0<target<256 and isinstance(target, int) and target!=systemid, 'System ID target must be unique UINT8'
 
@@ -100,6 +106,7 @@ class Connect:
             self.close()
     
     async def _command(self, name: str, *params, acknowledge: bool = True, period: float = 1, timeout_cycles: int = 5) -> None:
+        """Send a COMMAND_LONG message."""
         params_full = (list(params)+[0]*7)[:7]
         command = eval(f'm.MAV_CMD_{name}')
 
@@ -164,116 +171,128 @@ class Connect:
             self.close()
 
     async def _command_int(self, name: str, *params, acknowledge: bool = True, period: float = 1, timeout_cycles: int = 5, frame: int = m.MAV_FRAME_GLOBAL) -> None:
-            params_full = (list(params)+[0]*7)[:7]
-            if name != 'PID':
-                command = eval(f'm.MAV_CMD_{name}')
-            else:
-                command = 0
+        """Send a COMMAND_INT message."""
+        params_full = (list(params)+[0]*7)[:7]
+        if name != 'PID':
+            command = eval(f'm.MAV_CMD_{name}')
+        else:
+            command = 0
 
-            try:
-                flush_buffer()
-                
-                logging.warning(f'{name} sent to #{self.target}...')
-                logging.debug(f'    {name} params: {params}')
+        try:
+            flush_buffer()
+            
+            logging.warning(f'{name} sent to #{self.target}...')
+            logging.debug(f'    {name} params: {params}')
 
-                mav_conn.mav.command_int_send(
-                    self.target,
-                    0,
-                    frame,
-                    command,
-                    0,0,
-                    params_full[0],
-                    params_full[1],
-                    params_full[2],
-                    params_full[3],
-                    params_full[4],
-                    params_full[5],
-                    params_full[6],
-                )
+            mav_conn.mav.command_int_send(
+                self.target,
+                0,
+                frame,
+                command,
+                0,0,
+                params_full[0],
+                params_full[1],
+                params_full[2],
+                params_full[3],
+                params_full[4],
+                params_full[5],
+                params_full[6],
+            )
 
-                await asyncio.sleep(period)
+            await asyncio.sleep(period)
 
-                if acknowledge:
-                    for i in range(timeout_cycles):
-                        msg = mav_conn.recv_msg()
+            if acknowledge:
+                for i in range(timeout_cycles):
+                    msg = mav_conn.recv_msg()
 
-                        if msg is not None and msg.get_type()=='COMMAND_ACK' and msg.get_srcSystem()==self.target and msg.target_system==systemid and msg.command==command:
-                            if msg.result in [m.MAV_RESULT_ACCEPTED, m.MAV_RESULT_IN_PROGRESS]:
-                                logging.info(f'{name} #{self.target}')
-                                break
-                            elif msg.result==m.MAV_RESULT_TEMPORARILY_REJECTED:
-                                pass
-                            elif msg.result==m.MAV_RESULT_COMMAND_INT_ONLY:
-                                self._command(name, *params)
-                                break
-                            else:
-                                logging.info(f'{name} failed on #{self.target}')
-                                break
+                    if msg is not None and msg.get_type()=='COMMAND_ACK' and msg.get_srcSystem()==self.target and msg.target_system==systemid and msg.command==command:
+                        if msg.result in [m.MAV_RESULT_ACCEPTED, m.MAV_RESULT_IN_PROGRESS]:
+                            logging.info(f'{name} #{self.target}')
+                            break
+                        elif msg.result==m.MAV_RESULT_TEMPORARILY_REJECTED:
+                            pass
+                        elif msg.result==m.MAV_RESULT_COMMAND_INT_ONLY:
+                            self._command(name, *params)
+                            break
+                        else:
+                            logging.info(f'{name} failed on #{self.target}')
+                            break
 
-                        mav_conn.mav.command_int_send(
-                            self.target,
-                            0,
-                            frame,
-                            command,
-                            0,0,
-                            params_full[0],
-                            params_full[1],
-                            params_full[2],
-                            params_full[3],
-                            params_full[4],
-                            params_full[5],
-                            params_full[6],
-                        )
+                    mav_conn.mav.command_int_send(
+                        self.target,
+                        0,
+                        frame,
+                        command,
+                        0,0,
+                        params_full[0],
+                        params_full[1],
+                        params_full[2],
+                        params_full[3],
+                        params_full[4],
+                        params_full[5],
+                        params_full[6],
+                    )
 
-                        await asyncio.sleep(period)
+                    await asyncio.sleep(period)
 
-                        if i >= timeout_cycles-1:
-                            logging.warning(f'{name} on #{self.target} failed (timeout)')
-            except KeyboardInterrupt:
-                self.close()
+                    if i >= timeout_cycles-1:
+                        logging.warning(f'{name} on #{self.target} failed (timeout)')
+        except KeyboardInterrupt:
+            self.close()
 
     # region user functions
     def boot(self) -> None:
+        """Set UAV mode to boot."""
         logging.info('Calling boot()')
         asyncio.run(self._command('DO_SET_MODE', m.MAV_MODE_PREFLIGHT, 1, 10))
 
     def set_mode(self, mode: int, custom_mode: int, custom_submode: int) -> None:
+        """Set UAV mode."""
         logging.info('Calling set_mode()')
         asyncio.run(self._command('DO_SET_MODE', mode, custom_mode, custom_submode))
 
     def set_alt(self, alt: float) -> None:
+        """Change UAV altitude setpoint."""
         logging.info('Calling set_alt()')
         asyncio.run(self._command('DO_CHANGE_ALTITUDE', alt, m.MAV_FRAME_GLOBAL_TERRAIN_ALT))
 
     def set_speed(self, airspeed: float) -> None:
+        """Change UAV speed setpoint."""
         logging.info('Calling set_speed()')
         asyncio.run(self._command('DO_CHANGE_SPEED', m.SPEED_TYPE_AIRSPEED, airspeed, -1))
 
     def reposition(self, latitude: float, longitude: float, altitude: float, speed: float = -1, radius: float = 0, yaw: float = 1):
+        """Change UAV current waypoint."""
         logging.info('Calling reposition()')
         asyncio.run(self._command_int('DO_REPOSITION', speed, 0, radius, yaw, int(latitude), int(longitude), int(altitude)))
 
     def f_takeoff(self, latitude: float, longitude: float, altitude: float, yaw: float = float('nan'), pitch: float = 10):
+        """Command UAV conventional takeoff."""
         logging.info('Calling f_takeoff()')
         asyncio.run(self._command_int('NAV_TAKEOFF', pitch, 0,0, yaw, int(latitude), int(longitude), int(altitude)))
 
     def v_takeoff(self, latitude: float, longitude: float, altitude: float, transit_heading: float = m.VTOL_TRANSITION_HEADING_TAKEOFF, yaw: float = float('nan')):
+        """Command UAV vertical takeoff."""
         logging.info('Calling v_takeoff()')
         asyncio.run(self._command_int('NAV_VTOL_TAKEOFF', 0, transit_heading, 0, yaw, int(latitude), int(longitude), int(altitude)))
     
     def f_land(self, latitude: float, longitude: float, altitude: float, abort_alt: float = 0, yaw: float = float('nan')):
+        """Command UAV conventional landing."""
         logging.info('Calling f_land()')
         asyncio.run(self._command_int('NAV_LAND', abort_alt, m.PRECISION_LAND_MODE_DISABLED, 0, yaw, int(latitude), int(longitude), int(altitude)))
 
     def v_land(self, latitude: float, longitude: float, altitude: float, approch_alt: float = float('nan'), yaw: float = float('nan')):
+        """Command UAV vertical landing."""
         logging.info('Calling v_land()')
         asyncio.run(self._command_int('NAV_VTOL_LAND', m.NAV_VTOL_LAND_OPTIONS_DEFAULT, 0, approch_alt, yaw, int(latitude), int(longitude), int(altitude)))
 
     def pid(self, kp: float, ti: float, td: float, setpoint: float):
+        """DEVELOPMENT ONLY - send new PID parameters"""
         asyncio.run(self._command_int('PID',kp, ti, td, setpoint, int(0), int(0), int(0), acknowledge=False))
     # endregion
 
     async def _heartbeat(self) -> None:
+        """Publish heartbeat message periodically in background."""
         while True:
             try:
                 mav_conn.mav.heartbeat_send(
@@ -292,6 +311,7 @@ class Connect:
                 raise
 
     def close(self) -> None:
+        """Close the instance's MAVLINK connection."""
         global MAV_CONN_OPEN
 
         flush_buffer()
@@ -310,5 +330,4 @@ class Connect:
 
 
 if __name__=='__main__':
-    os.system('cls' if os.name=='nt' else 'clear')
-    x = Connect(132)
+    logging.critical('Either run the GUI script or import this script to a python terminal.')

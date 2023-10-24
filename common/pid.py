@@ -1,4 +1,5 @@
 class PID:
+    """A PID controller."""
     def __init__(
             self, 
             kp: float=0.0, 
@@ -7,6 +8,7 @@ class PID:
             integral_limit: float = None, 
             minimum: float = None, 
             maximum: float = None) -> None:
+        """Inits the controller with desired parameters."""
         self.kp = kp
         self.ti = ti
         self.td = td
@@ -30,6 +32,7 @@ class PID:
             integral_limit: float = None, 
             minimum: float = None, 
             maximum: float = None) -> None:
+        """Updates PID parameters."""
         if kp is not None:
             self.kp = kp
         if ti is not None:
@@ -45,6 +48,7 @@ class PID:
             self.maximum = maximum
 
     def reset(self) -> None:
+        """Resets PID outputs, does not change parameters."""
         self._proportional = 0.0
         self._integral = 0.0
         self._derivative = 0.0
@@ -53,6 +57,7 @@ class PID:
         self.output = 0.0
 
     def cycle(self, value: float, setpoint: float, time_step: float) -> float:
+        """Calculate the next PID cycle."""
         ki = (self.kp / self.ti) if (self.ti != 0.0) else 0.0
 
         time_step /= 1e6
