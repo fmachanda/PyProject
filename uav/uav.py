@@ -564,6 +564,9 @@ class Processor:
 
         self.main = main
 
+        self._vpath = 0.0
+        self._dyaw = 0.0
+
         self._fservos = np.zeros(4, dtype=np.float16) # elevons*2, rudder, wingtilt
         self._vservos = np.zeros(4, dtype=np.float16)
 
@@ -586,17 +589,17 @@ class Processor:
 
         # self._pid{f or v}_{from}_{to}
 
-        self._pidf_alt_vpa = PID(kp=0.0, td=0.0, ti=0.0, integral_limit=0.2, maximum=4.0, minimum=-3.0)
-        self._pidf_vpa_aoa = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=10.0, maximum=16.0, minimum=-3.0)
+        self._pidf_alt_vpa = PID(kp=0.0, td=0.0, ti=0.0, integral_limit=0.05, maximum=0.05, minimum=-0.05)
+        self._pidf_vpa_aoa = PID(kp=0.7, ti=3.0, td=0.1, integral_limit=0.2, maximum=0.15, minimum=-0.05)
 
         self._pidf_aoa_out = PID(kp=-0.07, ti=-0.008, td=0.02, integral_limit=1, maximum=0.0, minimum=-math.pi/12)
         # self._pidf_slp_out = PID(kp=-0.03, ti=-0.001, td=3.0, integral_limit=math.pi/6, maximum=1.0, minimum=-1.0)
         self._pidf_slp_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=math.pi/6, maximum=1.0, minimum=-1.0)
         self._pidf_ias_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=0.25, maximum=0.25, minimum=0.02)
 
-        self._pidf_yaw_rol = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=2.0, maximum=30.0, minimum=-30.0)
+        self._pidf_yaw_rol = PID(kp=-0.8, ti=-8.0, td=0.05, integral_limit=0.1, maximum=math.pi/6, minimum=-math.pi/6)
 
-        self._pidf_rol_rls = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=10.0, maximum=10.0, minimum=-10.0)
+        self._pidf_rol_rls = PID(kp=2.0, ti=6.0, td=0.08, integral_limit=0.2, maximum=2.0, minimum=-2.0)
         self._pidf_rls_out = PID(kp=0.008, ti=0.003, td=0.01, integral_limit=0.1, maximum=0.1, minimum=-0.1)
         # self._pidf_rls_out = PID(kp=0.015, ti=0.35, td=0.001, integral_limit=0.1, maximum=0.1, minimum=-0.1)
 
@@ -635,7 +638,7 @@ class Processor:
     def _flight_servos(self) -> np.ndarray:
         """Calculate flight servo commands from sensors."""
         if self.main.rxdata.alt.dt > 0.0:
-            self._spf_vpath = 0.0 # self._pidf_alt_vpa.cycle(self.main.rxdata.alt.altitude, self.spf_altitude, self.main.rxdata.alt.dt)
+            self._spf_vpath = self._pidf_alt_vpa.cycle(self.main.rxdata.alt.altitude, self.spf_altitude, self.main.rxdata.alt.dt)
             self.main.rxdata.alt.dt = 0.0
 
         if self.main.rxdata.att.dt > 0.0 or self.main.rxdata.aoa.dt > 0.0:
@@ -646,14 +649,14 @@ class Processor:
             else:
                 dt = (self.main.rxdata.att.dt + self.main.rxdata.aoa.dt) / 2
 
-            vpath = self.main.rxdata.att.pitch - math.cos(self.main.rxdata.att.roll) * self.main.rxdata.aoa.aoa
-            # self._spf_aoa = self._pidf_vpa_aoa.cycle(vpath, self._spf_vpath, dt) # TODO
+            self._vpath = self.main.rxdata.att.pitch - math.cos(self.main.rxdata.att.roll) * self.main.rxdata.aoa.aoa
+            self._spf_aoa = self._pidf_vpa_aoa.cycle(self._vpath, self._spf_vpath, dt) # TODO
 
         if self.main.rxdata.att.dt > 0.0:
-            dyaw = Processor._calc_dyaw(self.main.rxdata.att.yaw, self.spf_heading)
+            self._dyaw = Processor._calc_dyaw(self.main.rxdata.att.yaw, self.spf_heading)
 
-            self._spf_roll = 0.0 # self._pidf_yaw_rol.cycle(dyaw, 0.0, self.main.rxdata.att.dt)
-            # self._spf_rollspeed = self._pidf_rol_rls.cycle(self.main.rxdata.att.roll, self._spf_roll, self.main.rxdata.att.dt)
+            self._spf_roll = self._pidf_yaw_rol.cycle(self._dyaw, 0.0, self.main.rxdata.att.dt)
+            self._spf_rollspeed = self._pidf_rol_rls.cycle(self.main.rxdata.att.roll, self._spf_roll, self.main.rxdata.att.dt)
             self._outf_roll = self._pidf_rls_out.cycle(self.main.rxdata.att.rollspeed, self._spf_rollspeed, self.main.rxdata.att.dt)
 
             self.main.rxdata.att.dt = 0.0
@@ -663,7 +666,7 @@ class Processor:
             self.main.rxdata.aoa.dt = 0.0
 
         if self.main.rxdata.slip.dt > 0.0:
-            self._outf_yaw = self._pidf_slp_out.cycle(self.main.rxdata.slip.slip, 0.0, self.main.rxdata.slip.dt)
+            self._outf_yaw = 0.0 #self._pidf_slp_out.cycle(self.main.rxdata.slip.slip, 0.0, self.main.rxdata.slip.dt)
             self.main.rxdata.slip.dt = 0.0
 
         self._fservos[0] = self._outf_pitch + self._outf_roll # TODO
@@ -926,8 +929,8 @@ class Controller:
                                     # TODO TEMPORARY PID
                                     elif msg.command == 0:
                                         # PID TUNER GOTO
-                                        self.main.processor._pidf_rls_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
-                                        self.main.processor._spf_rollspeed = msg.param4
+                                        self.main.processor._pidf_alt_vpa.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                                        self.main.processor.spf_altitude = msg.param4
                                         logging.info(f"New PID state: {msg.param1}, {msg.param2}, {msg.param3} @ {msg.param4}")
                                     # NAV_TAKEOFF
                                     elif msg.command == m.MAV_CMD_NAV_TAKEOFF:
@@ -1187,4 +1190,4 @@ class Main:
 if __name__ == '__main__':
     import random
     main = Main(20)#random.randint(1, 255))
-    asyncio.run(main.run(graph='main.rxdata.att.rollspeed'))
+    asyncio.run(main.run(graph='main.rxdata.alt.altitude'))
