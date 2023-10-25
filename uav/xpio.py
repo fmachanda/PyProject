@@ -967,7 +967,7 @@ class Camera:
 
         self.xp_path = config.get('xplane', 'xp_screenshot_path')
         
-        self.camera_mav_conn = mavutil.mavlink_connection(config.get('mavlink', 'camera_uav_conn'))
+        self.camera_mav_conn: mavutil.mavfile = mavutil.mavlink_connection(config.get('mavlink', 'camera_uav_conn'))
         
         assert isinstance(id,int) and 0<id<256, 'Camera ID must be UINT8'
         self.id = id
@@ -1079,7 +1079,7 @@ class TestCamera:
 
         self.xp_path = config.get('xplane', 'xp_screenshot_path')
         
-        self.camera_mav_conn = mavutil.mavlink_connection(config.get('mavlink', 'camera_uav_conn'))
+        self.camera_mav_conn: mavutil.mavfile = mavutil.mavlink_connection(config.get('mavlink', 'camera_uav_conn'))
 
         assert isinstance(id,int) and 0<id<256, 'Camera ID must be UINT8'
         self.id = id

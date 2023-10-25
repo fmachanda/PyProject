@@ -298,7 +298,7 @@ class GlobalTx:
 
 
 # Declaration to avoid flagged error in Navigator class
-class Waypoint: pass
+class Waypoint: ...
 
 
 class MainIO:
@@ -784,8 +784,7 @@ class Controller:
         self._heartbeatfreq = heartbeat_freq
 
         self._gcs_id = None
-        self._mav_conn_gcs = mavutil.mavlink_connection(self.main.config.get('mavlink', 'uav_gcs_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1, input=False, autoreconnect=True)
-        assert isinstance(self._mav_conn_gcs, mavutil.mavfile) # TODO: remove
+        self._mav_conn_gcs: mavutil.mavfile = mavutil.mavlink_connection(self.main.config.get('mavlink', 'uav_gcs_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1, input=False, autoreconnect=True)
         import common.key as key
         self._mav_conn_gcs.setup_signing(key.KEY.encode('utf-8'))
 
@@ -889,67 +888,70 @@ class Controller:
                             # GCS messages
                             if msg.get_srcSystem() == self._gcs_id:
                                 # COMMAND_LONG
-                                if msg.get_type() == 'COMMAND_LONG':
-                                    # DO_SET_MODE
-                                    if msg.command == m.MAV_CMD_DO_SET_MODE:
-                                        logging.info('Mode change requested')
-                                            
-                                        if self.main.state.set_mode(msg.param1, msg.param2, msg.param3): # TODO: Add safety check to verify message like below
-                                            self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_SET_MODE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
-                                        else:
-                                            self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_SET_MODE, m.MAV_RESULT_DENIED, 255, 0, 0, 0)
-                                    # DO_CHANGE_ALTITUDE
-                                    elif msg.command == m.MAV_CMD_DO_CHANGE_ALTITUDE:
-                                        pass # TODO
-                                        try:
-                                            self.main.processor.spf_altitude = msg.param1 # TODO add checks!
-                                            logging.info(f'GCS commanded altitude setpoint to {msg.param1}')
-                                            self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
-                                        except AttributeError:
-                                            self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_RESULT_TEMPORARILY_REJECTED, 255, 0, 0, 0)
-                                    # DO_CHANGE_SPEED
-                                    elif msg.command == m.MAV_CMD_DO_CHANGE_SPEED:
-                                        pass # TODO
-                                        try:
-                                            self.main.processor.spf_ias = msg.param2 # TODO add checks!
-                                            logging.info(f'GCS commanded speed setpoint to {msg.param2}')
-                                            self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_SPEED, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
-                                        except AttributeError:
-                                            self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_SPEED, m.MAV_RESULT_TEMPORARILY_REJECTED, 255, 0, 0, 0)
-                                    # Command int only
-                                    elif msg.command in [m.CMD_DO_REPOSITION, m.CMD_NAV_TAKEOFF, m.MAV_CMD_NAV_VTOL_TAKEOFF, m.MAV_CMD_NAV_LAND, m.MAV_CMD_NAV_VTOL_LAND]:
-                                        self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_COMMAND_INT_ONLY, 255, 0, 0, 0)
-                                    # Command unsupported
-                                    else:
-                                        self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, 0, 0)
-                                elif msg.get_type() == 'COMMAND_INT':
-                                    # DO_REPOSITION
-                                    if msg.command == m.MAV_CMD_DO_REPOSITION: 
-                                        pass # TODO
-                                    # TODO TEMPORARY PID
-                                    elif msg.command == 0:
-                                        # PID TUNER GOTO
-                                        self.main.processor._pidf_alt_vpa.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
-                                        self.main.processor.spf_altitude = msg.param4
-                                        logging.info(f"New PID state: {msg.param1}, {msg.param2}, {msg.param3} @ {msg.param4}")
-                                    # NAV_TAKEOFF
-                                    elif msg.command == m.MAV_CMD_NAV_TAKEOFF:
-                                        pass # TODO
-                                    # NAV_VTOL_TAKEOFF
-                                    elif msg.command == m.MAV_CMD_NAV_VTOL_TAKEOFF:
-                                        pass # TODO
-                                    # NAV_LAND
-                                    elif msg.command == m.MAV_CMD_NAV_LAND:
-                                        pass # TODO
-                                    # NAV_VTOL_LAND
-                                    elif msg.command == m.MAV_CMD_NAV_VTOL_LAND:
-                                        pass # TODO
-                                    # Command long only
-                                    elif msg.command in [m.MAV_CMD_DO_SET_MODE, m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_CMD_DO_CHANGE_SPEED]:
-                                        self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_COMMAND_LONG_ONLY, 255, 0, 0, 0)
-                                    # Command unsupported
-                                    else:
-                                        self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, 0, 0)
+                                match msg.get_type():
+                                    case 'COMMAND_LONG':
+                                        match msg.command:
+                                            # DO_SET_MODE
+                                            case m.MAV_CMD_DO_SET_MODE:
+                                                logging.info('Mode change requested')
+                                                    
+                                                if self.main.state.set_mode(msg.param1, msg.param2, msg.param3): # TODO: Add safety check to verify message like below
+                                                    self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_SET_MODE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
+                                                else:
+                                                    self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_SET_MODE, m.MAV_RESULT_DENIED, 255, 0, 0, 0)
+                                            # DO_CHANGE_ALTITUDE
+                                            case m.MAV_CMD_DO_CHANGE_ALTITUDE:
+                                                pass # TODO
+                                                try:
+                                                    self.main.processor.spf_altitude = msg.param1 # TODO add checks!
+                                                    logging.info(f'GCS commanded altitude setpoint to {msg.param1}')
+                                                    self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
+                                                except AttributeError:
+                                                    self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_RESULT_TEMPORARILY_REJECTED, 255, 0, 0, 0)
+                                            # DO_CHANGE_SPEED
+                                            case m.MAV_CMD_DO_CHANGE_SPEED:
+                                                pass # TODO
+                                                try:
+                                                    self.main.processor.spf_ias = msg.param2 # TODO add checks!
+                                                    logging.info(f'GCS commanded speed setpoint to {msg.param2}')
+                                                    self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_SPEED, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
+                                                except AttributeError:
+                                                    self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_SPEED, m.MAV_RESULT_TEMPORARILY_REJECTED, 255, 0, 0, 0)
+                                            # Command int only
+                                            case m.CMD_DO_REPOSITION | m.CMD_NAV_TAKEOFF | m.MAV_CMD_NAV_VTOL_TAKEOFF | m.MAV_CMD_NAV_LAND | m.MAV_CMD_NAV_VTOL_LAND:
+                                                self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_COMMAND_INT_ONLY, 255, 0, 0, 0)
+                                            # Command unsupported
+                                            case _:
+                                                self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, 0, 0)
+                                    case 'COMMAND_INT':
+                                        match msg.command:
+                                            # DO_REPOSITION
+                                            case m.MAV_CMD_DO_REPOSITION: 
+                                                pass # TODO
+                                            # TODO TEMPORARY PID
+                                            case 0:
+                                                # PID TUNER GOTO
+                                                self.main.processor._pidf_alt_vpa.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                                                self.main.processor.spf_altitude = msg.param4
+                                                logging.info(f"New PID state: {msg.param1}, {msg.param2}, {msg.param3} @ {msg.param4}")
+                                            # NAV_TAKEOFF
+                                            case m.MAV_CMD_NAV_TAKEOFF:
+                                                pass # TODO
+                                            # NAV_VTOL_TAKEOFF
+                                            case m.MAV_CMD_NAV_VTOL_TAKEOFF:
+                                                pass # TODO
+                                            # NAV_LAND
+                                            case m.MAV_CMD_NAV_LAND:
+                                                pass # TODO
+                                            # NAV_VTOL_LAND
+                                            case m.MAV_CMD_NAV_VTOL_LAND:
+                                                pass # TODO
+                                            # Command long only
+                                            case m.MAV_CMD_DO_SET_MODE | m.MAV_CMD_DO_CHANGE_ALTITUDE | m.MAV_CMD_DO_CHANGE_SPEED:
+                                                self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_COMMAND_LONG_ONLY, 255, 0, 0, 0)
+                                            # Command unsupported
+                                            case _:
+                                                self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, 0, 0)
 
                     try:
                         await asyncio.sleep(0)

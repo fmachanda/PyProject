@@ -1,7 +1,5 @@
-matplotlib==3.8.0
 numpy==1.26.1
+matplotlib==3.8.0
 pycyphal==1.15.4
-pydsdl==1.20.1
 pymavlink==2.4.40
-tensorflow==2.14.0
-tensorflow_intel==2.14.0
+setuptools==68.2.2

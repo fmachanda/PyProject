@@ -22,6 +22,7 @@ logging.getLogger('pymavlink').setLevel(logging.ERROR)
 
 config = ConfigParser()
 config.read('./common/CONFIG.ini')
+mav_conn: mavutil.mavfile
 systemid = 0
 ids = []
 MAV_CONN_OPEN = False
@@ -82,18 +83,19 @@ class Connect:
                     raise PreExistingConnection
 
                 if msg is not None and msg.get_type()=='CHANGE_OPERATOR_CONTROL_ACK' and msg.get_srcSystem()==target and msg.gcs_system_id==systemid:
-                    if msg.ack == 0:
-                        self.target = target        
-                        if target not in ids:
-                            ids.append(self.target)
-                        logging.info(f'Connected to #{self.target}')
-                        break
-                    elif msg.ack in [1,2]:
-                        logging.info(f'Bad connection key for #{target}')
-                        break
-                    elif msg.ack == 3:
-                        logging.info(f'#{target} is connected to another GCS')
-                        break
+                    match msg.ack:
+                        case 0:
+                            self.target = target        
+                            if target not in ids:
+                                ids.append(self.target)
+                            logging.info(f'Connected to #{self.target}')
+                            break
+                        case 1 | 2:
+                            logging.info(f'Bad connection key for #{target}')
+                            break
+                        case 3:
+                            logging.info(f'#{target} is connected to another GCS')
+                            break
 
                 mav_conn.mav.change_operator_control_send(target, 0, 0, key.KEY.encode('utf-8'))
                 time.sleep(1)
@@ -137,17 +139,18 @@ class Connect:
                     msg = mav_conn.recv_msg()
 
                     if msg is not None and msg.get_type()=='COMMAND_ACK' and msg.get_srcSystem()==self.target and msg.target_system==systemid and msg.command==command:
-                        if msg.result in [m.MAV_RESULT_ACCEPTED, m.MAV_RESULT_IN_PROGRESS]:
-                            logging.info(f'{name} #{self.target}')
-                            break
-                        elif msg.result==m.MAV_RESULT_TEMPORARILY_REJECTED:
-                            pass
-                        elif msg.result==m.MAV_RESULT_COMMAND_INT_ONLY:
-                            self._command_int(name, *params)
-                            break
-                        else:
-                            logging.info(f'{name} failed on #{self.target}')
-                            break
+                        match msg.result:
+                            case m.MAV_RESULT_ACCEPTED | m.MAV_RESULT_IN_PROGRESS:
+                                logging.info(f'{name} #{self.target}')
+                                break
+                            case m.MAV_RESULT_TEMPORARILY_REJECTED:
+                                pass
+                            case m.MAV_RESULT_COMMAND_INT_ONLY:
+                                self._command_int(name, *params)
+                                break
+                            case _:
+                                logging.info(f'{name} failed on #{self.target}')
+                                break
 
                     mav_conn.mav.command_long_send(
                         self.target,
@@ -206,17 +209,18 @@ class Connect:
                     msg = mav_conn.recv_msg()
 
                     if msg is not None and msg.get_type()=='COMMAND_ACK' and msg.get_srcSystem()==self.target and msg.target_system==systemid and msg.command==command:
-                        if msg.result in [m.MAV_RESULT_ACCEPTED, m.MAV_RESULT_IN_PROGRESS]:
-                            logging.info(f'{name} #{self.target}')
-                            break
-                        elif msg.result==m.MAV_RESULT_TEMPORARILY_REJECTED:
-                            pass
-                        elif msg.result==m.MAV_RESULT_COMMAND_INT_ONLY:
-                            self._command(name, *params)
-                            break
-                        else:
-                            logging.info(f'{name} failed on #{self.target}')
-                            break
+                        match msg.result:
+                            case m.MAV_RESULT_ACCEPTED | m.MAV_RESULT_IN_PROGRESS:
+                                logging.info(f'{name} #{self.target}')
+                                break
+                            case m.MAV_RESULT_TEMPORARILY_REJECTED:
+                                pass
+                            case m.MAV_RESULT_COMMAND_INT_ONLY:
+                                self._command(name, *params)
+                                break
+                            case _:
+                                logging.info(f'{name} failed on #{self.target}')
+                                break
 
                     mav_conn.mav.command_int_send(
                         self.target,
