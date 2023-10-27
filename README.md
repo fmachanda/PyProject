@@ -20,9 +20,8 @@ The software is designed to be simulated using the [X-Plane 12][xplane-link] fli
 
 ## Requirements
 * Windows 11.0+ or MacOS 13.0+
-* Python 3.11+
-    * `pycyphal` library
-    * `pymavlink` library
+* Python 3.12+
+    * **pip** modules listed in `requirements.txt`
 * X-Plane 12.06+ (if using simulation)
 
 > Not tested with older versions or Linux, but may work
@@ -32,21 +31,21 @@ The software is designed to be simulated using the [X-Plane 12][xplane-link] fli
 Clone this repo into the desired directory. This project contains the [public_regulated_data_types][prdt-link] submodule, so you must use `--recurse-submodules`.
 
 ```bash
-$ git clone https://github.com/fmachanda/fmuas-main.git <directory> --recurse-submodules
+git clone https://github.com/fmachanda/fmuas-main.git <directory> --recurse-submodules
 
-$ cd <directory>/fmuas-main
+cd <directory>/fmuas-main
 ```
 
 Install required python modules with [pip](https://pip.pypa.io/en/stable/installation/).
 
 ```bash
-$ pip install -r requirements.txt
+pip install -r requirements.txt
 ```
 
 X-Plane simulation requires the files from the [fmuas-xp][fmuas-xp-link] repo to be cloned into `X-Plane 12/Aircraft/`.
 
 ```bash
-$ git clone https://github.com/fmachanda/fmuas-xp.git <aircraft-directory>
+git clone https://github.com/fmachanda/fmuas-xp.git <aircraft-directory>
 ```
 
 ## Important Files
@@ -94,7 +93,7 @@ To use with X-Plane 12:
 
 3. Start a new flight with the FMUAS aircraft
 
-    > The flight will remain paused until `xp_interface.py` starts running
+    > The flight will remain paused until `xpio.py` starts running
 
 4. Run the following scripts:
     * `gcs_gui.py`
@@ -108,13 +107,13 @@ To use with X-Plane 12:
 The `gcs.py` script provides a very simple interface that can be used to connect with a UAV running `uav.py`. To use the provided commands, open a python terminal and type:
 
 ```python
->>> import gcs
+import gcs
 ```
 
 To connect to a UAV, you need to know the System ID of the UAV's MAVLINK node. This can be found in the UAV's terminal. Connect to the UAV with:
 
 ```python
->>> uav1 = gcs.Connect(<systemid>) # Replace <systemid> with the UAV's System ID
+uav1 = gcs.Connect(<systemid>) # Replace <systemid> with the UAV's System ID
 ```
 
 If you don't get a "Connected to ..." message, ensure that the CONFIG.ini files in the `uav` and `gcs` files are setting up compatible mavlink nodes.
@@ -122,13 +121,13 @@ If you don't get a "Connected to ..." message, ensure that the CONFIG.ini files 
 To boot the UAV, run:
 
 ```python
->>> uav1.boot()
+uav1.boot()
 ```
 
 To close the connection with the UAV, run:
 
 ```python
->>> uav1.close()
+uav1.close()
 ```
 
 Refer to the `gcs.py` script for further documentation.
@@ -136,9 +135,9 @@ Refer to the `gcs.py` script for further documentation.
 ---
 ### Credits
 
-`common/data_types/public_regulated_data_types/` taken from [OpenCyphal/public_regulated_data_types][prdt-link]  
+`common/data_types/public_regulated_data_types/` copied from [OpenCyphal/public_regulated_data_types][prdt-link]  
 
-`common/data_types/custom_data_types/uavcan_archived/` taken from [dronecan/DSDL](https://github.com/dronecan/DSDL)  
+`common/data_types/custom_data_types/uavcan_archived/` modified from [dronecan/DSDL](https://github.com/dronecan/DSDL)  
 
 `common/find_xp.py` copied from the [XPPython3 Docs](https://xppython3.readthedocs.io/en/latest/_static/find_xp.py)  
 

@@ -5,3 +5,4 @@ pycyphal_generated
 __pycache__
 .DS_Store
 .venv
+test.py

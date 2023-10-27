@@ -94,7 +94,11 @@ class XPConnect:
         self._freq = freq
 
         logging.info('Looking for X-Plane...')
-        beacon=find_xp.find_xp(wait=XP_FIND_TIMEOUT)
+        try:
+            beacon=find_xp.find_xp(wait=XP_FIND_TIMEOUT)
+        except find_xp.XPlaneIpNotFound:
+            logging.critical(f'X-Plane not found, closing...')
+            sys.exit()
         self.X_PLANE_IP=beacon['ip']
         self.UDP_PORT=beacon['port']
         logging.warning('X-Plane found at IP: %s, port: %s' % (self.X_PLANE_IP,self.UDP_PORT))
