@@ -176,10 +176,13 @@ class Connect:
     async def _command_int(self, name: str, *params, acknowledge: bool = True, period: float = 1, timeout_cycles: int = 5, frame: int = m.MAV_FRAME_GLOBAL) -> None:
         """Send a COMMAND_INT message."""
         params_full = (list(params)+[0]*7)[:7]
-        if name != 'PID':
-            command = eval(f'm.MAV_CMD_{name}')
-        else:
-            command = 0
+        match name:
+            case 'PID':
+                command = 0
+            case 'IMG':
+                command = 1
+            case _:
+                command = eval(f'm.MAV_CMD_{name}')
 
         try:
             flush_buffer()
@@ -291,8 +294,12 @@ class Connect:
         asyncio.run(self._command_int('NAV_VTOL_LAND', m.NAV_VTOL_LAND_OPTIONS_DEFAULT, 0, approch_alt, yaw, int(latitude), int(longitude), int(altitude)))
 
     def pid(self, kp: float, ti: float, td: float, setpoint: float):
-        """DEVELOPMENT ONLY - send new PID parameters"""
+        """DEVELOPMENT ONLY - send new PID parameters."""
         asyncio.run(self._command_int('PID',kp, ti, td, setpoint, int(0), int(0), int(0), acknowledge=False))
+
+    def img(self, interval: float, num: float, sequence: float = 0):
+        """DEVELOPMENT ONLY - send screenshot command."""
+        asyncio.run(self._command_int('IMG',interval, num, sequence, 0.0, int(0), int(0), int(0), acknowledge=False))
     # endregion
 
     async def _heartbeat(self) -> None:

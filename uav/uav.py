@@ -783,6 +783,7 @@ class Controller:
     close(self)
         Close connection.
     """
+
     type_handlers = {
         'HEARTBEAT': '_handle_heartbeat',
         'BAD_DATA': '_handle_bad_data',
@@ -813,6 +814,7 @@ class Controller:
         self._mav_conn_gcs: mavutil.mavfile = mavutil.mavlink_connection(self.main.config.get('mavlink', 'uav_gcs_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1, input=False, autoreconnect=True)
         import common.key as key
         self._mav_conn_gcs.setup_signing(key.KEY.encode('utf-8'))
+        self.cam_conn: mavutil.mavfile = mavutil.mavlink_connection(self.main.config.get('mavlink', 'uav_camera_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1, input=False)
 
     #region Handlers
     def _handle_heartbeat(self, msg) -> None:
@@ -898,6 +900,22 @@ class Controller:
                     self.main.processor._pidf_alt_vpa.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
                     self.main.processor.spf_altitude = msg.param4
                     logging.info(f"New PID state: {msg.param1}, {msg.param2}, {msg.param3} @ {msg.param4}")
+                # TODO TEMPORARY SCREENSHOT
+                case 1:
+                    logging.debug('Commanding camera...')
+                    self.cam_conn.mav.command_long_send(
+                        self.main.systemid,
+                        m.MAV_COMP_ID_CAMERA,
+                        m.MAV_CMD_IMAGE_START_CAPTURE,
+                        0,
+                        0, # param1: Camera ID
+                        msg.param1, # param2: Interval (seconds)
+                        msg.param2, # param3: Number images
+                        msg.param3, # param4: Single image sequence number
+                        0,
+                        0,
+                        float('nan')
+                    )
                 # NAV_TAKEOFF
                 case m.MAV_CMD_NAV_TAKEOFF:
                     pass # TODO

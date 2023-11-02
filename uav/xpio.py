@@ -224,7 +224,7 @@ class TestXPConnect:
         logging.info('Stopped listening for drefs')
         logging.info('LUA suspended')
 
-
+#region nodes
 class ServoIO:
     def __init__(self, freq: int = FREQ) -> None:
         self._registry = pycyphal.application.make_registry(environment_variables={
@@ -960,24 +960,26 @@ class Clock:
     async def close(self) -> None:
         logging.debug('Closing CLK')
         self._node.close()
-
+#endregion
 
 class Camera:
-    def __init__(self, xpconnection: XPConnect, id: int = 2, target_id: int = 1) -> None:
+    DELAY = 0.5
+
+    def __init__(self, xpconnection: XPConnect, target_id: int = 1) -> None:
         assert isinstance(xpconnection, XPConnect), 'Must pass an instance of XPConnect'
         self.sock = xpconnection.sock
         self.X_PLANE_IP = xpconnection.X_PLANE_IP
         self.UDP_PORT = xpconnection.UDP_PORT
-
-        self.xp_path = config.get('xplane', 'xp_screenshot_path')
-        
-        self.camera_mav_conn: mavutil.mavfile = mavutil.mavlink_connection(config.get('mavlink', 'camera_uav_conn'))
-        
-        assert isinstance(id,int) and 0<id<256, 'Camera ID must be UINT8'
-        self.id = id
         
         assert isinstance(target_id,int) and 0<target_id<256, 'Camera target ID must be UINT8'
         self.target_id = target_id
+
+        self.xp_path = config.get('xplane', 'xp_screenshot_path')
+        self.destination_dir = './stored_images'
+        if not os.path.exists(self.destination_dir):
+           os.makedirs(self.destination_dir)
+        
+        self.camera_mav_conn: mavutil.mavfile = mavutil.mavlink_connection(config.get('mavlink', 'camera_uav_conn'), source_system=self.target_id, source_component=m.MAV_COMP_ID_CAMERA, input=True)
 
     async def run(self) -> None:
         asyncio.create_task(self._heartbeat())
@@ -985,10 +987,10 @@ class Camera:
         try:
             while not stop.is_set():
                 try:
-                    msg = None # self.camera_mav_conn.recv_msg() TODO
-                    if msg is not None and msg.get_srcSystem()==self.target_id and msg.target_system==self.id and msg.get_type() == 'COMMAND_LONG':
+                    msg = self.camera_mav_conn.recv_msg()
+                    if msg is not None and msg.get_srcSystem()==self.target_id and msg.target_system==self.target_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'COMMAND_LONG':
                         if msg.command == m.MAV_CMD_IMAGE_START_CAPTURE:
-                            cap = asyncio.create_task(self._capture_cycle(msg.param3, msg.param2))
+                            cap = asyncio.create_task(self._capture_cycle(int(msg.param3), msg.param2))
                             self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_START_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self.target_id, 0)
                         elif msg.command == m.MAV_CMD_IMAGE_STOP_CAPTURE:
                             try:
@@ -1014,14 +1016,12 @@ class Camera:
             await self.close()
 
     async def _capture(self) -> None:
-        delay = 0.5
-
         previous_file_list = [f for f in os.listdir(self.xp_path) if os.path.isfile(os.path.join(self.xp_path, f))]
 
-        self.sock.sendto(struct.pack('<4sx400s', b'CMND', b'sim/view/forward_with_nothing'), (self.X_PLANE_IP, self.UDP_PORT))
-        self.sock.sendto(struct.pack('<4sx400s', b'CMND', b'sim/operation/screenshot'), (self.X_PLANE_IP, self.UDP_PORT))
+        logging.info("Commanding screenshot...")
+        self.sock.sendto(struct.pack('<4sx400s', b'CMND', b'fmuas/commands/image_capture'), (self.X_PLANE_IP, self.UDP_PORT))
 
-        await asyncio.sleep(delay)
+        await asyncio.sleep(Camera.DELAY)
             
         new_file_list = [f for f in os.listdir(self.xp_path) if os.path.isfile(os.path.join(self.xp_path, f))]
 
@@ -1030,10 +1030,21 @@ class Camera:
         previous_file_list = new_file_list
 
         if len(file_diff) != 0:
-            os.chdir(self.xp_path)
-            for f in file_diff:
-                shutil.move(f, './stored_images')
             logging.info(f'Detected file_diff: {file_diff}')
+            for f in file_diff:
+                if not os.path.exists(self.destination_dir):
+                    os.makedirs(self.destination_dir)
+                file_path = os.path.join(self.xp_path, f)
+                try:
+                    shutil.move(file_path, self.destination_dir)
+                    logging.info(f'Moving file {file_path} to {self.destination_dir}')
+                except shutil.Error:
+                    logging.error(f'Error moving file {file_path} to {self.destination_dir}')
+                except PermissionError:
+                    logging.error(f'Error moving file {file_path} to {self.destination_dir}')
+                finally:
+                    pass
+                    
 
     async def _capture_cycle(self, iterations: int, period: float) -> None:
         if iterations != 0:
@@ -1078,29 +1089,26 @@ class Camera:
 
 
 class TestCamera:
-    def __init__(self, xpconnection: TestXPConnect, id: int = 2, target_id: int = 1) -> None:
+    def __init__(self, xpconnection: TestXPConnect, target_id: int = 1) -> None:
         assert isinstance(xpconnection, TestXPConnect), 'Must pass an instance of TestXPConnect'
 
-        self.xp_path = config.get('xplane', 'xp_screenshot_path')
-        
-        self.camera_mav_conn: mavutil.mavfile = mavutil.mavlink_connection(config.get('mavlink', 'camera_uav_conn'))
-
-        assert isinstance(id,int) and 0<id<256, 'Camera ID must be UINT8'
-        self.id = id
-        
         assert isinstance(target_id,int) and 0<target_id<256, 'Camera target ID must be UINT8'
         self.target_id = target_id
 
+        self.xp_path = config.get('xplane', 'xp_screenshot_path')
+        
+        self.camera_mav_conn: mavutil.mavfile = mavutil.mavlink_connection(config.get('mavlink', 'camera_uav_conn'), source_system=self.target_id, source_component=m.MAV_COMP_ID_CAMERA, input=True)
+        
     async def run(self) -> None:
         asyncio.create_task(self._heartbeat())
 
         try:
             while not stop.is_set():
                 try:
-                    msg = None # self.camera_mav_conn.recv_msg() TODO
-                    if msg is not None and msg.get_srcSystem()==self.target_id and msg.target_system==self.id and msg.get_type() == 'COMMAND_LONG':
+                    msg = self.camera_mav_conn.recv_msg()
+                    if msg is not None and msg.get_srcSystem()==self.target_id and msg.target_system==self.target_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'COMMAND_LONG':
                         if msg.command == m.MAV_CMD_IMAGE_START_CAPTURE:
-                            cap = asyncio.create_task(self._capture_cycle(msg.param3, msg.param2))
+                            cap = asyncio.create_task(self._capture_cycle(int(msg.param3), msg.param2))
                             self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_START_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self.target_id, 0)
                         elif msg.command == m.MAV_CMD_IMAGE_STOP_CAPTURE:
                             try:
@@ -1126,8 +1134,8 @@ class TestCamera:
             await self.close()
 
     async def _capture(self) -> None:
-        delay=0.5
-        await asyncio.sleep(delay)
+        logging.info("Commanding screenshot...")
+        await asyncio.sleep(Camera.DELAY)
 
     async def _capture_cycle(self, iterations: int, period: float) -> None:
         if iterations != 0:
@@ -1173,7 +1181,7 @@ class TestCamera:
 
 async def main():
     xpl = TestXPConnect() if os.name != 'nt' else XPConnect()
-    cam = TestCamera(xpl) if os.name != 'nt' else Camera(xpl)
+    cam = TestCamera(xpl, target_id=20) if os.name != 'nt' else Camera(xpl, target_id=20)
     clk = Clock()
     att = AttitudeSensor()
     alt = AltitudeSensor()
