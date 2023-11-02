@@ -463,7 +463,7 @@ class MainIO:
 
     async def run(self) -> None:
         """Recieve subscripted data and write to publishers."""
-        # region Subscriptions
+        #region Subscriptions
         def on_time(msg: uavcan.time.SynchronizedTimestamp_1, _: pycyphal.transport.TransferFrom) -> None:
             self.main.rxdata.time.dump(msg)
         self._sub_clock_sync_time.receive_in_background(on_time)
@@ -494,7 +494,7 @@ class MainIO:
             t = self.main.rxdata.time.time
             self.main.rxdata.slip.dump(msg, t)
         self._sub_slip.receive_in_background(on_slip)
-        # endregion
+        #endregion
         
         self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
         logging.warning('UAVCAN Node Running...\n----- Ctrl-C to exit -----') # TODO: no verification
@@ -631,7 +631,7 @@ class Processor:
         self.main.state.inc_mode()
         await asyncio.sleep(0)
 
-    # region Calculations
+    #region Calculations
     @staticmethod
     def _calc_dyaw(value: float, setpoint: float) -> float: # TODO: if negative radians sent by uavcan
         """Calculate yaw error.
@@ -715,7 +715,7 @@ class Processor:
     def _vtol_throttles(self) -> np.ndarray:
         """Calculate VTOL throttle commands from sensors."""
         return self._vthrottles
-    # endregion
+    #endregion
 
     @async_loop_decorator()
     async def _processor_run_loop(self) -> None:

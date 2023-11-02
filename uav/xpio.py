@@ -10,6 +10,7 @@ import struct
 import sys
 import time
 from configparser import ConfigParser
+from functools import wraps
 import numpy as np
 
 if os.path.basename(os.getcwd()) == 'uav':
@@ -86,6 +87,36 @@ FREQ = 60
 FT_TO_M = 3.048e-1
 KT_TO_MS = 5.14444e-1
 
+type LoopedClass = XPConnect | TestXPConnect | ServoIO | ESCIO | \
+    AltitudeSensor | AttitudeSensor | GPSSensor | IASSensor | AOASensor | SlipSensor | Clock | Camera | TestCamera
+
+
+def async_loop_decorator(close=True):
+    """Provide decorator to gracefully loop coroutines"""
+    def decorator(func):
+        @wraps(func) # Preserve metadata like func.__name__
+        async def wrapper(self: LoopedClass, *args, **kwargs):
+            try:
+                while not stop.is_set():
+                    try:
+                        await func(self, *args, **kwargs)
+                    except asyncio.exceptions.CancelledError:
+                        stop.set()
+                        raise
+                    except Exception as e:
+                        logging.error(f'Error in {func.__name__}: {e}')
+                        raise e
+            except KeyboardInterrupt:
+                stop.set()
+                raise
+            finally:
+                if close:
+                    await self.close()
+                else:
+                    logging.debug(f'Closing {func.__name__}')
+        return wrapper
+    return decorator
+
 
 class XPConnect:
     def __init__(self, freq: int = XP_FREQ) -> None:
@@ -113,43 +144,32 @@ class XPConnect:
             msg = struct.pack('<4sxii400s', b'RREF', self._freq, index, dref)
             self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
 
-    async def run(self) -> None:
+    @async_loop_decorator()
+    async def _xpconnect_run_loop(self) -> None:
         global rx_data
 
+        data, _ = self.sock.recvfrom(2048)
+        header = data[0:4]
+
+        if header == b'RREF':
+            num_values = int(len(data[5:]) / 8)
+            for i in range(num_values):
+                dref_info = data[(5 + 8 * i):(5 + 8 * (i + 1))]
+                (index, value) = struct.unpack('<if', dref_info)
+                if index < len(rx_data):
+                    rx_data[list(rx_data.keys())[index]] = value
+
+        for index, dref in enumerate(tx_data):
+                msg = struct.pack('<4sxf500s', b'DREF', dref[1], dref[0])
+                self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
+
+        await asyncio.sleep(1 / self._freq)
+
+    async def run(self) -> None:
         logging.warning('Data streaming...\n----- Ctrl-C to exit -----')
-
-        try:
-            while not stop.is_set():
-                try:
-                    data, _ = self.sock.recvfrom(2048)
-                    header = data[0:4]
-
-                    if header == b'RREF':
-                        num_values = int(len(data[5:]) / 8)
-                        for i in range(num_values):
-                            dref_info = data[(5 + 8 * i):(5 + 8 * (i + 1))]
-                            (index, value) = struct.unpack('<if', dref_info)
-                            if index < len(rx_data):
-                                rx_data[list(rx_data.keys())[index]] = value
-
-                    for index, dref in enumerate(tx_data):
-                            msg = struct.pack('<4sxf500s', b'DREF', dref[1], dref[0])
-                            self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
-
-                    try:
-                        await asyncio.sleep(1 / self._freq)
-                    except asyncio.exceptions.CancelledError: 
-                        stop.set()
-                        raise
-                except Exception as e:
-                    logging.error('Socket error: ', e)
-        except KeyboardInterrupt:
-            stop.set()
-            raise
-        finally:
-            self.close()
+        await self._xpconnect_run_loop()
         
-    def close(self) -> None:
+    async def close(self) -> None:
         logging.debug('Closing XPL')
 
         for index, dref in enumerate(rx_data.keys()):
@@ -185,41 +205,28 @@ class TestXPConnect:
         self.UDP_PORT=0
         logging.warning('X-Plane found at IP: %s, port: %s' % (self.X_PLANE_IP,self.UDP_PORT))
 
-    async def run(self) -> None:
+    @async_loop_decorator()
+    async def _testxpconnect_run_loop(self) -> None:
         global rx_data
 
-        logging.warning('Data streaming...\n----- Ctrl-C to exit -----')
+        self._time = time.time_ns()//1000 - self._boot_time
+        rx_data[b'fmuas/clock/time'] = time.time() - self._boot_time/1e6
+
+        if self.rx_indices is not None:
+            for i in self.rx_indices:
+                rx_data[list(rx_data.keys())[i]] = 20*math.sin(self._time/2e6)
 
         now = datetime.datetime.now()
+        rx_data[b'sim/time/zulu_time_sec'] = (now - now.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds()
+        rx_data[b'sim/time/paused'] = 0
 
-        try:
-            while not stop.is_set():
-                try:
-                    self._time = time.time_ns()//1000 - self._boot_time
-                    rx_data[b'fmuas/clock/time'] = time.time() - self._boot_time/1e6
+        await asyncio.sleep(1 / self._freq)
 
-                    if self.rx_indices is not None:
-                        for i in self.rx_indices:
-                            rx_data[list(rx_data.keys())[i]] = 20*math.sin(self._time/2e6)
+    async def run(self) -> None:
+        logging.warning('Data streaming...\n----- Ctrl-C to exit -----')
+        await self._testxpconnect_run_loop()
 
-                    now = datetime.datetime.now()
-                    rx_data[b'sim/time/zulu_time_sec'] = (now - now.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds()
-                    rx_data[b'sim/time/paused'] = 0
-
-                    try:
-                        await asyncio.sleep(1 / self._freq)
-                    except asyncio.exceptions.CancelledError: 
-                        stop.set()
-                        raise
-                except Exception as e:
-                    logging.error('Socket error: ', e)
-        except KeyboardInterrupt:
-            stop.set()
-            raise
-        finally:
-            self.close()
-
-    def close(self) -> None:
+    async def close(self) -> None:
         logging.debug('Closing XPL')
         logging.info('Stopped listening for drefs')
         logging.info('LUA suspended')
@@ -260,6 +267,42 @@ class ServoIO:
 
         self._node.start()
 
+    @async_loop_decorator()
+    async def _servoio_run_loop(self) -> None:
+        await self._pub_servo1_status.publish(actuator.Status_1(
+            0, # id
+            float('nan'), # position
+            float('nan'), # force
+            float('nan'), # speed
+            actuator.Status_1.POWER_RATING_PCT_UNKNOWN
+        ))
+        
+        await self._pub_servo2_status.publish(actuator.Status_1(
+            1, # id
+            float('nan'), # position
+            float('nan'), # force
+            float('nan'), # speed
+            actuator.Status_1.POWER_RATING_PCT_UNKNOWN
+        ))
+
+        await self._pub_servo3_status.publish(actuator.Status_1(
+            2, # id
+            float('nan'), # position
+            float('nan'), # force
+            float('nan'), # speed
+            actuator.Status_1.POWER_RATING_PCT_UNKNOWN
+        ))
+
+        await self._pub_servo4_status.publish(actuator.Status_1(
+            3, # id
+            float('nan'), # position
+            float('nan'), # force
+            float('nan'), # speed
+            actuator.Status_1.POWER_RATING_PCT_UNKNOWN
+        ))
+
+        await asyncio.sleep(1 / self._freq)
+
     async def run(self) -> None:
         """docstring placeholder"""
         def on_servo(msg: actuator.ArrayCommand_1, _: pycyphal.transport.TransferFrom) -> None:
@@ -268,52 +311,7 @@ class ServoIO:
                     tx_data[index][1] = math.degrees(command.command_value)
         self._sub_servo.receive_in_background(on_servo)
 
-        try:
-            while not stop.is_set():
-                try:
-                    await self._pub_servo1_status.publish(actuator.Status_1(
-                        0, # id
-                        float('nan'), # position
-                        float('nan'), # force
-                        float('nan'), # speed
-                        actuator.Status_1.POWER_RATING_PCT_UNKNOWN
-                    ))
-                    
-                    await self._pub_servo2_status.publish(actuator.Status_1(
-                        1, # id
-                        float('nan'), # position
-                        float('nan'), # force
-                        float('nan'), # speed
-                        actuator.Status_1.POWER_RATING_PCT_UNKNOWN
-                    ))
-
-                    await self._pub_servo3_status.publish(actuator.Status_1(
-                        2, # id
-                        float('nan'), # position
-                        float('nan'), # force
-                        float('nan'), # speed
-                        actuator.Status_1.POWER_RATING_PCT_UNKNOWN
-                    ))
-
-                    await self._pub_servo4_status.publish(actuator.Status_1(
-                        3, # id
-                        float('nan'), # position
-                        float('nan'), # force
-                        float('nan'), # speed
-                        actuator.Status_1.POWER_RATING_PCT_UNKNOWN
-                    ))
-
-                    await asyncio.sleep(1 / self._freq)
-                except asyncio.exceptions.CancelledError: 
-                    stop.set()
-                    raise
-                except Exception as e:
-                    logging.error(f'Error in SRV: {e}')
-        except KeyboardInterrupt:
-            stop.set()
-            raise
-        finally:
-            await self.close()
+        await self._servoio_run_loop()
 
     async def close(self) -> None:
         logging.debug('Closing SRV')
@@ -355,6 +353,50 @@ class ESCIO:
 
         self._node.start()
 
+    @async_loop_decorator()
+    async def _escio_run_loop(self) -> None:
+        await self._pub_esc1_status.publish(esc.Status_1(
+            0, # error count
+            float('nan'), # voltage
+            float('nan'), # current
+            float('nan'), # temperature
+            0, # RPM (int)
+            0, # power rating pct (int)
+            0 # esc_index
+        ))
+        
+        await self._pub_esc2_status.publish(esc.Status_1(
+            0, # error count
+            float('nan'), # voltage
+            float('nan'), # current
+            float('nan'), # temperature
+            0, # RPM (int)
+            0, # power rating pct (int)
+            1 # esc_index
+        ))
+
+        await self._pub_esc3_status.publish(esc.Status_1(
+            0, # error count
+            float('nan'), # voltage
+            float('nan'), # current
+            float('nan'), # temperature
+            0, # RPM (int)
+            0, # power rating pct (int)
+            2 # esc_index
+        ))
+
+        await self._pub_esc4_status.publish(esc.Status_1(
+            0, # error count
+            float('nan'), # voltage
+            float('nan'), # current
+            float('nan'), # temperature
+            0, # RPM (int)
+            0, # power rating pct (int)
+            3 # esc_index
+        ))
+
+        await asyncio.sleep(1 / self._freq)
+
     async def run(self) -> None:
         """docstring placeholder"""
         def on_esc(msg: esc.RawCommand_1, _: pycyphal.transport.TransferFrom) -> None:
@@ -362,60 +404,7 @@ class ESCIO:
                 tx_data[index + 1 + TX_DATA_LAST_SERVO][1] = value / 8192
         self._sub_esc.receive_in_background(on_esc)
 
-        try:
-            while not stop.is_set():
-                try:
-                    await self._pub_esc1_status.publish(esc.Status_1(
-                        0, # error count
-                        float('nan'), # voltage
-                        float('nan'), # current
-                        float('nan'), # temperature
-                        0, # RPM (int)
-                        0, # power rating pct (int)
-                        0 # esc_index
-                    ))
-                    
-                    await self._pub_esc2_status.publish(esc.Status_1(
-                        0, # error count
-                        float('nan'), # voltage
-                        float('nan'), # current
-                        float('nan'), # temperature
-                        0, # RPM (int)
-                        0, # power rating pct (int)
-                        1 # esc_index
-                    ))
-
-                    await self._pub_esc3_status.publish(esc.Status_1(
-                        0, # error count
-                        float('nan'), # voltage
-                        float('nan'), # current
-                        float('nan'), # temperature
-                        0, # RPM (int)
-                        0, # power rating pct (int)
-                        2 # esc_index
-                    ))
-
-                    await self._pub_esc4_status.publish(esc.Status_1(
-                        0, # error count
-                        float('nan'), # voltage
-                        float('nan'), # current
-                        float('nan'), # temperature
-                        0, # RPM (int)
-                        0, # power rating pct (int)
-                        3 # esc_index
-                    ))
-
-                    await asyncio.sleep(1 / self._freq)
-                except asyncio.exceptions.CancelledError: 
-                    stop.set()
-                    raise
-                except Exception as e:
-                    logging.error(f'Error in ESC: {e}')
-        except KeyboardInterrupt:
-            stop.set()
-            raise
-        finally:
-            await self.close()
+        await self._escio_run_loop()
 
     async def close(self) -> None:
         logging.debug('Closing ESC')
@@ -466,51 +455,40 @@ class AttitudeSensor:
 
         self._node.start()
 
+    @async_loop_decorator()
+    async def _attitudesensor_run_loop(self) -> None:
+        m = ahrs.Solution_1(
+            uavcan_archived.Timestamp_1(self._time),
+            [
+                rx_data[b'fmuas/att/attitude_quaternion_x'], 
+                rx_data[b'fmuas/att/attitude_quaternion_y'], 
+                rx_data[b'fmuas/att/attitude_quaternion_z'], 
+                rx_data[b'fmuas/att/attitude_quaternion_w']
+            ],
+            [float('nan')],
+            [
+                rx_data[b'fmuas/att/rollrate'],
+                rx_data[b'fmuas/att/pitchrate'],
+                rx_data[b'fmuas/att/yawrate'],
+            ],
+            [float('nan')],
+            [
+                rx_data[b'fmuas/att/an'],
+                rx_data[b'fmuas/att/ae'],
+                rx_data[b'fmuas/att/ad'],
+            ],
+            [float('nan')]
+        )
+        await self._pub_att.publish(m)
+        await asyncio.sleep(1 / self._freq)
+
     async def run(self) -> None:
         """docstring placeholder"""
         def on_time(msg: uavcan.time.SynchronizedTimestamp_1, _: pycyphal.transport.TransferFrom) -> None:
             self._time = msg.microsecond
         self._sub_clock_sync_time.receive_in_background(on_time)
 
-        try:
-            while not stop.is_set():
-                try:
-                    m = ahrs.Solution_1(
-                        uavcan_archived.Timestamp_1(self._time),
-                        [
-                            rx_data[b'fmuas/att/attitude_quaternion_x'], 
-                            rx_data[b'fmuas/att/attitude_quaternion_y'], 
-                            rx_data[b'fmuas/att/attitude_quaternion_z'], 
-                            rx_data[b'fmuas/att/attitude_quaternion_w']
-                        ],
-                        [float('nan')],
-                        [
-                            rx_data[b'fmuas/att/rollrate'],
-                            rx_data[b'fmuas/att/pitchrate'],
-                            rx_data[b'fmuas/att/yawrate'],
-                        ],
-                        [float('nan')],
-                        [
-                            rx_data[b'fmuas/att/an'],
-                            rx_data[b'fmuas/att/ae'],
-                            rx_data[b'fmuas/att/ad'],
-                        ],
-                        [float('nan')]
-                    )
-
-                    try:
-                        await self._pub_att.publish(m)
-                        await asyncio.sleep(1 / self._freq)
-                    except asyncio.exceptions.CancelledError: 
-                        stop.set()
-                        raise
-                except Exception as e:
-                    logging.error(f'Error in ATT: {e}')
-        except KeyboardInterrupt:
-            stop.set()
-            raise
-        finally:
-            await self.close()
+        await self._attitudesensor_run_loop()
 
     async def close(self) -> None:
         logging.debug('Closing ATT')
@@ -560,6 +538,20 @@ class AltitudeSensor:
         # self._cln_gps_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, config.getint('service_ids', 'gps_sync_info'), 'gps_sync_info')
 
         self._node.start()
+    
+    @async_loop_decorator()
+    async def _altitudesensor_run_loop(self) -> None:
+        m = range_sensor.Measurement_1(
+            uavcan_archived.Timestamp_1(self._time),
+            0, # Sensor ID
+            uavcan_archived.CoarseOrientation_1([0.0,0.0,0.0], True), # TODO
+            1.5, # FOV
+            range_sensor.Measurement_1.SENSOR_TYPE_RADAR,
+            range_sensor.Measurement_1.READING_TYPE_VALID_RANGE,
+            rx_data[b'fmuas/radalt/altitude']
+        )
+        await self._pub_alt.publish(m)
+        await asyncio.sleep(1 / self._freq)
 
     async def run(self) -> None:
         """docstring placeholder"""
@@ -567,32 +559,7 @@ class AltitudeSensor:
             self._time = msg.microsecond
         self._sub_clock_sync_time.receive_in_background(on_time)
         
-        try:
-            while not stop.is_set():
-                try:
-                    m = range_sensor.Measurement_1(
-                        uavcan_archived.Timestamp_1(self._time),
-                        0, # Sensor ID
-                        uavcan_archived.CoarseOrientation_1([0.0,0.0,0.0], True), # TODO
-                        1.5, # FOV
-                        range_sensor.Measurement_1.SENSOR_TYPE_RADAR,
-                        range_sensor.Measurement_1.READING_TYPE_VALID_RANGE,
-                        rx_data[b'fmuas/radalt/altitude']
-                    )
-
-                    try:
-                        await self._pub_alt.publish(m)
-                        await asyncio.sleep(1 / self._freq)
-                    except asyncio.exceptions.CancelledError: 
-                        stop.set()
-                        raise
-                except Exception as e:
-                    logging.error(f'Error in ALT: {e}')
-        except KeyboardInterrupt:
-            stop.set()
-            raise
-        finally:
-            await self.close()
+        await self._altitudesensor_run_loop()
 
     async def close(self) -> None:
         logging.debug('Closing ALT')
@@ -656,6 +623,33 @@ class GPSSensor:
             uavcan.time.TimeSystem_0(uavcan.time.TimeSystem_0.TAI),
             uavcan.time.TAIInfo_0(uavcan.time.TAIInfo_0.DIFFERENCE_TAI_MINUS_GPS)
         )
+    
+    @async_loop_decorator()
+    async def _gpssensor_run_loop(self) -> None:
+        gnss_time = int(1e6*(calendar.timegm(datetime.datetime.strptime(str(datetime.date.today().year), '%Y').timetuple())
+                             + (1+rx_data[b'sim/time/local_date_days'])*86400
+                             + rx_data[b'sim/time/zulu_time_sec']))
+
+        m = gnss.Fix2_1(
+            uavcan_archived.Timestamp_1(self._time),
+            uavcan_archived.Timestamp_1(gnss_time),
+            gnss.Fix2_1.GNSS_TIME_STANDARD_GPS,
+            gnss.Fix2_1.NUM_LEAP_SECONDS_UNKNOWN, # TODO
+            int(rx_data[b'fmuas/gps/longitude']),
+            int(rx_data[b'fmuas/gps/latitude']),
+            0, # Ellipsoid
+            int(rx_data[b'fmuas/gps/altitude']),
+            [rx_data[b'fmuas/gps/vn'], rx_data[b'fmuas/gps/ve'], rx_data[b'fmuas/gps/vd']],
+            5, # Sats used
+            gnss.Fix2_1.STATUS_3D_FIX,
+            gnss.Fix2_1.MODE_SINGLE,
+            0, # Submode
+            [float('nan')],
+            3.5,
+            gnss.ECEFPositionVelocity_1([float('nan'), float('nan'), float('nan')], [0, 0, 0], [float('nan')])
+        )
+        await self._pub_gps.publish(m)
+        await asyncio.sleep(1 / self._freq)
 
     async def run(self) -> None:
         """docstring placeholder"""
@@ -663,49 +657,7 @@ class GPSSensor:
             self._time = msg.microsecond
         self._sub_clock_sync_time.receive_in_background(on_time)
 
-        try:
-            while not stop.is_set():
-                try:
-                    gnss_time = int(1e6*(calendar.timegm(datetime.datetime.strptime(str(datetime.date.today().year), '%Y').timetuple())
-                                         + (1+rx_data[b'sim/time/local_date_days'])*86400
-                                         + rx_data[b'sim/time/zulu_time_sec']))
-
-                    m = gnss.Fix2_1(
-                        uavcan_archived.Timestamp_1(self._time),
-                        uavcan_archived.Timestamp_1(gnss_time),
-                        gnss.Fix2_1.GNSS_TIME_STANDARD_GPS,
-                        gnss.Fix2_1.NUM_LEAP_SECONDS_UNKNOWN, # TODO
-                        int(rx_data[b'fmuas/gps/longitude']),
-                        int(rx_data[b'fmuas/gps/latitude']),
-                        0, # Ellipsoid
-                        int(rx_data[b'fmuas/gps/altitude']),
-                        [
-                            rx_data[b'fmuas/gps/vn'], 
-                            rx_data[b'fmuas/gps/ve'], 
-                            rx_data[b'fmuas/gps/vd'], 
-                        ],
-                        5, # Sats used
-                        gnss.Fix2_1.STATUS_3D_FIX,
-                        gnss.Fix2_1.MODE_SINGLE,
-                        0, # Submode
-                        [float('nan')],
-                        3.5,
-                        gnss.ECEFPositionVelocity_1([float('nan'), float('nan'), float('nan')], [0, 0, 0], [float('nan')])
-                    )
-
-                    try:
-                        await self._pub_gps.publish(m)
-                        await asyncio.sleep(1 / self._freq)
-                    except asyncio.exceptions.CancelledError: 
-                        stop.set()
-                        raise
-                except Exception as e:
-                    logging.error(f'Error in GPS: {e}')
-        except KeyboardInterrupt:
-            stop.set()
-            raise
-        finally:
-            await self.close()
+        await self._gpssensor_run_loop()
 
     async def close(self) -> None:
         logging.debug('Closing GPS')
@@ -737,28 +689,17 @@ class IASSensor:
 
         self._node.start()
 
-    async def run(self) -> None:
-        try:
-            while not stop.is_set():
-                try:
-                    m = air_data.IndicatedAirspeed_1(
-                        rx_data[b'fmuas/adc/ias'],
-                        float('nan')
-                    )
+    @async_loop_decorator()
+    async def _iassensor_run_loop(self) -> None:
+        m = air_data.IndicatedAirspeed_1(
+            rx_data[b'fmuas/adc/ias'],
+            float('nan')
+        )
+        await self._pub_ias.publish(m)
+        await asyncio.sleep(1 / self._freq)
 
-                    try:
-                        await self._pub_ias.publish(m)
-                        await asyncio.sleep(1 / self._freq)
-                    except asyncio.exceptions.CancelledError: 
-                        stop.set()
-                        raise
-                except Exception as e:
-                    logging.error(f'Error in IAS: {e}')
-        except KeyboardInterrupt:
-            stop.set()
-            raise
-        finally:
-            await self.close()
+    async def run(self) -> None:
+        await self._iassensor_run_loop()
 
     async def close(self) -> None:
         logging.debug('Closing IAS')
@@ -790,29 +731,18 @@ class AOASensor:
 
         self._node.start()
 
-    async def run(self) -> None:
-        try:
-            while not stop.is_set():
-                try:
-                    m = air_data.AngleOfAttack_1(
-                        air_data.AngleOfAttack_1.SENSOR_ID_LEFT,
-                        rx_data[b'fmuas/adc/aoa'],
-                        float('nan')
-                    )
+    @async_loop_decorator()
+    async def _aoasensor_run_loop(self) -> None:
+        m = air_data.AngleOfAttack_1(
+            air_data.AngleOfAttack_1.SENSOR_ID_LEFT,
+            rx_data[b'fmuas/adc/aoa'],
+            float('nan')
+        )
+        await self._pub_aoa.publish(m)
+        await asyncio.sleep(1 / self._freq)
 
-                    try:
-                        await self._pub_aoa.publish(m)
-                        await asyncio.sleep(1 / self._freq)
-                    except asyncio.exceptions.CancelledError: 
-                        stop.set()
-                        raise
-                except Exception as e:
-                    logging.error(f'Error in AOA: {e}')
-        except KeyboardInterrupt:
-            stop.set()
-            raise
-        finally:
-            await self.close()
+    async def run(self) -> None:
+        await self._aoasensor_run_loop()
 
     async def close(self) -> None:
         logging.debug('Closing AOA')
@@ -844,28 +774,17 @@ class SlipSensor:
 
         self._node.start()
 
-    async def run(self) -> None:
-        try:
-            while not stop.is_set():
-                try:
-                    m = air_data.Sideslip_1(
-                        rx_data[b'fmuas/adc/slip'],
-                        float('nan')
-                    )
+    @async_loop_decorator()
+    async def _slipsensor_run_loop(self) -> None:
+        m = air_data.Sideslip_1(
+            rx_data[b'fmuas/adc/slip'],
+            float('nan')
+        )
+        await self._pub_slip.publish(m)
+        await asyncio.sleep(1 / self._freq)
 
-                    try:
-                        await self._pub_slip.publish(m)
-                        await asyncio.sleep(1 / self._freq)
-                    except asyncio.exceptions.CancelledError: 
-                        stop.set()
-                        raise
-                except Exception as e:
-                    logging.error(f'Error in SLP: {e}')
-        except KeyboardInterrupt:
-            stop.set()
-            raise
-        finally:
-            await self.close()
+    async def run(self) -> None:
+        await self._slipsensor_run_loop()
 
     async def close(self) -> None:
         logging.debug('Closing SLP')
@@ -915,47 +834,34 @@ class Clock:
             uavcan.time.TAIInfo_0(uavcan.time.TAIInfo_0.DIFFERENCE_TAI_MINUS_UTC_UNKNOWN)
         )
 
+    @async_loop_decorator()
+    async def _clock_run_loop(self, last_xpsecs: float, sync_secs: float, last_time: float, last_real: float) -> None:
+        await self._pub_sync_time_last.publish(uavcan.time.Synchronization_1(int(self._sync_time))) # Last timestamp
+
+        xpsecs = rx_data[b'fmuas/clock/time']
+
+        if abs(xpsecs - last_xpsecs) > 1.0: # Time jump
+            logging.debug('XP time jumped')
+            sync_secs += 1e-6
+        elif xpsecs == last_xpsecs and rx_data[b'sim/time/paused'] != 1.0: # No time but running
+            sync_secs += time.time() - last_time
+        elif rx_data[b'sim/time/paused'] != 1.0: # Normal and running
+            last_real += xpsecs - last_xpsecs
+            sync_secs = last_real
+
+        last_time = time.time()
+        self._sync_time = int(sync_secs*1e6)
+        last_xpsecs = xpsecs
+
+        await self._pub_sync_time.publish(uavcan.time.SynchronizedTimestamp_1(int(self._sync_time))) # Current timestamp
+        await asyncio.sleep(0)
+
     async def run(self) -> None:
         last_xpsecs = 0.0
         sync_secs = 0.0
         last_time = time.time()
         last_real = 0.0
-        try:
-            while not stop.is_set():
-                try:
-                    try:
-                        await self._pub_sync_time_last.publish(uavcan.time.Synchronization_1(int(self._sync_time))) # Last timestamp
-                    except asyncio.exceptions.CancelledError: 
-                        stop.set()
-                        raise
-
-                    xpsecs = rx_data[b'fmuas/clock/time']
-
-                    if abs(xpsecs - last_xpsecs) > 1.0: # Time jump
-                        logging.debug('XP time jumped')
-                        sync_secs += 1e-6
-                    elif xpsecs == last_xpsecs and rx_data[b'sim/time/paused'] != 1.0: # No time but running
-                        sync_secs += time.time() - last_time
-                    elif rx_data[b'sim/time/paused'] != 1.0: # Normal and running
-                        last_real += xpsecs - last_xpsecs
-                        sync_secs = last_real
-
-                    last_time = time.time()
-                    self._sync_time = int(sync_secs*1e6)
-                    last_xpsecs = xpsecs
-
-                    try:
-                        await self._pub_sync_time.publish(uavcan.time.SynchronizedTimestamp_1(int(self._sync_time))) # Current timestamp
-                    except asyncio.exceptions.CancelledError: 
-                        stop.set()
-                        raise
-                except Exception as e:
-                    logging.error(f'Error in CLK: {e}')
-        except KeyboardInterrupt:
-            stop.set()
-            raise
-        finally:
-            await self.close()
+        await self._clock_run_loop(last_xpsecs, sync_secs, last_time, last_real)
 
     async def close(self) -> None:
         logging.debug('Closing CLK')
@@ -981,39 +887,28 @@ class Camera:
         
         self.camera_mav_conn: mavutil.mavfile = mavutil.mavlink_connection(config.get('mavlink', 'camera_uav_conn'), source_system=self.target_id, source_component=m.MAV_COMP_ID_CAMERA, input=True)
 
+    @async_loop_decorator()
+    async def _camera_run_loop(self) -> None:
+        msg = self.camera_mav_conn.recv_msg()
+        if msg is not None and msg.get_srcSystem()==self.target_id and msg.target_system==self.target_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'COMMAND_LONG':
+            if msg.command == m.MAV_CMD_IMAGE_START_CAPTURE:
+                cap = asyncio.create_task(self._capture_cycle(int(msg.param3), msg.param2))
+                self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_START_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self.target_id, 0)
+            elif msg.command == m.MAV_CMD_IMAGE_STOP_CAPTURE:
+                try:
+                    cap.cancel()
+                    self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self.target_id, 0)
+                except AttributeError:
+                    pass
+                    self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_DENIED, 255, 0, self.target_id, 0)
+            else:
+                self.camera_mav_conn.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, self.target_id, 0)
+
+        await asyncio.sleep(0)  
+
     async def run(self) -> None:
         asyncio.create_task(self._heartbeat())
-
-        try:
-            while not stop.is_set():
-                try:
-                    msg = self.camera_mav_conn.recv_msg()
-                    if msg is not None and msg.get_srcSystem()==self.target_id and msg.target_system==self.target_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'COMMAND_LONG':
-                        if msg.command == m.MAV_CMD_IMAGE_START_CAPTURE:
-                            cap = asyncio.create_task(self._capture_cycle(int(msg.param3), msg.param2))
-                            self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_START_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self.target_id, 0)
-                        elif msg.command == m.MAV_CMD_IMAGE_STOP_CAPTURE:
-                            try:
-                                cap.cancel()
-                                self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self.target_id, 0)
-                            except AttributeError:
-                                pass
-                                self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_DENIED, 255, 0, self.target_id, 0)
-                        else:
-                            self.camera_mav_conn.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, self.target_id, 0)
-
-                    try:
-                        await asyncio.sleep(0)
-                    except asyncio.exceptions.CancelledError:
-                        stop.set()
-                        raise
-                except Exception as e:
-                    logging.error(f'Error in CAM: {e}')
-        except KeyboardInterrupt:
-            stop.set()
-            raise
-        finally:
-            await self.close()
+        await self._camera_run_loop()
 
     async def _capture(self) -> None:
         previous_file_list = [f for f in os.listdir(self.xp_path) if os.path.isfile(os.path.join(self.xp_path, f))]
@@ -1045,7 +940,6 @@ class Camera:
                 finally:
                     pass
                     
-
     async def _capture_cycle(self, iterations: int, period: float) -> None:
         if iterations != 0:
             for _ in range(iterations):
@@ -1063,25 +957,18 @@ class Camera:
                 except asyncio.exceptions.CancelledError:
                     break
 
+    @async_loop_decorator(close=False)
+    async def _camera_heartbeat_loop(self) -> None:
+        self.camera_mav_conn.mav.heartbeat_send(
+            m.MAV_TYPE_CAMERA,
+            m.MAV_AUTOPILOT_INVALID,
+            m.MAV_MODE_PREFLIGHT,
+            0,
+            m.MAV_STATE_ACTIVE
+        )
+
     async def _heartbeat(self) -> None:
-        try:
-            while not stop.is_set():
-                try:
-                    self.camera_mav_conn.mav.heartbeat_send(
-                        m.MAV_TYPE_CAMERA,
-                        m.MAV_AUTOPILOT_INVALID,
-                        m.MAV_MODE_PREFLIGHT,
-                        0,
-                        m.MAV_STATE_ACTIVE
-                    )
-                    
-                    await asyncio.sleep(1)
-                except asyncio.exceptions.CancelledError:
-                    stop.set()
-                    raise
-        except KeyboardInterrupt:
-            stop.set()
-            raise
+        await self._camera_heartbeat_loop()
 
     async def close(self) -> None:
         logging.debug('Closing CAM')
@@ -1099,39 +986,28 @@ class TestCamera:
         
         self.camera_mav_conn: mavutil.mavfile = mavutil.mavlink_connection(config.get('mavlink', 'camera_uav_conn'), source_system=self.target_id, source_component=m.MAV_COMP_ID_CAMERA, input=True)
         
+    @async_loop_decorator()
+    async def _testcamera_run_loop(self) -> None:
+        msg = self.camera_mav_conn.recv_msg()
+        if msg is not None and msg.get_srcSystem()==self.target_id and msg.target_system==self.target_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'COMMAND_LONG':
+            if msg.command == m.MAV_CMD_IMAGE_START_CAPTURE:
+                cap = asyncio.create_task(self._capture_cycle(int(msg.param3), msg.param2))
+                self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_START_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self.target_id, 0)
+            elif msg.command == m.MAV_CMD_IMAGE_STOP_CAPTURE:
+                try:
+                    cap.cancel()
+                    self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self.target_id, 0)
+                except AttributeError:
+                    pass
+                    self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_DENIED, 255, 0, self.target_id, 0)
+            else:
+                self.camera_mav_conn.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, self.target_id, 0)
+
+        await asyncio.sleep(0)
+
     async def run(self) -> None:
         asyncio.create_task(self._heartbeat())
-
-        try:
-            while not stop.is_set():
-                try:
-                    msg = self.camera_mav_conn.recv_msg()
-                    if msg is not None and msg.get_srcSystem()==self.target_id and msg.target_system==self.target_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'COMMAND_LONG':
-                        if msg.command == m.MAV_CMD_IMAGE_START_CAPTURE:
-                            cap = asyncio.create_task(self._capture_cycle(int(msg.param3), msg.param2))
-                            self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_START_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self.target_id, 0)
-                        elif msg.command == m.MAV_CMD_IMAGE_STOP_CAPTURE:
-                            try:
-                                cap.cancel()
-                                self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self.target_id, 0)
-                            except AttributeError:
-                                pass
-                                self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_DENIED, 255, 0, self.target_id, 0)
-                        else:
-                            self.camera_mav_conn.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, self.target_id, 0)
-
-                    try:
-                        await asyncio.sleep(0)
-                    except asyncio.exceptions.CancelledError:
-                        stop.set()
-                        raise
-                except Exception as e:
-                    logging.error(f'Error in CAM: {e}')
-        except KeyboardInterrupt:
-            stop.set()
-            raise
-        finally:
-            await self.close()
+        await self._testcamera_run_loop()
 
     async def _capture(self) -> None:
         logging.info("Commanding screenshot...")
@@ -1154,25 +1030,19 @@ class TestCamera:
                 except asyncio.exceptions.CancelledError:
                     break
 
+    @async_loop_decorator(close=False)
+    async def _testcamera_heartbeat_loop(self) -> None:
+        self.camera_mav_conn.mav.heartbeat_send(
+            m.MAV_TYPE_CAMERA,
+            m.MAV_AUTOPILOT_INVALID,
+            m.MAV_MODE_PREFLIGHT,
+            0,
+            m.MAV_STATE_ACTIVE
+        )
+        await asyncio.sleep(1)
+
     async def _heartbeat(self) -> None:
-        try:
-            while not stop.is_set():
-                try:
-                    self.camera_mav_conn.mav.heartbeat_send(
-                        m.MAV_TYPE_CAMERA,
-                        m.MAV_AUTOPILOT_INVALID,
-                        m.MAV_MODE_PREFLIGHT,
-                        0,
-                        m.MAV_STATE_ACTIVE
-                    )
-                    
-                    await asyncio.sleep(1)
-                except asyncio.exceptions.CancelledError:
-                    stop.set()
-                    raise
-        except KeyboardInterrupt:
-            stop.set()
-            raise
+        await self._testcamera_heartbeat_loop()
 
     async def close(self) -> None:
         logging.debug('Closing CAM')
