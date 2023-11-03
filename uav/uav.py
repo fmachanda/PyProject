@@ -22,7 +22,7 @@ import numpy as np
 if os.path.basename(os.getcwd()) == 'uav':
     os.chdir('..')
 elif os.path.basename(os.getcwd()) != 'fmuas-main':
-    logging.critical('Must run scripts from \'fmuas-main\' directory!')
+    logging.critical("Must run scripts from 'fmuas-main' directory!")
     sys.exit()
 
 sys.path.append(os.getcwd())
@@ -33,7 +33,7 @@ os.environ['MAVLINK20'] = '1'
 import pycyphal
 import pycyphal.application
 import uavcan
-import uavcan_archived
+# import uavcan_archived
 from pymavlink import mavutil
 from uavcan_archived.equipment import actuator, ahrs, air_data, esc, gnss, range_sensor
 
@@ -42,7 +42,7 @@ from common.state_manager import GlobalState as g
 
 m = mavutil.mavlink
 
-logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO, handlers=[logging.FileHandler('uav/uav.log', mode='w'), logging.StreamHandler()])
 logging.getLogger('pymavlink').setLevel(logging.ERROR)
 
 os.system('cls' if os.name == 'nt' else 'clear')
@@ -63,11 +63,12 @@ def async_loop_decorator(close=True):
                 while not self.main.stop.is_set():
                     try:
                         await func(self, *args, **kwargs)
+                        await asyncio.sleep(0)
                     except asyncio.exceptions.CancelledError:
                         self.main.stop.set()
                         raise
                     except Exception as e:
-                        logging.error(f'Error in {func.__name__}: {e}')
+                        logging.error(f"Error in {func.__name__}: {e}")
                         raise e
             except KeyboardInterrupt:
                 self.main.stop.set()
@@ -76,7 +77,7 @@ def async_loop_decorator(close=True):
                 if close:
                     self.close()
                 else:
-                    logging.debug(f'Closing {func.__name__}')
+                    logging.debug(f"Closing {func.__name__}")
         return wrapper
     return decorator
 
@@ -138,7 +139,7 @@ class GlobalRx:
             """
 
             if len(q)!=4:
-                raise ValueError('Quaternion input must be tuple with length 4')
+                raise ValueError("Quaternion input must be tuple with length 4")
 
             x, y, z, w = q
 
@@ -339,7 +340,7 @@ class Waypoint:
         self.altitude = altitude
 
         Waypoint.count += 1
-        self.name = name if name is not None else f'Waypoint {Waypoint.count}'
+        self.name = name if name is not None else f"Waypoint {Waypoint.count}"
 
 
 class MainIO:
@@ -389,7 +390,7 @@ class MainIO:
         self.main = main
         self._freq = freq
 
-        logging.info('Initializing UAVCAN Node...')
+        logging.info("Initializing UAVCAN Node...")
 
         self._registry = pycyphal.application.make_registry(environment_variables={
             'UAVCAN__NODE__ID'                      :self.main.config.get('node_ids', 'mainio'),
@@ -448,7 +449,7 @@ class MainIO:
 
         self._node.start()
 
-        logging.info('MainIO initialized')
+        logging.info("MainIO initialized")
 
     async def boot(self) -> None:
         """Perform boot-related tasks."""
@@ -497,13 +498,13 @@ class MainIO:
         #endregion
         
         self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
-        logging.warning('UAVCAN Node Running...\n----- Ctrl-C to exit -----') # TODO: no verification
+        logging.warning("UAVCAN Node Running...\n----- Ctrl-C to exit -----") # TODO: no verification
 
         await self._mainio_run_loop()
 
     def close(self) -> None:
         """Close the instance."""
-        logging.info('Closing MainIO') # TODO: Change to logging.debug()
+        logging.info("Closing MainIO") # TODO: Change to logging.debug()
         self._node.close()
 
 
@@ -719,16 +720,17 @@ class Processor:
 
     @async_loop_decorator()
     async def _processor_run_loop(self) -> None:
+        try:
+            self._ias_scalar = 1296 / (self.main.rxdata.ias.ias**2)
+        except ZeroDivisionError:
+            self._ias_scalar = 1.0
+
         if self.main.state.custom_mode in [g.CUSTOM_MODE_TAKEOFF, g.CUSTOM_MODE_LANDING]:
-            # TODO: MIXING PLACEHOLDER vvv
-            try:
-                self._ias_scalar = 1296 / (self.main.rxdata.ias.ias**2)
-            except ZeroDivisionError:
-                self._ias_scalar = 1.0
+            # TODO: MIXING PLACEHOLDER
             self._servos =  self._ias_scalar * np.sum(np.array([1.0 * self._flight_servos(), 0.0 * self._vtol_servos()]), axis=0, dtype=np.float16)
             self._throttles = np.sum(np.array([1.0 * self._flight_throttles(), 0.0 * self._vtol_throttles()]), axis=0, dtype=np.float16)
         elif self.main.state.custom_mode == g.CUSTOM_MODE_FLIGHT and self.main.state.custom_submode != g.CUSTOM_SUBMODE_FLIGHT_MANUAL:
-            self._servos = self._flight_servos()
+            self._servos =  self._ias_scalar * self._flight_servos()
             self._throttles = self._flight_throttles()
         else:
             self._servos = np.zeros(4, dtype=np.float16).fill(0.0)
@@ -752,11 +754,11 @@ class Processor:
 
     async def run(self) -> None:
         """Calculate desired control positions."""
-        logging.info('Starting Processor')
+        logging.info("Starting Processor")
         await self._processor_run_loop()
 
     def close(self) -> None:
-        logging.info('Closing Processor')
+        logging.info("Closing Processor")
         pass
 
 
@@ -819,7 +821,7 @@ class Controller:
     #region Handlers
     def _handle_heartbeat(self, msg) -> None:
         """Handle HEARTBEAT messages."""
-        logging.debug(f'Heartbeat message from link #{msg.get_srcSystem()}')
+        logging.debug(f"Heartbeat message from link #{msg.get_srcSystem()}")
 
     def _handle_bad_data(self, msg) -> None:
         """Handle BAD_DATA messages."""
@@ -833,21 +835,21 @@ class Controller:
                 if self._gcs_id is None or self._gcs_id==msg.get_srcSystem():
                     # Accepted
                     if self._gcs_id!=msg.get_srcSystem():
-                        logging.info(f'Accepting control request from GCS ({msg.get_srcSystem()})')
+                        logging.info(f"Accepting control request from GCS ({msg.get_srcSystem()})")
                     self._gcs_id = msg.get_srcSystem()
                     self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
                 else:
                     # Already controlled
-                    logging.info(f'Rejecting second control request from {msg.get_srcSystem()}')
+                    logging.info(f"Rejecting second control request from {msg.get_srcSystem()}")
                     self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 3)
             elif msg.control_request == 1 and msg.passkey==key.KEY:# and self._gcs_id is not None:
                 # Accepted (released)
-                logging.info(f'Releasing from GCS ({self._gcs_id})')
+                logging.info(f"Releasing from GCS ({self._gcs_id})")
                 self._gcs_id = None
                 self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
             else:
                 # Bad key
-                logging.info(f'Bad key in GCS control request')
+                logging.info(f"Bad key in GCS control request")
                 self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 1)
 
     def _handle_command_long(self, msg) -> None:
@@ -856,7 +858,7 @@ class Controller:
             match msg.command:
                 # DO_SET_MODE
                 case m.MAV_CMD_DO_SET_MODE:
-                    logging.info('Mode change requested')
+                    logging.info("Mode change requested")
                         
                     if self.main.state.set_mode(msg.param1, msg.param2, msg.param3): # TODO: Add safety check to verify message like below
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_SET_MODE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
@@ -867,7 +869,7 @@ class Controller:
                     pass # TODO
                     try:
                         self.main.processor.spf_altitude = msg.param1 # TODO add checks!
-                        logging.info(f'GCS commanded altitude setpoint to {msg.param1}')
+                        logging.info(f"GCS commanded altitude setpoint to {msg.param1}")
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
                     except AttributeError:
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_RESULT_TEMPORARILY_REJECTED, 255, 0, 0, 0)
@@ -876,7 +878,7 @@ class Controller:
                     pass # TODO
                     try:
                         self.main.processor.spf_ias = msg.param2 # TODO add checks!
-                        logging.info(f'GCS commanded speed setpoint to {msg.param2}')
+                        logging.info(f"GCS commanded speed setpoint to {msg.param2}")
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_SPEED, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
                     except AttributeError:
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_SPEED, m.MAV_RESULT_TEMPORARILY_REJECTED, 255, 0, 0, 0)
@@ -902,7 +904,7 @@ class Controller:
                     logging.info(f"New PID state: {msg.param1}, {msg.param2}, {msg.param3} @ {msg.param4}")
                 # TODO TEMPORARY SCREENSHOT
                 case 1:
-                    logging.debug('Commanding camera...')
+                    logging.debug("Commanding camera...")
                     self.cam_conn.mav.command_long_send(
                         self.main.systemid,
                         m.MAV_COMP_ID_CAMERA,
@@ -946,7 +948,7 @@ class Controller:
         asyncio.create_task(self._rx())
         asyncio.create_task(self._tx())
 
-        logging.info('Starting Controller')
+        logging.info("Starting Controller")
 
         await self._manager_loop()
 
@@ -957,7 +959,7 @@ class Controller:
             msg = self._mav_conn_gcs.recv_msg()
         except ConnectionError:
             try:
-                logging.debug('Controller (rx) connection refused')
+                logging.debug("Controller (rx) connection refused")
                 await asyncio.sleep(0)
             except asyncio.exceptions.CancelledError:
                 self.main.stop.set()
@@ -971,13 +973,13 @@ class Controller:
                 handler = getattr(self, Controller.type_handlers[type_])
                 handler(msg)
             else:
-                logging.info(f'Unknown message type: {type_}')
+                logging.info(f"Unknown message type: {type_}")
 
         await asyncio.sleep(0)
 
     async def _rx(self) -> None:
         """Recieve messages from GCS over mavlink."""
-        logging.debug('Starting Controller (RX)')
+        logging.debug("Starting Controller (RX)")
         await self._controller_rx_loop()
 
     @async_loop_decorator(close=False)
@@ -987,7 +989,7 @@ class Controller:
 
     async def _tx(self) -> None:
         """Transmit continuous messages."""
-        logging.debug('Starting Controller (TX)')
+        logging.debug("Starting Controller (TX)")
         await self._controller_tx_loop()
 
     @async_loop_decorator(close=False)
@@ -1000,18 +1002,18 @@ class Controller:
             int(self.main.state.state)
         )
         
-        logging.debug('TX Heartbeat')
+        logging.debug("TX Heartbeat")
         await asyncio.sleep(1 / self._heartbeatfreq)
 
     async def _heartbeat(self) -> None:
         """Periodically publish a heartbeat message."""
-        logging.debug('Starting Controller (Heartbeat)')
+        logging.debug("Starting Controller (Heartbeat)")
         await self._controller_heartbeat_loop()
 
     def close(self) -> None:
         """Close the instance."""
         self._mav_conn_gcs.close()
-        logging.info('Closing Controller')
+        logging.info("Closing Controller")
 
 
 class Main:
@@ -1047,7 +1049,7 @@ class Main:
         Run the UAV instance.
     """
 
-    def __init__(self, systemid: int = 1, config: str = './common/CONFIG.ini') -> None:
+    def __init__(self, config: str = './common/CONFIG.ini') -> None:
         """Initialize a Main instance.
 
         Parameters
@@ -1063,12 +1065,11 @@ class Main:
             If the system ID is not a positive integer <= 255.
         """
 
-        assert isinstance(systemid, int) and systemid > 0 and systemid.bit_length() <= 8, 'System ID must be UINT8'
-
-        self.systemid = systemid
-
         self.config = ConfigParser()
         self.config.read(config)
+
+        self.systemid = self.config.getint('main', 'uav_id')
+        assert isinstance(self.systemid, int) and self.systemid > 0 and self.systemid.bit_length() <= 8, "System ID in config file must be UINT8"
 
         self.boot = asyncio.Event()
         self.stop = asyncio.Event()
@@ -1090,7 +1091,6 @@ class Main:
         """
 
         import common.grapher as grapher
-
         self._grapher = grapher.Grapher(deque_len=300)
 
         try:
@@ -1132,17 +1132,19 @@ class Main:
         controller_manager = asyncio.create_task(self.controller.manager())
         await asyncio.sleep(0)
 
-        logging.warning(f'Creating instance #{self.systemid}, waiting for boot command from GCS')
+        logging.warning(f"Creating instance #{self.systemid}, waiting for boot command from GCS")
 
         try:
+            self.boot.set()
+            self.state.inc_mode()
             await self.boot.wait()
         except asyncio.exceptions.CancelledError:
             controller_manager.cancel()
             await asyncio.sleep(0)
-            logging.warning(f'Never booted, closing instance #{self.systemid}')
+            logging.warning(f"Never booted, closing instance #{self.systemid}")
             quit()
 
-        logging.warning(f'Booting instance #{self.systemid}...')
+        logging.warning(f"Booting instance #{self.systemid}...")
 
         boot_tasks = [
             asyncio.create_task(self.processor.boot()),
@@ -1154,10 +1156,10 @@ class Main:
         except asyncio.exceptions.CancelledError:
             controller_manager.cancel()
             await asyncio.sleep(0)
-            logging.warning(f'Ctrl-C during boot cycle, closing instance #{self.systemid}')
+            logging.warning(f"Ctrl-C during boot cycle, closing instance #{self.systemid}")
             quit()
 
-        logging.warning(f'Boot successful on #{self.systemid}')
+        logging.warning(f"Boot successful on #{self.systemid}")
 
         for _ in range(5):
             self.state.inc_mode()
@@ -1169,7 +1171,7 @@ class Main:
         ]
 
         if graph is not None:
-            logging.info('Grapher on')
+            logging.info("Grapher on")
             tasks.append(asyncio.create_task(self._graph(name=graph)))
 
         try:
@@ -1177,9 +1179,9 @@ class Main:
         except asyncio.exceptions.CancelledError:
             self.stop.set()
 
-        logging.warning(f'Closing instance #{self.systemid}')
+        logging.warning(f"Closing instance #{self.systemid}")
 
 if __name__ == '__main__':
     import random
-    main = Main(20)#random.randint(1, 255))
-    asyncio.run(main.run(graph='main.rxdata.alt.altitude'))
+    main = Main()
+    asyncio.run(main.run(graph='main.processor._outf_roll'))

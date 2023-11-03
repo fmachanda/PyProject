@@ -11,7 +11,7 @@ import sys
 import time
 from configparser import ConfigParser
 from functools import wraps
-import numpy as np
+# import numpy as np
 
 if os.path.basename(os.getcwd()) == 'uav':
     os.chdir('..')
@@ -28,12 +28,14 @@ import uavcan_archived
 from pymavlink import mavutil
 from uavcan_archived.equipment import actuator, ahrs, air_data, esc, gnss, range_sensor
 
+import common.find_xp as find_xp
+
 m = mavutil.mavlink
 
 config = ConfigParser()
 config.read('./common/CONFIG.ini')
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO, handlers=[logging.FileHandler('uav/xpio.log', mode='w'), logging.StreamHandler()])
 os.system('cls' if os.name == 'nt' else 'clear')
 
 stop = asyncio.Event()
@@ -80,15 +82,14 @@ tx_data = [
     [b'fmuas/afcs/output/throttle4', 0.0],
 ]
 
-XP_FIND_TIMEOUT = 5
+XP_FIND_TIMEOUT = 1
 TX_DATA_LAST_SERVO = 3 # Index of final servo dref before esc
 XP_FREQ = 60
 FREQ = 60
 FT_TO_M = 3.048e-1
 KT_TO_MS = 5.14444e-1
 
-type LoopedClass = XPConnect | TestXPConnect | ServoIO | ESCIO | \
-    AltitudeSensor | AttitudeSensor | GPSSensor | IASSensor | AOASensor | SlipSensor | Clock | Camera | TestCamera
+type LoopedClass = XPConnect | TestXPConnect | ServoIO | ESCIO | AltitudeSensor | AttitudeSensor | GPSSensor | IASSensor | AOASensor | SlipSensor | Clock | Camera | TestCamera
 
 
 def async_loop_decorator(close=True):
@@ -100,11 +101,12 @@ def async_loop_decorator(close=True):
                 while not stop.is_set():
                     try:
                         await func(self, *args, **kwargs)
+                        await asyncio.sleep(0)
                     except asyncio.exceptions.CancelledError:
                         stop.set()
                         raise
                     except Exception as e:
-                        logging.error(f'Error in {func.__name__}: {e}')
+                        logging.error(f"Error in {func.__name__}: {e}")
                         raise e
             except KeyboardInterrupt:
                 stop.set()
@@ -113,26 +115,24 @@ def async_loop_decorator(close=True):
                 if close:
                     await self.close()
                 else:
-                    logging.debug(f'Closing {func.__name__}')
+                    logging.debug(f"Closing {func.__name__}")
         return wrapper
     return decorator
 
 
 class XPConnect:
     def __init__(self, freq: int = XP_FREQ) -> None:
-        import common.find_xp as find_xp
-
         self._freq = freq
 
-        logging.info('Looking for X-Plane...')
+        logging.info("Looking for X-Plane...")
         try:
             beacon=find_xp.find_xp(wait=XP_FIND_TIMEOUT)
         except find_xp.XPlaneIpNotFound:
-            logging.critical(f'X-Plane not found, closing...')
-            sys.exit()
+            logging.error(f"X-Plane not found, switching to test mode...")
+            raise
         self.X_PLANE_IP=beacon['ip']
         self.UDP_PORT=beacon['port']
-        logging.warning('X-Plane found at IP: %s, port: %s' % (self.X_PLANE_IP,self.UDP_PORT))
+        logging.warning("X-Plane found at IP: %s, port: %s" % (self.X_PLANE_IP,self.UDP_PORT))
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((self.X_PLANE_IP, 0))
@@ -166,21 +166,21 @@ class XPConnect:
         await asyncio.sleep(1 / self._freq)
 
     async def run(self) -> None:
-        logging.warning('Data streaming...\n----- Ctrl-C to exit -----')
+        logging.warning("Data streaming...\n----- Ctrl-C to exit -----")
         await self._xpconnect_run_loop()
         
     async def close(self) -> None:
-        logging.debug('Closing XPL')
+        logging.debug("Closing XPL")
 
         for index, dref in enumerate(rx_data.keys()):
             msg = struct.pack('<4sxii400s', b'RREF', 0, index, dref)
             self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
-        logging.info('Stopped listening for drefs')
+        logging.info("Stopped listening for drefs")
 
-        # line1 = 'PYTHON CONNECTION LOST'
-        # line2 = ''
-        # line3 = 'Restart python script to unpause.'
-        # line4 = 'See FMUAS documentation for details.'
+        # line1 = "PYTHON CONNECTION LOST"
+        # line2 = ""
+        # line3 = "Restart python script to unpause."
+        # line4 = "See FMUAS documentation for details."
         # msg = struct.pack('<4sx240s240s240s240s', b'ALRT',
         #                 line1.encode('utf-8'),
         #                 line2.encode('utf-8'),
@@ -190,7 +190,7 @@ class XPConnect:
         
         msg = struct.pack('<4sxf500s', b'DREF', 0.0, b'fmuas/python_running')
         self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
-        logging.info('LUA suspended')
+        logging.info("LUA suspended")
 
 
 class TestXPConnect:
@@ -200,10 +200,10 @@ class TestXPConnect:
         self._freq = freq
         self.rx_indices = rx_indices
 
-        logging.info('Looking for X-Plane...')
-        self.X_PLANE_IP='TEST'
+        logging.info("Looking for X-Plane...")
+        self.X_PLANE_IP="TEST"
         self.UDP_PORT=0
-        logging.warning('X-Plane found at IP: %s, port: %s' % (self.X_PLANE_IP,self.UDP_PORT))
+        logging.warning("X-Plane found at IP: %s, port: %s" % (self.X_PLANE_IP,self.UDP_PORT))
 
     @async_loop_decorator()
     async def _testxpconnect_run_loop(self) -> None:
@@ -223,13 +223,13 @@ class TestXPConnect:
         await asyncio.sleep(1 / self._freq)
 
     async def run(self) -> None:
-        logging.warning('Data streaming...\n----- Ctrl-C to exit -----')
+        logging.warning("Data streaming...\n----- Ctrl-C to exit -----")
         await self._testxpconnect_run_loop()
 
     async def close(self) -> None:
-        logging.debug('Closing XPL')
-        logging.info('Stopped listening for drefs')
-        logging.info('LUA suspended')
+        logging.debug("Closing XPL")
+        logging.info("Stopped listening for drefs")
+        logging.info("LUA suspended")
 
 #region nodes
 class ServoIO:
@@ -314,7 +314,7 @@ class ServoIO:
         await self._servoio_run_loop()
 
     async def close(self) -> None:
-        logging.debug('Closing SRV')
+        logging.debug("Closing SRV")
         self._node.close()
 
 
@@ -407,7 +407,7 @@ class ESCIO:
         await self._escio_run_loop()
 
     async def close(self) -> None:
-        logging.debug('Closing ESC')
+        logging.debug("Closing ESC")
         self._node.close()
 
 
@@ -491,7 +491,7 @@ class AttitudeSensor:
         await self._attitudesensor_run_loop()
 
     async def close(self) -> None:
-        logging.debug('Closing ATT')
+        logging.debug("Closing ATT")
         self._node.close()
 
 
@@ -562,7 +562,7 @@ class AltitudeSensor:
         await self._altitudesensor_run_loop()
 
     async def close(self) -> None:
-        logging.debug('Closing ALT')
+        logging.debug("Closing ALT")
         self._node.close()
 
 
@@ -617,7 +617,7 @@ class GPSSensor:
     async def _serve_sync_master_info(
             request: uavcan.time.GetSynchronizationMasterInfo_0.Request, 
             metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.time.GetSynchronizationMasterInfo_0.Response:
-        logging.info('Execute command request %s from node %d', request, metadata.client_node_id)
+        logging.info("Execute command request %s from node %d", request, metadata.client_node_id)
         return uavcan.time.GetSynchronizationMasterInfo_0.Response(
             0.0, # error_variance
             uavcan.time.TimeSystem_0(uavcan.time.TimeSystem_0.TAI),
@@ -660,7 +660,7 @@ class GPSSensor:
         await self._gpssensor_run_loop()
 
     async def close(self) -> None:
-        logging.debug('Closing GPS')
+        logging.debug("Closing GPS")
         self._node.close()
 
 
@@ -702,7 +702,7 @@ class IASSensor:
         await self._iassensor_run_loop()
 
     async def close(self) -> None:
-        logging.debug('Closing IAS')
+        logging.debug("Closing IAS")
         self._node.close()
 
 
@@ -745,7 +745,7 @@ class AOASensor:
         await self._aoasensor_run_loop()
 
     async def close(self) -> None:
-        logging.debug('Closing AOA')
+        logging.debug("Closing AOA")
         self._node.close()
 
 
@@ -787,7 +787,7 @@ class SlipSensor:
         await self._slipsensor_run_loop()
 
     async def close(self) -> None:
-        logging.debug('Closing SLP')
+        logging.debug("Closing SLP")
         self._node.close()
 
 
@@ -804,6 +804,10 @@ class Clock:
         })
 
         self._sync_time = 0.0
+        self._last_xpsecs = 0.0
+        self._sync_secs = 0.0
+        self._last_time = time.time()
+        self._last_real = 0.0
         
         node_info = uavcan.node.GetInfo_1.Response(
             software_version=uavcan.node.Version_1(major=1, minor=0),
@@ -827,7 +831,7 @@ class Clock:
     async def _serve_sync_master_info(
             request: uavcan.time.GetSynchronizationMasterInfo_0.Request, 
             metadata: pycyphal.presentation.ServiceRequestMetadata,)-> uavcan.time.GetSynchronizationMasterInfo_0.Response:
-        logging.info('Execute command request %s from node %d', request, metadata.client_node_id)
+        logging.info("Execute command request %s from node %d", request, metadata.client_node_id)
         return uavcan.time.GetSynchronizationMasterInfo_0.Response(
             0.0, # error_variance
             uavcan.time.TimeSystem_0(uavcan.time.TimeSystem_0.MONOTONIC_SINCE_BOOT),
@@ -835,36 +839,32 @@ class Clock:
         )
 
     @async_loop_decorator()
-    async def _clock_run_loop(self, last_xpsecs: float, sync_secs: float, last_time: float, last_real: float) -> None:
+    async def _clock_run_loop(self) -> None:
         await self._pub_sync_time_last.publish(uavcan.time.Synchronization_1(int(self._sync_time))) # Last timestamp
 
-        xpsecs = rx_data[b'fmuas/clock/time']
+        self._xpsecs = rx_data[b'fmuas/clock/time']
 
-        if abs(xpsecs - last_xpsecs) > 1.0: # Time jump
-            logging.debug('XP time jumped')
-            sync_secs += 1e-6
-        elif xpsecs == last_xpsecs and rx_data[b'sim/time/paused'] != 1.0: # No time but running
-            sync_secs += time.time() - last_time
+        if abs(self._xpsecs - self._last_xpsecs) > 1.0: # Time jump
+            logging.debug("XP time jumped")
+            self._sync_secs += 1e-6
+        elif self._xpsecs == self._last_xpsecs and rx_data[b'sim/time/paused'] != 1.0: # No time but running
+            self._sync_secs += time.time() - self._last_time
         elif rx_data[b'sim/time/paused'] != 1.0: # Normal and running
-            last_real += xpsecs - last_xpsecs
-            sync_secs = last_real
+            self._last_real += self._xpsecs - self._last_xpsecs
+            self._sync_secs = self._last_real
 
-        last_time = time.time()
-        self._sync_time = int(sync_secs*1e6)
-        last_xpsecs = xpsecs
+        self._last_time = time.time()
+        self._sync_time = int(self._sync_secs*1e6)
+        self._last_xpsecs = self._xpsecs
 
         await self._pub_sync_time.publish(uavcan.time.SynchronizedTimestamp_1(int(self._sync_time))) # Current timestamp
         await asyncio.sleep(0)
 
     async def run(self) -> None:
-        last_xpsecs = 0.0
-        sync_secs = 0.0
-        last_time = time.time()
-        last_real = 0.0
-        await self._clock_run_loop(last_xpsecs, sync_secs, last_time, last_real)
+        await self._clock_run_loop()
 
     async def close(self) -> None:
-        logging.debug('Closing CLK')
+        logging.debug("Closing CLK")
         self._node.close()
 #endregion
 
@@ -872,12 +872,12 @@ class Camera:
     DELAY = 0.5
 
     def __init__(self, xpconnection: XPConnect, target_id: int = 1) -> None:
-        assert isinstance(xpconnection, XPConnect), 'Must pass an instance of XPConnect'
+        assert isinstance(xpconnection, XPConnect), "Must pass an instance of XPConnect"
         self.sock = xpconnection.sock
         self.X_PLANE_IP = xpconnection.X_PLANE_IP
         self.UDP_PORT = xpconnection.UDP_PORT
         
-        assert isinstance(target_id,int) and 0<target_id<256, 'Camera target ID must be UINT8'
+        assert isinstance(target_id,int) and 0<target_id<256, "Camera target ID must be UINT8"
         self.target_id = target_id
 
         self.xp_path = config.get('xplane', 'xp_screenshot_path')
@@ -907,7 +907,7 @@ class Camera:
         await asyncio.sleep(0)  
 
     async def run(self) -> None:
-        asyncio.create_task(self._heartbeat())
+        # asyncio.create_task(self._heartbeat())
         await self._camera_run_loop()
 
     async def _capture(self) -> None:
@@ -925,18 +925,18 @@ class Camera:
         previous_file_list = new_file_list
 
         if len(file_diff) != 0:
-            logging.info(f'Detected file_diff: {file_diff}')
+            logging.info(f"Detected file_diff: {file_diff}")
             for f in file_diff:
                 if not os.path.exists(self.destination_dir):
                     os.makedirs(self.destination_dir)
                 file_path = os.path.join(self.xp_path, f)
                 try:
                     shutil.move(file_path, self.destination_dir)
-                    logging.info(f'Moving file {file_path} to {self.destination_dir}')
+                    logging.info(f"Moving file {file_path} to {self.destination_dir}")
                 except shutil.Error:
-                    logging.error(f'Error moving file {file_path} to {self.destination_dir}')
+                    logging.error(f"Error moving file {file_path} to {self.destination_dir}")
                 except PermissionError:
-                    logging.error(f'Error moving file {file_path} to {self.destination_dir}')
+                    logging.error(f"Error moving file {file_path} to {self.destination_dir}")
                 finally:
                     pass
                     
@@ -971,15 +971,15 @@ class Camera:
         await self._camera_heartbeat_loop()
 
     async def close(self) -> None:
-        logging.debug('Closing CAM')
+        logging.debug("Closing CAM")
         self.camera_mav_conn.close()
 
 
 class TestCamera:
     def __init__(self, xpconnection: TestXPConnect, target_id: int = 1) -> None:
-        assert isinstance(xpconnection, TestXPConnect), 'Must pass an instance of TestXPConnect'
+        assert isinstance(xpconnection, TestXPConnect), "Must pass an instance of TestXPConnect"
 
-        assert isinstance(target_id,int) and 0<target_id<256, 'Camera target ID must be UINT8'
+        assert isinstance(target_id,int) and 0<target_id<256, "Camera target ID must be UINT8"
         self.target_id = target_id
 
         self.xp_path = config.get('xplane', 'xp_screenshot_path')
@@ -1006,7 +1006,7 @@ class TestCamera:
         await asyncio.sleep(0)
 
     async def run(self) -> None:
-        asyncio.create_task(self._heartbeat())
+        # asyncio.create_task(self._heartbeat())
         await self._testcamera_run_loop()
 
     async def _capture(self) -> None:
@@ -1045,13 +1045,17 @@ class TestCamera:
         await self._testcamera_heartbeat_loop()
 
     async def close(self) -> None:
-        logging.debug('Closing CAM')
+        logging.debug("Closing CAM")
         self.camera_mav_conn.close()
 
 
 async def main():
-    xpl = TestXPConnect() if os.name != 'nt' else XPConnect()
-    cam = TestCamera(xpl, target_id=20) if os.name != 'nt' else Camera(xpl, target_id=20)
+    try:
+        xpl = XPConnect()
+        cam = Camera(xpl, target_id=config.getint('main', 'uav_id'))
+    except find_xp.XPlaneIpNotFound or KeyboardInterrupt:
+        xpl = TestXPConnect()
+        cam = TestCamera(xpl, target_id=config.getint('main', 'uav_id'))
     clk = Clock()
     att = AttitudeSensor()
     alt = AltitudeSensor()
@@ -1081,7 +1085,7 @@ async def main():
     except asyncio.exceptions.CancelledError:
         stop.set()
 
-    logging.warning('Nodes closed')
+    logging.warning("Nodes closed")
 
 
 if __name__ == '__main__':

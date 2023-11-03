@@ -7,3 +7,6 @@ __pycache__
 .venv
 test.py
 stored_images
+gcs.log
+uav.log
+xpio.log

@@ -17,7 +17,7 @@ import common.key as key
 
 m = mavutil.mavlink
 
-logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO, handlers=[logging.FileHandler('gcs/gcs.log', mode='w'), logging.StreamHandler()])
 logging.getLogger('pymavlink').setLevel(logging.ERROR)
 
 config = ConfigParser()
@@ -31,7 +31,7 @@ MAX_FLUSH_BUFFER = int(1e6)
 
 class PreExistingConnection(Exception):
     """Exception subclass to prevent repeated MAVLINK Connection."""
-    def __init__(self, message=f'A connection is already stored to this instance. Run Connect.close() method first.'):
+    def __init__(self, message=f"A connection is already stored to this instance. Run Connect.close() method first."):
         """Inits the Excpetion class with a custom message."""
         self.message = message
         super().__init__(self.message)
@@ -43,17 +43,17 @@ def flush_buffer() -> None:
     for i in range(MAX_FLUSH_BUFFER):
         msg = mav_conn.recv_match(blocking=False)
         if msg is None:
-            logging.debug(f'Buffer flushed, {i} messages cleared')
+            logging.debug(f"Buffer flushed, {i} messages cleared")
             break
         elif i >= MAX_FLUSH_BUFFER-1:
-            logging.error(f'Messages still in buffer after {MAX_FLUSH_BUFFER} flush cycles')
+            logging.error(f"Messages still in buffer after {MAX_FLUSH_BUFFER} flush cycles")
 
 
 def check_mav_conn() -> None:
     """Checks if the global MAVLINK connection is open."""
     global mav_conn, MAV_CONN_OPEN
     if not MAV_CONN_OPEN:
-        logging.info('Opening mav_conn')
+        logging.info("Opening mav_conn")
         mav_conn = mavutil.mavlink_connection(config.get('mavlink', 'gcs_uav_conn'), source_system=systemid, input=True)
         mav_conn.setup_signing(key.KEY.encode('utf-8'))
         MAV_CONN_OPEN = True
@@ -64,14 +64,14 @@ class Connect:
     def __init__(self, target: int, timeout_cycles: int = 5) -> None:
         """Initialize the connection and send command change."""
         self.target = None
-        assert 0<target<256 and isinstance(target, int) and target!=systemid, 'System ID target must be unique UINT8'
+        assert 0<target<256 and isinstance(target, int) and target!=systemid, "System ID target must be unique UINT8"
 
         check_mav_conn()
 
         try:
             flush_buffer()
             
-            logging.warning(f'Connecting to #{target}...')
+            logging.warning(f"Connecting to #{target}...")
 
             mav_conn.mav.change_operator_control_send(target, 0, 0, key.KEY.encode('utf-8'))
             time.sleep(1)
@@ -88,20 +88,20 @@ class Connect:
                             self.target = target        
                             if target not in ids:
                                 ids.append(self.target)
-                            logging.info(f'Connected to #{self.target}')
+                            logging.info(f"Connected to #{self.target}")
                             break
                         case 1 | 2:
-                            logging.info(f'Bad connection key for #{target}')
+                            logging.info(f"Bad connection key for #{target}")
                             break
                         case 3:
-                            logging.info(f'#{target} is connected to another GCS')
+                            logging.info(f"#{target} is connected to another GCS")
                             break
 
                 mav_conn.mav.change_operator_control_send(target, 0, 0, key.KEY.encode('utf-8'))
                 time.sleep(1)
 
                 if i >= timeout_cycles-1:
-                    logging.warning('Connection failed (timeout)')
+                    logging.warning("Connection failed (timeout)")
 
             # asyncio.create_task(self._heartbeat())
         except KeyboardInterrupt:
@@ -115,8 +115,8 @@ class Connect:
         try:
             flush_buffer()
             
-            logging.warning(f'{name} sent to #{self.target}...')
-            logging.debug(f'    {name} params: {params}')
+            logging.warning(f"{name} sent to #{self.target}...")
+            logging.debug(f"    {name} params: {params}")
 
             mav_conn.mav.command_long_send(
                 self.target,
@@ -141,7 +141,7 @@ class Connect:
                     if msg is not None and msg.get_type()=='COMMAND_ACK' and msg.get_srcSystem()==self.target and msg.target_system==systemid and msg.command==command:
                         match msg.result:
                             case m.MAV_RESULT_ACCEPTED | m.MAV_RESULT_IN_PROGRESS:
-                                logging.info(f'{name} #{self.target}')
+                                logging.info(f"{name} #{self.target}")
                                 break
                             case m.MAV_RESULT_TEMPORARILY_REJECTED:
                                 pass
@@ -149,7 +149,7 @@ class Connect:
                                 self._command_int(name, *params)
                                 break
                             case _:
-                                logging.info(f'{name} failed on #{self.target}')
+                                logging.info(f"{name} failed on #{self.target}")
                                 break
 
                     mav_conn.mav.command_long_send(
@@ -169,7 +169,7 @@ class Connect:
                     await asyncio.sleep(period)
 
                     if i >= timeout_cycles-1:
-                        logging.warning(f'{name} on #{self.target} failed (timeout)')
+                        logging.warning(f"{name} on #{self.target} failed (timeout)")
         except KeyboardInterrupt:
             self.close()
 
@@ -187,8 +187,8 @@ class Connect:
         try:
             flush_buffer()
             
-            logging.warning(f'{name} sent to #{self.target}...')
-            logging.debug(f'    {name} params: {params}')
+            logging.warning(f"{name} sent to #{self.target}...")
+            logging.debug(f"    {name} params: {params}")
 
             mav_conn.mav.command_int_send(
                 self.target,
@@ -214,7 +214,7 @@ class Connect:
                     if msg is not None and msg.get_type()=='COMMAND_ACK' and msg.get_srcSystem()==self.target and msg.target_system==systemid and msg.command==command:
                         match msg.result:
                             case m.MAV_RESULT_ACCEPTED | m.MAV_RESULT_IN_PROGRESS:
-                                logging.info(f'{name} #{self.target}')
+                                logging.info(f"{name} #{self.target}")
                                 break
                             case m.MAV_RESULT_TEMPORARILY_REJECTED:
                                 pass
@@ -222,7 +222,7 @@ class Connect:
                                 self._command(name, *params)
                                 break
                             case _:
-                                logging.info(f'{name} failed on #{self.target}')
+                                logging.info(f"{name} failed on #{self.target}")
                                 break
 
                     mav_conn.mav.command_int_send(
@@ -243,54 +243,54 @@ class Connect:
                     await asyncio.sleep(period)
 
                     if i >= timeout_cycles-1:
-                        logging.warning(f'{name} on #{self.target} failed (timeout)')
+                        logging.warning(f"{name} on #{self.target} failed (timeout)")
         except KeyboardInterrupt:
             self.close()
 
     # region user functions
     def boot(self) -> None:
         """Set UAV mode to boot."""
-        logging.info('Calling boot()')
+        logging.info("Calling boot()")
         asyncio.run(self._command('DO_SET_MODE', m.MAV_MODE_PREFLIGHT, 1, 10))
 
     def set_mode(self, mode: int, custom_mode: int, custom_submode: int) -> None:
         """Set UAV mode."""
-        logging.info('Calling set_mode()')
+        logging.info("Calling set_mode()")
         asyncio.run(self._command('DO_SET_MODE', mode, custom_mode, custom_submode))
 
     def set_alt(self, alt: float) -> None:
         """Change UAV altitude setpoint."""
-        logging.info('Calling set_alt()')
+        logging.info("Calling set_alt()")
         asyncio.run(self._command('DO_CHANGE_ALTITUDE', alt, m.MAV_FRAME_GLOBAL_TERRAIN_ALT))
 
     def set_speed(self, airspeed: float) -> None:
         """Change UAV speed setpoint."""
-        logging.info('Calling set_speed()')
+        logging.info("Calling set_speed()")
         asyncio.run(self._command('DO_CHANGE_SPEED', m.SPEED_TYPE_AIRSPEED, airspeed, -1))
 
     def reposition(self, latitude: float, longitude: float, altitude: float, speed: float = -1, radius: float = 0, yaw: float = 1):
         """Change UAV current waypoint."""
-        logging.info('Calling reposition()')
+        logging.info("Calling reposition()")
         asyncio.run(self._command_int('DO_REPOSITION', speed, 0, radius, yaw, int(latitude), int(longitude), int(altitude)))
 
     def f_takeoff(self, latitude: float, longitude: float, altitude: float, yaw: float = float('nan'), pitch: float = 10):
         """Command UAV conventional takeoff."""
-        logging.info('Calling f_takeoff()')
+        logging.info("Calling f_takeoff()")
         asyncio.run(self._command_int('NAV_TAKEOFF', pitch, 0,0, yaw, int(latitude), int(longitude), int(altitude)))
 
     def v_takeoff(self, latitude: float, longitude: float, altitude: float, transit_heading: float = m.VTOL_TRANSITION_HEADING_TAKEOFF, yaw: float = float('nan')):
         """Command UAV vertical takeoff."""
-        logging.info('Calling v_takeoff()')
+        logging.info("Calling v_takeoff()")
         asyncio.run(self._command_int('NAV_VTOL_TAKEOFF', 0, transit_heading, 0, yaw, int(latitude), int(longitude), int(altitude)))
     
     def f_land(self, latitude: float, longitude: float, altitude: float, abort_alt: float = 0, yaw: float = float('nan')):
         """Command UAV conventional landing."""
-        logging.info('Calling f_land()')
+        logging.info("Calling f_land()")
         asyncio.run(self._command_int('NAV_LAND', abort_alt, m.PRECISION_LAND_MODE_DISABLED, 0, yaw, int(latitude), int(longitude), int(altitude)))
 
     def v_land(self, latitude: float, longitude: float, altitude: float, approch_alt: float = float('nan'), yaw: float = float('nan')):
         """Command UAV vertical landing."""
-        logging.info('Calling v_land()')
+        logging.info("Calling v_land()")
         asyncio.run(self._command_int('NAV_VTOL_LAND', m.NAV_VTOL_LAND_OPTIONS_DEFAULT, 0, approch_alt, yaw, int(latitude), int(longitude), int(altitude)))
 
     def pid(self, kp: float, ti: float, td: float, setpoint: float):
@@ -330,15 +330,15 @@ class Connect:
         try:
             ids.remove(self.target)
             mav_conn.mav.change_operator_control_send(self.target, 1, 0, key.KEY.encode('utf-8'))
-            logging.warning('Closing GCS')
+            logging.warning("Closing GCS")
 
             if not ids:
-                logging.info('Closing mav_conn')
+                logging.info("Closing mav_conn")
                 mav_conn.close()
                 MAV_CONN_OPEN = False
         except ValueError:
-            logging.error('Connection not open')
+            logging.error("Connection not open")
 
 
 if __name__=='__main__':
-    logging.critical('Either run the GUI script or import this script to a python terminal.')
+    logging.critical("Either run the GUI script or import this script to a python terminal.")
