@@ -17,7 +17,9 @@ import common.key as key
 
 m = mavutil.mavlink
 
-logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO, handlers=[logging.FileHandler('gcs/gcs.log', mode='w'), logging.StreamHandler()])
+filehandler = logging.FileHandler('gcs/gcs.log', mode='w')
+filehandler.setLevel(logging.WARNING)
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO, handlers=[filehandler, logging.StreamHandler()])
 logging.getLogger('pymavlink').setLevel(logging.ERROR)
 
 config = ConfigParser()

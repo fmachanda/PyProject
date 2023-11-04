@@ -35,7 +35,9 @@ m = mavutil.mavlink
 config = ConfigParser()
 config.read('./common/CONFIG.ini')
 
-logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO, handlers=[logging.FileHandler('uav/xpio.log', mode='w'), logging.StreamHandler()])
+filehandler = logging.FileHandler('uav/xpio.log', mode='w')
+filehandler.setLevel(logging.WARNING)
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO, handlers=[filehandler, logging.StreamHandler()])
 os.system('cls' if os.name == 'nt' else 'clear')
 
 stop = asyncio.Event()

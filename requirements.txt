@@ -1,5 +1,7 @@
-numpy==1.26.1
-matplotlib==3.8.0
-pycyphal==1.15.4
-pymavlink==2.4.40
-setuptools==68.2.2
+numpy
+matplotlib
+pycyphal
+pymavlink
+setuptools
+opencv-python
+imutils

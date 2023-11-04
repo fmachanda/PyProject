@@ -36,10 +36,10 @@ git clone https://github.com/fmachanda/fmuas-main.git <directory> --recurse-subm
 cd <directory>/fmuas-main
 ```
 
-Install required python modules with [pip](https://pip.pypa.io/en/stable/installation/).
+Install and update required python modules with [pip](https://pip.pypa.io/en/stable/installation/).
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt --upgrade
 ```
 
 X-Plane simulation requires the files from the [fmuas-xp][fmuas-xp-link] repo to be cloned into `X-Plane 12/Aircraft/`.

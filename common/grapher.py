@@ -4,13 +4,13 @@ from collections import deque
 
 class Grapher:
     """Graph a deque of data in matplotlib."""
-    def __init__(self, name: str = 'Output', deque_len: int = 1500) -> None:
+    def __init__(self, name: str = "Output", deque_len: int = 1500) -> None:
         """Inits the grpah."""
         self.fig,self.ax,self.line = Grapher.init_plot(name=name)
         self.data = deque(maxlen=deque_len)
 
     @staticmethod
-    def init_plot(name: str = 'Output') -> tuple:
+    def init_plot(name: str = "Output") -> tuple:
         """Inits the plot."""
         plt.ion()  # Turn on interactive mode
         fig, ax = plt.subplots()

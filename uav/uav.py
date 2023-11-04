@@ -1,7 +1,7 @@
 """UAV Main
 
 This script connects to simulated hardware through realistic UAVCAN and 
-MAVLINK protocols. The script recieves data from various sensors and
+MAVLINK protocols. The script recieves data from various sensors and 
 publishes desired servo and throttle settings. A method to connect with 
 a GCS over MAVLINK is provided. The UAV is designed to be autonomous.
 
@@ -43,7 +43,9 @@ from common.state_manager import GlobalState as g
 
 m = mavutil.mavlink
 
-logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO, handlers=[logging.FileHandler('uav/uav.log', mode='w'), logging.StreamHandler()])
+filehandler = logging.FileHandler('uav/uav.log', mode='w')
+filehandler.setLevel(logging.WARNING)
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO, handlers=[filehandler, logging.StreamHandler()])
 logging.getLogger('pymavlink').setLevel(logging.ERROR)
 
 os.system('cls' if os.name == 'nt' else 'clear')
