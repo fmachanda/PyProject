@@ -6,7 +6,7 @@ __pycache__
 .DS_Store
 .venv
 test.py
-# stored_images
+stored_images
 gcs.log
 uav.log
 xpio.log
