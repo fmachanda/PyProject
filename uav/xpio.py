@@ -91,14 +91,14 @@ FREQ = 60
 FT_TO_M = 3.048e-1
 KT_TO_MS = 5.14444e-1
 
-type LoopedClass = XPConnect | TestXPConnect | ServoIO | ESCIO | AltitudeSensor | AttitudeSensor | GPSSensor | IASSensor | AOASensor | SlipSensor | Clock | Camera | TestCamera
+# type LoopedClass = XPConnect | TestXPConnect | ServoIO | ESCIO | AltitudeSensor | AttitudeSensor | GPSSensor | IASSensor | AOASensor | SlipSensor | Clock | Camera | TestCamera
 
 
 def async_loop_decorator(close=True):
     """Provide decorator to gracefully loop coroutines"""
     def decorator(func):
         @wraps(func) # Preserve metadata like func.__name__
-        async def wrapper(self: LoopedClass, *args, **kwargs):
+        async def wrapper(self, *args, **kwargs):
             try:
                 while not stop.is_set():
                     try:

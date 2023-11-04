@@ -10,3 +10,5 @@ stored_images
 gcs.log
 uav.log
 xpio.log
+test
+matlab
