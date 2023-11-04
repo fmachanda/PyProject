@@ -37,6 +37,7 @@ import uavcan
 from pymavlink import mavutil
 from uavcan_archived.equipment import actuator, ahrs, air_data, esc, gnss, range_sensor
 
+import common.image_processor as img
 from common.pid import PID
 from common.state_manager import GlobalState as g
 
@@ -762,6 +763,34 @@ class Processor:
         pass
 
 
+class ImageProcessor:
+    """Find and process new images."""
+    def __init__(self, main: 'Main', freq: int = DEFAULT_FREQ) -> None:
+        self.main = main
+        self._freq = freq
+        self._path = os.path.join(os.getcwd(), 'stored_images')
+
+    @async_loop_decorator(close=False)
+    async def _image_processor_run_loop(self):
+        """Find and process new images."""
+        previous_file_list = [f for f in os.listdir(self._path) if os.path.isfile(os.path.join(self._path, f))]
+
+        await asyncio.sleep(1 / self._freq)
+        new_file_list = [f for f in os.listdir(self._path) if os.path.isfile(os.path.join(self._path, f))]
+        file_diff = [x for x in new_file_list if x not in previous_file_list]
+        previous_file_list = new_file_list
+
+        if len(file_diff) != 0:
+            logging.info(f"Detected file_diff: {file_diff}")
+            for f in file_diff:
+                img.process(os.path.join(self._path, f))
+
+    async def run(self) -> None:
+        """Find and process new images."""
+        logging.info("Starting image watch cycle...")
+        await self._image_processor_run_loop()
+
+
 class Controller:
     """Controller class for managing MAVLINK communication with GCS.
 
@@ -1128,6 +1157,7 @@ class Main:
         self.io = MainIO(self)
         self.processor = Processor(self)
         self.navigator = Navigator(self)
+        self.img = ImageProcessor(self)
 
         controller_manager = asyncio.create_task(self.controller.manager())
         await asyncio.sleep(0)
@@ -1168,6 +1198,7 @@ class Main:
             asyncio.create_task(self.processor.run()),
             # asyncio.create_task(self.navigator.run()), TODO
             asyncio.create_task(self.io.run()),
+            asyncio.create_task(self.img.run()),
         ]
 
         if graph is not None:
