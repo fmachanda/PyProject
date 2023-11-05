@@ -4,10 +4,10 @@ import imutils
 import matplotlib.pyplot as plt
 import numpy as np
 
-CONFIDENCE_THRESHOLD = 0.0
+CONFIDENCE_THRESHOLD = 0.3
 
-ROI_MIN_WIDTH = 30
-ROI_MIN_HEIGHT = 30
+ROI_MIN_WIDTH = 15
+ROI_MIN_HEIGHT = 15
 
 ANNOTATION_COLOR = (200, 0, 200)
 
@@ -15,20 +15,18 @@ templates: np.ndarray = np.load('./common/templates.npy')
 
 ROI_RESCALE_WIDTH, ROI_RESCALE_HEIGHT = templates.shape[1:]
 
-def find_contour(image: str | cv2.typing.MatLike, radius: int = 160) -> tuple[np.ndarray] | bool:
+def find_contour(image: str | cv2.typing.MatLike) -> tuple[np.ndarray] | bool:
     """Find contours in image for landing UAV.
     
     Parameters
     ----------
     image : str | cv2.typing.MatLike
         Image or image path.
-    radius : int
-        Mask radius to account for landing light.
 
     Returns
     -------
     tuple[np.ndarray, np.ndarray, np.ndarray]
-        contours, final, original of input image.
+        contours, processed, original of input image.
     bool
         False if image doesn't load.
     """
@@ -40,46 +38,31 @@ def find_contour(image: str | cv2.typing.MatLike, radius: int = 160) -> tuple[np
 
     image = imutils.resize(image, 1024)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
     image = cv2.GaussianBlur(image, (3, 3), 0)
 
-    yc, xc = image.shape[:2]
+    processed = cv2.normalize(image, None, 0, 1.0, cv2.NORM_MINMAX, dtype=cv2.CV_32F)
+
+    lowerb = np.min(np.min(processed, axis=0), axis=0)
+    upperb = np.max(np.max(processed, axis=0), axis=0)
+    upperb[2] *= 0.3
+    mask = cv2.inRange(processed, lowerb, upperb)
     
-    cmask = np.zeros(image.shape[:2], dtype='uint8')
-    cmask = cv2.circle(cmask, (xc // 2,yc // 2), radius, (1), -1)
+    processed = cv2.bitwise_and(processed, processed, mask=mask)
+    processed = cv2.cvtColor(processed, cv2.COLOR_RGB2GRAY)
+    processed *= 255
+    processed = np.array(processed, np.uint8)
 
-    inner = cv2.bitwise_and(image, image, mask=cmask)
-    cmask = 1 - cmask
-    outer = cv2.bitwise_and(image, image, mask=cmask)
+    _, processed = cv2.threshold(processed, 60, 1.0, cv2.THRESH_BINARY)
 
-    out = []
+    contours, _ = cv2.findContours(processed, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-    for im in [inner, outer]:
-        working = cv2.normalize(im, None, 0, 1.0, cv2.NORM_MINMAX, dtype=cv2.CV_32F)
+    # contoured = np.zeros_like(processed)
+    # cv2.drawContours(contoured, contours, -1, ANNOTATION_COLOR)
+    # plt.figure()
+    # plt.imshow(contoured)
+    # plt.show()
 
-        lowerb = np.min(np.min(working, axis=0), axis=0)
-        upperb = np.max(np.max(working, axis=0), axis=0)
-        upperb[2] *= 0.3
-        mask = cv2.inRange(working, lowerb, upperb)
-
-        working = cv2.bitwise_and(working, working, mask=mask)
-        working = cv2.cvtColor(working, cv2.COLOR_RGB2GRAY)
-        working *= 255
-        working = np.array(working, dtype=np.uint8)
-
-        _, working = cv2.threshold(working, 100, 2.0, cv2.THRESH_BINARY) # TODO Needs tuning!
-        
-        plt.imshow(working)
-        plt.show()
-
-        out.append(working)
-    
-    final = cv2.add(out[0], out[1])
-    final = np.array(final, np.uint8)
-
-    contours, _ = cv2.findContours(final, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
-    return contours, final, image
+    return contours, processed, image
 
 
 def find(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = False, confidence_threshold: float = CONFIDENCE_THRESHOLD) -> tuple | bool:
@@ -105,14 +88,18 @@ def find(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = Fal
     """
 
     if out := find_contour(image):
-        contours, final, image = out
+        contours, processed, image = out
     else:
         return False
     confidences = np.zeros((len(contours)))
 
     for n, contour in enumerate(contours):
         x, y, w, h = cv2.boundingRect(contour)
-        roi: np.ndarray = final[y:y+h, x:x+w]
+        # roi: np.ndarray = processed[y:y+h, x:x+w]
+
+        roi = np.zeros_like(processed)
+        cv2.drawContours(roi, contours, n, (1.0), thickness=cv2.FILLED)
+        roi: np.ndarray = roi[y:y+h, x:x+w]
 
         if roi.shape[0] < ROI_MIN_WIDTH or roi.shape[1] < ROI_MIN_HEIGHT:
             continue
@@ -152,8 +139,11 @@ def find(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = Fal
     
     confidence = np.max(confidences)
 
-    if confidence < confidence_threshold:
+    if confidence <= 0.0:
         return False
+
+    # if confidence < confidence_threshold:
+    #     return False
 
     index = np.where(confidences==np.max(confidences))[0][0]
     x, y, w, h = cv2.boundingRect(contours[index])
@@ -172,13 +162,14 @@ def find(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = Fal
 
 def _test(file):
     if out:=find(file, display=True):
-        print(out[2])
+        x_offset, y_offset, confidence = out
+        print(f"'H' detected in {file} at ({x_offset},{y_offset}) with a confidence of {confidence:.2f}.")
     else:
-        print("None found.")
+        print(f"None detected in {file}.")
 
 
 if __name__ == '__main__':
-    for i in range(1,10):
-        _test(f'./stored_images/test{i}.png')
+    # for i in range(1,10):
+    #     _test(f'./stored_images/image{i}.png')
 
-    # _test('./stored_images/test7.png')
+    _test('./stored_images/Cessna_172SP - 2023-11-05 10.56.34.png')

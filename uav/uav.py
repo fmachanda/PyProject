@@ -768,7 +768,7 @@ class Processor:
 
 class ImageProcessor:
     """Find and process new images."""
-    def __init__(self, main: 'Main', freq: int = DEFAULT_FREQ) -> None:
+    def __init__(self, main: 'Main', freq: int = 1) -> None:
         self.main = main
         self._freq = freq
         self._path = os.path.join(os.getcwd(), 'stored_images')
@@ -779,6 +779,7 @@ class ImageProcessor:
         previous_file_list = [f for f in os.listdir(self._path) if os.path.isfile(os.path.join(self._path, f))]
 
         await asyncio.sleep(1 / self._freq)
+
         new_file_list = [f for f in os.listdir(self._path) if os.path.isfile(os.path.join(self._path, f))]
         file_diff = [x for x in new_file_list if x not in previous_file_list]
         previous_file_list = new_file_list
@@ -787,7 +788,9 @@ class ImageProcessor:
             for f in file_diff:
                 if out := img.find(os.path.join(self._path, f), display=True):
                     x_offset, y_offset, confidence = out
-                    logging.debug(f"'H' detected in {f} at ({x_offset},{y_offset}) with a confidence of {confidence:.2f}.")
+                    logging.info(f"'H' detected in {f} at ({x_offset},{y_offset}) with a confidence of {confidence:.2f}.")
+                else:
+                    logging.info(f"None detected in {f}.")
 
     async def run(self) -> None:
         """Find and process new images."""
@@ -1219,4 +1222,4 @@ class Main:
 if __name__ == '__main__':
     import random
     main = Main()
-    asyncio.run(main.run(graph='main.processor._outf_roll'))
+    asyncio.run(main.run())#graph='main.processor._outf_roll'))
