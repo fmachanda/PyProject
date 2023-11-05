@@ -785,7 +785,7 @@ class ImageProcessor:
         if len(file_diff) != 0:
             logging.info(f"Detected file_diff: {file_diff}")
             for f in file_diff:
-                img.process(os.path.join(self._path, f))
+                img.find(os.path.join(self._path, f), display=True)
 
     async def run(self) -> None:
         """Find and process new images."""

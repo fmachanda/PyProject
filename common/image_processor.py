@@ -1,10 +1,13 @@
 import cv2
 import cv2.typing
 import imutils
+import matplotlib.pyplot as plt
 import numpy as np
 
+templates = np.load('./common/templates.npy')
 
-def process(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = False) -> np.ndarray:
+
+def process(image: str | cv2.typing.MatLike, radius: int = 160) -> tuple[np.ndarray]:
     if isinstance(image, str):
         image = cv2.imread(image)
         if image is None:
@@ -54,17 +57,63 @@ def process(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = 
     # contoured = cv2.Canny(final, 0, 0)
 
     contours, _ = cv2.findContours(final, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    contoured = np.zeros_like(image)
-    # contoured = image.copy()
-    cv2.drawContours(contoured, contours, -1, (255,0,255))
+
+    return contours, final, image
+
+
+def find(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = False) -> tuple[int]:
+    contours, final, image = process(image)
+    strengths = np.empty((len(contours)))
+
+    for n, contour in enumerate(contours):
+        x, y, w, h = cv2.boundingRect(contour)
+        roi = final[y:y+h, x:x+w]
+
+        if roi.shape[0] < 20 and roi.shape[1] < 20:
+            continue
+
+        roi = cv2.resize(roi, (224, 224))
+
+        strength = np.zeros((18))
+        negstrength = np.zeros((18))
+
+        for i, template in enumerate(templates):
+
+
+            negtemplate = 1 - template
+            negroi = 1 - roi
+
+            posmatch = np.multiply(template, roi)
+            negmatch = np.multiply(negtemplate, negroi)
+
+            match = (np.sum(negroi)*posmatch + np.sum(roi)*negmatch) / (np.sum(negroi) + np.sum(roi))
+
+
+            strength[i] = 2 * np.sum(match) / (224*224)
+
+        strengths[n] = np.max(strength)
+
+
+    index = np.where(strengths==np.max(strengths))[0][0]
+
+    x, y, w, h = cv2.boundingRect(contours[index])
+
+    yc = image.shape[0]//2 - (y + h//2)
+    xc = (x + w//2) - image.shape[1]//2
 
     if display:
-        cv2.imshow("CV2", contoured)
-        if cv2.waitKey(0):
-            cv2.destroyAllWindows()
+        cv2.rectangle(image, (x, y), (x+w, y+h), color=(200,0,200), thickness=2)
 
-    return final, contoured, contours, image
+        # cv2.imshow("Result (Ctrl-W to close)", cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+        # if cv2.waitKey(0):
+        #     cv2.destroyAllWindows()
+
+        plt.figure()
+        plt.imshow(image)
+        plt.show()
+        
+    return xc, yc
 
 
 if __name__ == '__main__':
-    process('./stored_images/image1.png', display=True)
+    print(find('./stored_images/noised.png', display=True))
