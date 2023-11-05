@@ -4,14 +4,14 @@ import imutils
 import matplotlib.pyplot as plt
 import numpy as np
 
-CONFIDENCE_THRESHOLD = 0.50
+CONFIDENCE_THRESHOLD = 0.0
 
 ROI_MIN_WIDTH = 30
 ROI_MIN_HEIGHT = 30
 
 ANNOTATION_COLOR = (200, 0, 200)
 
-templates = np.load('./common/templates.npy')
+templates: np.ndarray = np.load('./common/templates.npy')
 
 ROI_RESCALE_WIDTH, ROI_RESCALE_HEIGHT = templates.shape[1:]
 
@@ -66,7 +66,11 @@ def find_contour(image: str | cv2.typing.MatLike, radius: int = 160) -> tuple[np
         working = cv2.cvtColor(working, cv2.COLOR_RGB2GRAY)
         working *= 255
         working = np.array(working, dtype=np.uint8)
-        _, working = cv2.threshold(working, 0.3, 1.0, cv2.THRESH_BINARY)
+
+        _, working = cv2.threshold(working, 100, 2.0, cv2.THRESH_BINARY) # TODO Needs tuning!
+        
+        plt.imshow(working)
+        plt.show()
 
         out.append(working)
     
@@ -108,7 +112,7 @@ def find(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = Fal
 
     for n, contour in enumerate(contours):
         x, y, w, h = cv2.boundingRect(contour)
-        roi = final[y:y+h, x:x+w]
+        roi: np.ndarray = final[y:y+h, x:x+w]
 
         if roi.shape[0] < ROI_MIN_WIDTH or roi.shape[1] < ROI_MIN_HEIGHT:
             continue
@@ -120,20 +124,32 @@ def find(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = Fal
         roi = cv2.resize(roi, (ROI_RESCALE_WIDTH, ROI_RESCALE_HEIGHT))
 
         strength = np.zeros((templates.shape[0]))
-        negstrength = np.zeros((templates.shape[0]))
 
         for i, template in enumerate(templates):
-            negtemplate = 1 - template
-            negroi = 1 - roi
+            invtemplate = 1 - template
 
             posmatch = np.multiply(template, roi)
-            negmatch = np.multiply(negtemplate, negroi)
+            invmatch = np.multiply(invtemplate, roi)
 
-            match = (np.sum(negroi)*posmatch + np.sum(roi)*negmatch) / (np.sum(negroi) + np.sum(roi))
-            strength[i] = 2 * np.sum(match) / (ROI_RESCALE_WIDTH*ROI_RESCALE_HEIGHT)
+            match = posmatch - invmatch
+
+            strength[i] = (np.sum(match)) / np.sum(template)
+
+            # print( "----------------")
+            # print(f"Template: {np.sum(template)}")
+            # print(f"InverseT: {np.sum(invtemplate)}")
+            # print(f"PosMatch: {np.sum(posmatch)}")
+            # print(f"InvMatch: {np.sum(invmatch)}")
+            # print(f"Strength: {strength[i]}")
+            # plt.figure()
+            # plt.imshow(match)
+            # plt.show()
 
         confidences[n] = np.max(strength)
 
+    if confidences.size <= 0:
+        return False
+    
     confidence = np.max(confidences)
 
     if confidence < confidence_threshold:
@@ -145,16 +161,24 @@ def find(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = Fal
     xc = (x + w//2) - image.shape[1]//2
 
     if display:
+        plt.figure()
         cv2.rectangle(image, (x, y), (x+w, y+h), color=ANNOTATION_COLOR, thickness=2)
         cv2.circle(image, (x + w//2, y + h//2), radius=2, color=ANNOTATION_COLOR, thickness=-1)
-        plt.figure()
         plt.imshow(image)
         plt.show()
         
     return xc, yc, confidence
 
 
+def _test(file):
+    if out:=find(file, display=True):
+        print(out[2])
+    else:
+        print("None found.")
+
+
 if __name__ == '__main__':
     for i in range(1,10):
-        find(f'./stored_images/image{i}.png', display=True)
-    # find('./stored_images/doubled.png', display=True)
+        _test(f'./stored_images/test{i}.png')
+
+    # _test('./stored_images/test7.png')

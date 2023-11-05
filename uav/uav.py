@@ -54,14 +54,15 @@ DEFAULT_FREQ = 60
 
 system_ids = []
 
-# type LoopedClass = MainIO | Processor | Controller
+# Partially for typing but mostly to force user into using Python 3.12+
+type LoopedClass = MainIO | Processor | Controller
 
 
 def async_loop_decorator(close=True):
     """Provide decorator to gracefully loop coroutines"""
     def decorator(func):
         @wraps(func) # Preserve metadata like func.__name__
-        async def wrapper(self: 'MainIO | Processor | Controller', *args, **kwargs):
+        async def wrapper(self: LoopedClass, *args, **kwargs):
             try:
                 while not self.main.stop.is_set():
                     try:

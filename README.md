@@ -20,9 +20,8 @@ The software is designed to be simulated using the [X-Plane 12][xplane-link] fli
 
 ## Requirements
 * Windows 11.0+ or MacOS 13.0+
-* Python 3.11
+* Python 3.12+
     * **pip** modules listed in `requirements.txt`
-    * Python 3.12 will only work when **tensorflow** is updated
 * X-Plane 12.06+ (if using simulation)
 
 > Not tested with older versions or Linux, but may work
