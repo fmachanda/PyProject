@@ -783,13 +783,14 @@ class ImageProcessor:
         previous_file_list = new_file_list
 
         if len(file_diff) != 0:
-            logging.info(f"Detected file_diff: {file_diff}")
             for f in file_diff:
-                img.find(os.path.join(self._path, f), display=True)
+                if out := img.find(os.path.join(self._path, f), display=True):
+                    x_offset, y_offset, confidence = out
+                    logging.debug(f"'H' detected in {f} at ({x_offset},{y_offset}) with a confidence of {confidence:.2f}.")
 
     async def run(self) -> None:
         """Find and process new images."""
-        logging.info("Starting image watch cycle...")
+        logging.debug("Starting image watch cycle...")
         await self._image_processor_run_loop()
 
 
