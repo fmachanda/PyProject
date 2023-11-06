@@ -4,16 +4,14 @@ import imutils
 import matplotlib.pyplot as plt
 import numpy as np
 
-CONFIDENCE_THRESHOLD = 0.3
-
-ROI_MIN_WIDTH = 15
-ROI_MIN_HEIGHT = 15
-
-ANNOTATION_COLOR = (200, 0, 200)
-
 templates: np.ndarray = np.load('./common/templates.npy')
 
+ROI_MIN_WIDTH = 15
+CONFIDENCE_THRESHOLD = 0.3
+ROI_MIN_HEIGHT = 15
+ANNOTATION_COLOR = (200, 0, 200)
 ROI_RESCALE_WIDTH, ROI_RESCALE_HEIGHT = templates.shape[1:]
+
 
 def find_contour(image: str | cv2.typing.MatLike) -> tuple[np.ndarray] | bool:
     """Find contours in image for landing UAV.

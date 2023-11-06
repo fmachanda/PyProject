@@ -65,7 +65,6 @@ rx_data = {
 
     b'fmuas/adc/ias': 0.0,
     b'fmuas/adc/aoa': 0.0,
-    b'fmuas/adc/slip': 0.0,
     
     b'sim/time/paused': 1.0,
     b'sim/time/local_date_days': 0.0,
@@ -76,8 +75,8 @@ rx_data = {
 tx_data = [
     [b'fmuas/afcs/output/elevon1', 0.0],
     [b'fmuas/afcs/output/elevon2', 0.0],
-    [b'fmuas/afcs/output/yaw', 0.0],
     [b'fmuas/afcs/output/wing_tilt', 0.0],
+    [b'fmuas/afcs/output/wing_stow', 0.0],
     [b'fmuas/afcs/output/throttle1', 0.0],
     [b'fmuas/afcs/output/throttle2', 0.0],
     [b'fmuas/afcs/output/throttle3', 0.0],
@@ -91,7 +90,7 @@ FREQ = 60
 FT_TO_M = 3.048e-1
 KT_TO_MS = 5.14444e-1
 
-type LoopedClass = XPConnect | TestXPConnect | ServoIO | ESCIO | AltitudeSensor | AttitudeSensor | GPSSensor | IASSensor | AOASensor | SlipSensor | Clock | Camera | TestCamera
+type LoopedClass = XPConnect | TestXPConnect | ServoIO | ESCIO | AltitudeSensor | AttitudeSensor | GPSSensor | IASSensor | AOASensor | Clock | Camera | TestCamera
 
 
 def async_loop_decorator(close=True):
@@ -751,48 +750,6 @@ class AOASensor:
         self._node.close()
 
 
-class SlipSensor:
-    def __init__(self, freq: int = FREQ) -> None:
-        self._registry = pycyphal.application.make_registry(environment_variables={
-            'UAVCAN__NODE__ID'              :config.get('node_ids', 'slipsensor'),
-            'UAVCAN__UDP__IFACE'            :config.get('main', 'udp'),
-
-            'UAVCAN__PUB__SLIP__ID'     :config.get('subject_ids', 'slip'),
-        })
-
-        self._freq = freq
-        
-        node_info = uavcan.node.GetInfo_1.Response(
-            software_version=uavcan.node.Version_1(major=1, minor=0),
-            name='fmuas.xpinterface.slipsensor',
-        )
-
-        self._node = pycyphal.application.make_node(node_info, self._registry)
-
-        self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
-        self._node.heartbeat_publisher.vendor_specific_status_code = os.getpid() % 100
-        
-        self._pub_slip = self._node.make_publisher(air_data.Sideslip_1, 'slip')
-
-        self._node.start()
-
-    @async_loop_decorator()
-    async def _slipsensor_run_loop(self) -> None:
-        m = air_data.Sideslip_1(
-            rx_data[b'fmuas/adc/slip'],
-            float('nan')
-        )
-        await self._pub_slip.publish(m)
-        await asyncio.sleep(1 / self._freq)
-
-    async def run(self) -> None:
-        await self._slipsensor_run_loop()
-
-    async def close(self) -> None:
-        logging.debug("Closing SLP")
-        self._node.close()
-
-
 class Clock:
     def __init__(self) -> None:
         self._registry = pycyphal.application.make_registry(environment_variables={
@@ -919,29 +876,36 @@ class Camera:
         self.sock.sendto(struct.pack('<4sx400s', b'CMND', b'fmuas/commands/image_capture'), (self.X_PLANE_IP, self.UDP_PORT))
 
         await asyncio.sleep(Camera.DELAY)
-            
+
         new_file_list = [f for f in os.listdir(self.xp_path) if os.path.isfile(os.path.join(self.xp_path, f))]
-
         file_diff = [x for x in new_file_list if x not in previous_file_list]
-
         previous_file_list = new_file_list
 
         if len(file_diff) != 0:
-            logging.info(f"Detected file_diff: {file_diff}")
+            logging.debug(f"Detected file_diff: {file_diff}")
             for f in file_diff:
+                ready = False
+                last_modified = os.stat(os.path.join(self.xp_path, f)).st_mtime
+                while not ready:
+                    await asyncio.sleep(Camera.DELAY)
+                    new_last_modified = os.stat(os.path.join(self.xp_path, f)).st_mtime
+                    ready = (last_modified == new_last_modified)
+                    last_modified = new_last_modified
+                    logging.debug('Shutil waiting...')
+                logging.debug("Shutil moving")
                 if not os.path.exists(self.destination_dir):
                     os.makedirs(self.destination_dir)
                 file_path = os.path.join(self.xp_path, f)
                 try:
                     shutil.move(file_path, self.destination_dir)
-                    logging.info(f"Moving file {file_path} to {self.destination_dir}")
+                    logging.info(f"Moving file {f} to {self.destination_dir}")
                 except shutil.Error:
-                    logging.error(f"Error moving file {file_path} to {self.destination_dir}")
+                    logging.error(f"Error moving file {f} to {self.destination_dir}")
                 except PermissionError:
-                    logging.error(f"Error moving file {file_path} to {self.destination_dir}")
+                    logging.error(f"Error moving file {f} to {self.destination_dir}")
                 finally:
                     pass
-                    
+
     async def _capture_cycle(self, iterations: int, period: float) -> None:
         if iterations != 0:
             for _ in range(iterations):
@@ -1064,7 +1028,6 @@ async def main():
     gps = GPSSensor()
     ias = IASSensor()
     aoa = AOASensor()
-    slp = SlipSensor()
     srv = ServoIO()
     esc = ESCIO()
 
@@ -1077,7 +1040,6 @@ async def main():
         asyncio.create_task(gps.run()),
         asyncio.create_task(ias.run()),
         asyncio.create_task(aoa.run()),
-        asyncio.create_task(slp.run()),
         asyncio.create_task(srv.run()),
         asyncio.create_task(esc.run()),
     ]
