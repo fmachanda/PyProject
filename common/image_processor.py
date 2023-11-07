@@ -1,13 +1,14 @@
 import cv2
 import cv2.typing
 import imutils
+import logging
 import matplotlib.pyplot as plt
 import numpy as np
 
 templates: np.ndarray = np.load('./common/templates.npy')
 
 ROI_MIN_WIDTH = 15
-CONFIDENCE_THRESHOLD = 0.3
+CONFIDENCE_THRESHOLD = 0.4
 ROI_MIN_HEIGHT = 15
 ANNOTATION_COLOR = (200, 0, 200)
 ROI_RESCALE_WIDTH, ROI_RESCALE_HEIGHT = templates.shape[1:]
@@ -32,6 +33,7 @@ def find_contour(image: str | cv2.typing.MatLike) -> tuple[np.ndarray] | bool:
     if isinstance(image, str):
         image = cv2.imread(image)
         if image is None:
+            logging.error(f"Cannot read {image}.")
             return False
 
     image = imutils.resize(image, 1024)
@@ -44,7 +46,6 @@ def find_contour(image: str | cv2.typing.MatLike) -> tuple[np.ndarray] | bool:
     upperb = np.max(np.max(processed, axis=0), axis=0)
     upperb[2] *= 0.3
     mask = cv2.inRange(processed, lowerb, upperb)
-    
     processed = cv2.bitwise_and(processed, processed, mask=mask)
     processed = cv2.cvtColor(processed, cv2.COLOR_RGB2GRAY)
     processed *= 255
@@ -63,7 +64,7 @@ def find_contour(image: str | cv2.typing.MatLike) -> tuple[np.ndarray] | bool:
     return contours, processed, image
 
 
-def find(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = False, confidence_threshold: float = CONFIDENCE_THRESHOLD) -> tuple | bool:
+def find_h(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = False, confidence_threshold: float = CONFIDENCE_THRESHOLD) -> tuple | bool:
     """Find 'H' in image for landing UAV.
     
     Parameters
@@ -89,11 +90,11 @@ def find(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = Fal
         contours, processed, image = out
     else:
         return False
-    confidences = np.zeros((len(contours)))
+
+    strengths = np.zeros((len(contours), len(templates)))
 
     for n, contour in enumerate(contours):
         x, y, w, h = cv2.boundingRect(contour)
-        # roi: np.ndarray = processed[y:y+h, x:x+w]
 
         roi = np.zeros_like(processed)
         cv2.drawContours(roi, contours, n, (1.0), thickness=cv2.FILLED)
@@ -108,42 +109,25 @@ def find(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = Fal
 
         roi = cv2.resize(roi, (ROI_RESCALE_WIDTH, ROI_RESCALE_HEIGHT))
 
-        strength = np.zeros((templates.shape[0]))
+        invtemplates = 1 - templates
 
-        for i, template in enumerate(templates):
-            invtemplate = 1 - template
+        posmatches = np.multiply(templates, roi)
+        negmatches = np.multiply(invtemplates, roi)
 
-            posmatch = np.multiply(template, roi)
-            invmatch = np.multiply(invtemplate, roi)
+        matches = posmatches - negmatches
 
-            match = posmatch - invmatch
-
-            strength[i] = (np.sum(match)) / np.sum(template)
-
-            # print( "----------------")
-            # print(f"Template: {np.sum(template)}")
-            # print(f"InverseT: {np.sum(invtemplate)}")
-            # print(f"PosMatch: {np.sum(posmatch)}")
-            # print(f"InvMatch: {np.sum(invmatch)}")
-            # print(f"Strength: {strength[i]}")
-            # plt.figure()
-            # plt.imshow(match)
-            # plt.show()
-
-        confidences[n] = np.max(strength)
-
-    if confidences.size <= 0:
-        return False
+        strengths[n] = np.sum(matches, axis=(1,2)) / np.sum(templates, axis=(1,2))
     
-    confidence = np.max(confidences)
+    confidence = np.max(strengths)
 
     if confidence <= 0.0:
         return False
 
-    # if confidence < confidence_threshold:
-    #     return False
+    if confidence < confidence_threshold:
+        return False
 
-    index = np.where(confidences==np.max(confidences))[0][0]
+    index = np.where(strengths==confidence)[0][0]
+    
     x, y, w, h = cv2.boundingRect(contours[index])
     yc = image.shape[0]//2 - (y + h//2)
     xc = (x + w//2) - image.shape[1]//2
@@ -159,7 +143,7 @@ def find(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = Fal
 
 
 def _test(file):
-    if out:=find(file, display=True):
+    if out:=find_h(file, display=True):
         x_offset, y_offset, confidence = out
         print(f"'H' detected in {file} at ({x_offset},{y_offset}) with a confidence of {confidence:.2f}.")
     else:
@@ -167,7 +151,7 @@ def _test(file):
 
 
 if __name__ == '__main__':
-    # for i in range(1,10):
-    #     _test(f'./stored_images/image{i}.png')
+    for i in range(1,4):
+        _test(f'./stored_images/image{i}.png')
 
-    _test('./stored_images/Cessna_172SP - 2023-11-05 10.56.34.png')
+    # _test('./stored_images/noised.png')

@@ -779,7 +779,7 @@ class ImageProcessor:
 
             if len(file_diff) != 0:
                 for f in file_diff:
-                    if out := img.find(os.path.join(self._path, f), display=True):
+                    if out := img.find_h(os.path.join(self._path, f), display=True):
                         x_offset, y_offset, confidence = out
                         logging.info(f"'H' detected in {f} at ({x_offset},{y_offset}) with a confidence of {confidence:.2f}.")
                     else:
