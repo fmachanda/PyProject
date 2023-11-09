@@ -17,6 +17,7 @@ import os
 import sys
 from configparser import ConfigParser
 from functools import wraps
+import matplotlib.pyplot as plt
 import numpy as np
 
 if os.path.basename(os.getcwd()) == 'uav':
@@ -37,6 +38,7 @@ import uavcan
 from pymavlink import mavutil
 from uavcan_archived.equipment import actuator, ahrs, air_data, esc, gnss, range_sensor
 
+import common.grapher as grapher
 import common.image_processor as img
 from common.pid import PID
 from common.state_manager import GlobalState as g
@@ -588,6 +590,21 @@ class Processor:
         self._spf_roll = 0.0
         self._spf_rollspeed = 0.0
 
+        self.spv_altitude = 100.0
+        self.spv_heading = 0.0
+
+        self.xdisp = 0.0
+        self.ydisp = 0.0
+
+        self._spv_xspeed = 0.0
+        self._spv_yspeed = 0.0
+        self._spv_pitchspeed = 0.0
+        self._spv_rollspeed = 0.0
+        self._spv_pitch = 0.0
+        self._spv_roll = 0.0
+        self._spv_yawspeed = 0.0
+        self._spv_vs = 0.0
+
         self._outf_pitch = 0.0
         self._outf_roll = 0.0
         self._outf_throttle = 0.0
@@ -702,6 +719,14 @@ class Processor:
 
     def _vtol_throttles(self) -> np.ndarray:
         """Calculate VTOL throttle commands from sensors."""
+        if self.main.rxdata.gps.dt > 0.0:
+            ...
+            self.main.rxdata.gps.dt = 0.0
+
+        if self.main.rxdata.att.dt > 0.0:
+            ...
+            self.main.rxdata.att.dt = 0.0
+
         return self._vthrottles
     #endregion
 
@@ -711,6 +736,8 @@ class Processor:
             self._ias_scalar = 1296 / (self.main.rxdata.ias.ias**2)
         except ZeroDivisionError:
             self._ias_scalar = 1.0
+
+        print(self.xdisp)
 
         # TODO: setpoints
         match self.main.state.custom_submode:
@@ -768,24 +795,25 @@ class ImageProcessor:
     @async_loop_decorator(close=False)
     async def _image_processor_run_loop(self):
         """Find and process new images."""
-        if self.main.state.custom_mode == g.CUSTOM_MODE_LANDING:
-            previous_file_list = [f for f in os.listdir(self._path) if os.path.isfile(os.path.join(self._path, f))]
+        # if self.main.state.custom_mode == g.CUSTOM_MODE_LANDING:
+        previous_file_list = [f for f in os.listdir(self._path) if os.path.isfile(os.path.join(self._path, f))]
 
-            await asyncio.sleep(1 / self._freq)
+        await asyncio.sleep(1 / self._freq)
 
-            new_file_list = [f for f in os.listdir(self._path) if os.path.isfile(os.path.join(self._path, f))]
-            file_diff = [x for x in new_file_list if x not in previous_file_list]
-            previous_file_list = new_file_list
+        new_file_list = [f for f in os.listdir(self._path) if os.path.isfile(os.path.join(self._path, f))]
+        file_diff = [x for x in new_file_list if x not in previous_file_list]
+        previous_file_list = new_file_list
 
-            if len(file_diff) != 0:
-                for f in file_diff:
-                    if out := img.find_h(os.path.join(self._path, f), display=True):
-                        x_offset, y_offset, confidence = out
-                        logging.info(f"'H' detected in {f} at ({x_offset},{y_offset}) with a confidence of {confidence:.2f}.")
-                    else:
-                        logging.info(f"None detected in {f}.")
-        else:
-            await asyncio.sleep(1 / self._freq)
+        if len(file_diff) != 0:
+            for f in file_diff:
+                if out := img.find_h(os.path.join(self._path, f), display=False):
+                    self.main.processor.xdisp, self.main.processor.ydisp, confidence, image = out
+                    logging.info(f"'H' detected in {f} at ({self.main.processor.xdisp},{self.main.processor.ydisp}) with a confidence of {confidence:.2f}.")
+                    await grapher.imshow(image)
+                else:
+                    logging.info(f"None detected in {f}.")
+        # else:
+            # await asyncio.sleep(1 / self._freq)
 
     async def run(self) -> None:
         """Find and process new images."""
@@ -1121,7 +1149,6 @@ class Main:
             The graph update frequency in Hz (default is 10).
         """
 
-        import common.grapher as grapher
         self._grapher = grapher.Grapher(deque_len=300)
 
         try:
