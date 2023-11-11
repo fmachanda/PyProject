@@ -108,7 +108,7 @@ def async_loop_decorator(close=True):
                         raise
                     except Exception as e:
                         logging.error(f"Error in {func.__name__}: {e}")
-                        raise e
+                        raise # TODO
             except KeyboardInterrupt:
                 stop.set()
                 raise

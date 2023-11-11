@@ -27,7 +27,7 @@ config.read('./common/CONFIG.ini')
 mav_conn: mavutil.mavfile
 systemid = 0
 ids = []
-MAV_CONN_OPEN = False
+mav_conn_open = False
 MAX_FLUSH_BUFFER = int(1e6)
 
 
@@ -42,23 +42,27 @@ class PreExistingConnection(Exception):
 def flush_buffer() -> None:
     """Removes any MAV messages still in the connection buffer"""
     # Buffer flusher limited by MAX_FLUSH_BUFFER to avoid loop.
-    for i in range(MAX_FLUSH_BUFFER):
-        msg = mav_conn.recv_match(blocking=False)
-        if msg is None:
-            logging.debug(f"Buffer flushed, {i} messages cleared")
-            break
-        elif i >= MAX_FLUSH_BUFFER-1:
-            logging.error(f"Messages still in buffer after {MAX_FLUSH_BUFFER} flush cycles")
+    try:
+        for i in range(MAX_FLUSH_BUFFER):
+            msg = mav_conn.recv_match(blocking=False)
+            if msg is None:
+                logging.debug(f"Buffer flushed, {i} messages cleared")
+                break
+            elif i >= MAX_FLUSH_BUFFER-1:
+                logging.error(f"Messages still in buffer after {MAX_FLUSH_BUFFER} flush cycles")
+    except ConnectionError:
+        logging.debug("No connection to flush.")
+        pass
 
 
 def check_mav_conn() -> None:
     """Checks if the global MAVLINK connection is open."""
-    global mav_conn, MAV_CONN_OPEN
-    if not MAV_CONN_OPEN:
+    global mav_conn, mav_conn_open
+    if not mav_conn_open:
         logging.info("Opening mav_conn")
         mav_conn = mavutil.mavlink_connection(config.get('mavlink', 'gcs_uav_conn'), source_system=systemid, input=True)
         mav_conn.setup_signing(key.KEY.encode('utf-8'))
-        MAV_CONN_OPEN = True
+        mav_conn_open = True
 
 
 class Connect:
@@ -325,7 +329,7 @@ class Connect:
 
     def close(self) -> None:
         """Close the instance's MAVLINK connection."""
-        global MAV_CONN_OPEN
+        global mav_conn_open
 
         flush_buffer()
 
@@ -337,7 +341,7 @@ class Connect:
             if not ids:
                 logging.info("Closing mav_conn")
                 mav_conn.close()
-                MAV_CONN_OPEN = False
+                mav_conn_open = False
         except ValueError:
             logging.error("Connection not open")
 

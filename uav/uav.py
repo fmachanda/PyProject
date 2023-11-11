@@ -66,14 +66,14 @@ def async_loop_decorator(close=True):
             try:
                 while not self.main.stop.is_set():
                     try:
-                        await func(self, *args, **kwargs)
                         await asyncio.sleep(0)
+                        await func(self, *args, **kwargs)
                     except asyncio.exceptions.CancelledError:
                         self.main.stop.set()
                         raise
                     except Exception as e:
                         logging.error(f"Error in {func.__name__}: {e}")
-                        raise e
+                        # raise # TODO
             except KeyboardInterrupt:
                 self.main.stop.set()
                 raise
@@ -600,10 +600,9 @@ class Processor:
 
         self._pidf_ias_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=0.25, maximum=0.25, minimum=0.02)
 
-        self._pidf_dyw_rol = PID(kp=-0.8, ti=-8.0, td=0.05, integral_limit=0.1, maximum=math.pi/6, minimum=-math.pi/6)
-        self._pidf_rol_rls = PID(kp=2.0, ti=6.0, td=0.08, integral_limit=0.2, maximum=2.0, minimum=-2.0)
-        self._pidf_rls_out = PID(kp=0.008, ti=0.003, td=0.01, integral_limit=0.1, maximum=0.1, minimum=-0.1)
-        # self._pidf_rls_out = PID(kp=0.015, ti=0.35, td=0.001, integral_limit=0.1, maximum=0.1, minimum=-0.1)
+        self._pidf_dyw_rol = PID(kp=-0.8, ti=-8.0, td=0.02, integral_limit=0.1, maximum=math.pi/6, minimum=-math.pi/6)
+        self._pidf_rol_rls = PID(kp=1.5, ti=6.0, td=0.02, integral_limit=0.2, maximum=2.0, minimum=-2.0)
+        self._pidf_rls_out = PID(kp=0.008, ti=0.003, td=0.005, integral_limit=0.1, maximum=0.1, minimum=-0.1)
 
         self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=0.1)
         self._pidv_xsp_rol = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=0.1)
@@ -1215,6 +1214,5 @@ class Main:
         logging.warning(f"Closing instance #{self.systemid}")
 
 if __name__ == '__main__':
-    import random
     main = Main()
-    asyncio.run(main.run())#graph='main.processor._outf_roll'))
+    asyncio.run(main.run(graph='self.rxdata.alt.altitude'))
