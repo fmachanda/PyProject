@@ -7,8 +7,8 @@ import numpy as np
 
 templates: np.ndarray = np.load('./common/templates.npy')
 
-ROI_MIN_WIDTH = 15
 CONFIDENCE_THRESHOLD = 0.4
+ROI_MIN_WIDTH = 15
 ROI_MIN_HEIGHT = 15
 ANNOTATION_COLOR = (200, 0, 200)
 ROI_RESCALE_WIDTH, ROI_RESCALE_HEIGHT = templates.shape[1:]
@@ -132,14 +132,15 @@ def find_h(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = F
     yc = image.shape[0]//2 - (y + h//2)
     xc = (x + w//2) - image.shape[1]//2
 
+    cv2.rectangle(image, (x, y), (x+w, y+h), color=ANNOTATION_COLOR, thickness=2)
+    cv2.circle(image, (x + w//2, y + h//2), radius=2, color=ANNOTATION_COLOR, thickness=-1)
+
     if display:
         plt.figure()
-        cv2.rectangle(image, (x, y), (x+w, y+h), color=ANNOTATION_COLOR, thickness=2)
-        cv2.circle(image, (x + w//2, y + h//2), radius=2, color=ANNOTATION_COLOR, thickness=-1)
         plt.imshow(image)
         plt.show()
         
-    return xc, yc, confidence
+    return xc, yc, confidence, image
 
 
 def _test(file):
