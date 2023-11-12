@@ -4,13 +4,11 @@ __pycache__
 .venv
 .yakut
 fmuas.code-workspace
-
 pycyphal_generated
-
 gcs.log
 uav.log
 xpio.log
-
+_old
 stored_images
 test
 test.py
