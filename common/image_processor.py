@@ -1,3 +1,4 @@
+import asyncio
 import cv2
 import cv2.typing
 import imutils
@@ -14,7 +15,7 @@ ANNOTATION_COLOR = (200, 0, 200)
 ROI_RESCALE_WIDTH, ROI_RESCALE_HEIGHT = templates.shape[1:]
 
 
-def find_contour(image: str | cv2.typing.MatLike) -> tuple[np.ndarray] | bool:
+async def find_contour(image: str | cv2.typing.MatLike) -> tuple[np.ndarray] | bool:
     """Find contours in image for landing UAV.
     
     Parameters
@@ -29,18 +30,23 @@ def find_contour(image: str | cv2.typing.MatLike) -> tuple[np.ndarray] | bool:
     bool
         False if image doesn't load.
     """
+    await asyncio.sleep(0)
     
     if isinstance(image, str):
         image = cv2.imread(image)
         if image is None:
             logging.error(f"Cannot read {image}.")
             return False
+        
+    await asyncio.sleep(0)
 
     image = imutils.resize(image, 1024)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     image = cv2.GaussianBlur(image, (3, 3), 0)
+    await asyncio.sleep(0)
 
     processed = cv2.normalize(image, None, 0, 1.0, cv2.NORM_MINMAX, dtype=cv2.CV_32F)
+    await asyncio.sleep(0)
 
     lowerb = np.min(np.min(processed, axis=0), axis=0)
     upperb = np.max(np.max(processed, axis=0), axis=0)
@@ -50,10 +56,13 @@ def find_contour(image: str | cv2.typing.MatLike) -> tuple[np.ndarray] | bool:
     processed = cv2.cvtColor(processed, cv2.COLOR_RGB2GRAY)
     processed *= 255
     processed = np.array(processed, np.uint8)
+    await asyncio.sleep(0)
 
     _, processed = cv2.threshold(processed, 60, 1.0, cv2.THRESH_BINARY)
+    await asyncio.sleep(0)
 
     contours, _ = cv2.findContours(processed, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    await asyncio.sleep(0)
 
     # contoured = np.zeros_like(processed)
     # cv2.drawContours(contoured, contours, -1, ANNOTATION_COLOR)
@@ -64,7 +73,7 @@ def find_contour(image: str | cv2.typing.MatLike) -> tuple[np.ndarray] | bool:
     return contours, processed, image
 
 
-def find_h(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = False, confidence_threshold: float = CONFIDENCE_THRESHOLD) -> tuple | bool:
+async def find_h(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = False, confidence_threshold: float = CONFIDENCE_THRESHOLD) -> tuple | bool:
     """Find 'H' in image for landing UAV.
     
     Parameters
@@ -85,20 +94,25 @@ def find_h(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = F
     bool
         False if nothing exciting happens.
     """
+    await asyncio.sleep(0)
 
-    if out := find_contour(image):
+    if out := await find_contour(image):
         contours, processed, image = out
     else:
         return False
+    await asyncio.sleep(0)
 
     strengths = np.zeros((len(contours), len(templates)))
+    await asyncio.sleep(0)
 
     for n, contour in enumerate(contours):
         x, y, w, h = cv2.boundingRect(contour)
+        await asyncio.sleep(0)
 
         roi = np.zeros_like(processed)
         cv2.drawContours(roi, contours, n, (1.0), thickness=cv2.FILLED)
         roi: np.ndarray = roi[y:y+h, x:x+w]
+        await asyncio.sleep(0)
 
         if roi.shape[0] < ROI_MIN_WIDTH or roi.shape[1] < ROI_MIN_HEIGHT:
             continue
@@ -108,17 +122,21 @@ def find_h(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = F
             continue
 
         roi = cv2.resize(roi, (ROI_RESCALE_WIDTH, ROI_RESCALE_HEIGHT))
+        await asyncio.sleep(0)
 
         invtemplates = 1 - templates
 
         posmatches = np.multiply(templates, roi)
         negmatches = np.multiply(invtemplates, roi)
+        await asyncio.sleep(0)
 
         matches = posmatches - negmatches
 
         strengths[n] = np.sum(matches, axis=(1,2)) / np.sum(templates, axis=(1,2))
+        await asyncio.sleep(0)
     
     confidence = np.max(strengths)
+    await asyncio.sleep(0)
 
     if confidence <= 0.0:
         return False
@@ -127,24 +145,28 @@ def find_h(image: str | cv2.typing.MatLike, radius: int = 160, display: bool = F
         return False
 
     index = np.where(strengths==confidence)[0][0]
+    await asyncio.sleep(0)
     
     x, y, w, h = cv2.boundingRect(contours[index])
     yc = image.shape[0]//2 - (y + h//2)
     xc = (x + w//2) - image.shape[1]//2
+    await asyncio.sleep(0)
 
     cv2.rectangle(image, (x, y), (x+w, y+h), color=ANNOTATION_COLOR, thickness=2)
     cv2.circle(image, (x + w//2, y + h//2), radius=2, color=ANNOTATION_COLOR, thickness=-1)
+    await asyncio.sleep(0)
 
     if display:
         plt.figure()
         plt.imshow(image)
         plt.show()
-        
+    await asyncio.sleep(0)
+
     return xc, yc, confidence, image
 
 
-def _test(file):
-    if out:=find_h(file, display=True):
+async def _test(file):
+    if out := await find_h(file, display=True):
         x_offset, y_offset, confidence = out
         print(f"'H' detected in {file} at ({x_offset},{y_offset}) with a confidence of {confidence:.2f}.")
     else:
@@ -153,6 +175,6 @@ def _test(file):
 
 if __name__ == '__main__':
     for i in range(1,4):
-        _test(f'./stored_images/image{i}.png')
+        asyncio.run(_test(f'./stored_images/image{i}.png'))
 
     # _test('./stored_images/noised.png')

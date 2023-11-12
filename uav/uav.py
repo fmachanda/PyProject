@@ -15,9 +15,9 @@ import logging
 import math
 import os
 import sys
+import time
 from configparser import ConfigParser
 from functools import wraps
-import matplotlib.pyplot as plt
 import numpy as np
 
 if os.path.basename(os.getcwd()) == 'uav':
@@ -25,10 +25,10 @@ if os.path.basename(os.getcwd()) == 'uav':
 elif os.path.basename(os.getcwd()) != 'fmuas-main':
     logging.critical("Must run scripts from 'fmuas-main' directory!")
     sys.exit()
-
 sys.path.append(os.getcwd())
 os.environ['CYPHAL_PATH'] = './common/data_types/custom_data_types;./common/data_types/public_regulated_data_types'
 os.environ['PYCYPHAL_PATH'] = './common/pycyphal_generated'
+os.environ['UAVCAN__DIAGNOSTIC__SEVERITY'] = '2'
 os.environ['MAVLINK20'] = '1'
 
 import pycyphal
@@ -46,13 +46,14 @@ from common.state_manager import GlobalState as g
 m = mavutil.mavlink
 
 filehandler = logging.FileHandler('uav/uav.log', mode='w')
-filehandler.setLevel(logging.WARNING)
+filehandler.setLevel(logging.DEBUG)
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO, handlers=[filehandler, logging.StreamHandler()])
 logging.getLogger('pymavlink').setLevel(logging.ERROR)
 
 os.system('cls' if os.name == 'nt' else 'clear')
 
 DEFAULT_FREQ = 60
+HEARTBEAT_TIMEOUT = 2.0
 
 system_ids = []
 
@@ -581,7 +582,7 @@ class Processor:
         self._fthrottles = np.zeros(4, dtype=np.float16) # throttles*4
         self._vthrottles = np.zeros(4, dtype=np.float16)
 
-        self.spf_altitude = 0.0
+        self.spf_altitude = 100.0
         self.spf_heading = 0.0
         self.spf_ias = 0.0
 
@@ -611,15 +612,15 @@ class Processor:
 
         # self._pid{f or v}_{from}_{to}
 
-        self._pidf_alt_vpa = PID(kp=0.0, td=0.0, ti=0.0, integral_limit=0.05, maximum=0.05, minimum=-0.05)
-        self._pidf_vpa_aoa = PID(kp=0.7, ti=3.0, td=0.1, integral_limit=0.2, maximum=0.15, minimum=-0.05)
+        self._pidf_alt_vpa = PID(kp=0.007, ti=0.01, td=0.1, integral_limit=0.05, maximum=0.05, minimum=-0.05)
+        self._pidf_vpa_aoa = PID(kp=0.7, ti=3.0, td=0.05, integral_limit=0.2, maximum=0.15, minimum=-0.05)
         self._pidf_aoa_out = PID(kp=-0.07, ti=-0.008, td=0.02, integral_limit=1, maximum=0.0, minimum=-math.pi/12)
 
         self._pidf_ias_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=0.25, maximum=0.25, minimum=0.02)
 
-        self._pidf_dyw_rol = PID(kp=-0.8, ti=-8.0, td=0.02, integral_limit=0.1, maximum=math.pi/6, minimum=-math.pi/6)
+        self._pidf_dyw_rol = PID(kp=-0.8, ti=-8.0, td=0.005, integral_limit=0.1, maximum=math.pi/6, minimum=-math.pi/6)
         self._pidf_rol_rls = PID(kp=1.5, ti=6.0, td=0.02, integral_limit=0.2, maximum=2.0, minimum=-2.0)
-        self._pidf_rls_out = PID(kp=0.008, ti=0.003, td=0.005, integral_limit=0.1, maximum=0.1, minimum=-0.1)
+        self._pidf_rls_out = PID(kp=0.005, ti=0.003, td=0.005, integral_limit=0.1, maximum=0.1, minimum=-0.1)
 
         self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=0.1)
         self._pidv_xsp_rol = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=0.1)
@@ -736,8 +737,6 @@ class Processor:
         except ZeroDivisionError:
             self._ias_scalar = 1.0
 
-        print(self.xdisp)
-
         # TODO: setpoints
         match self.main.state.custom_submode:
             case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT | g.CUSTOM_SUBMODE_TAKEOFF_HOVER | g.CUSTOM_SUBMODE_LANDING_DESCENT | g.CUSTOM_SUBMODE_LANDING_HOVER:
@@ -805,7 +804,9 @@ class ImageProcessor:
 
         if len(file_diff) != 0:
             for f in file_diff:
-                if out := img.find_h(os.path.join(self._path, f), display=False):
+                logging.info(f"Proccesing image {f}")
+                # task = asyncio.create_task()
+                if out := await img.find_h(os.path.join(self._path, f), display=False):
                     self.main.processor.xdisp, self.main.processor.ydisp, confidence, image = out
                     logging.info(f"'H' detected in {f} at ({self.main.processor.xdisp},{self.main.processor.ydisp}) with a confidence of {confidence:.2f}.")
                     await grapher.imshow(image)
@@ -852,6 +853,8 @@ class Controller:
         'COMMAND_INT': '_handle_command_int',
     }
 
+    MAX_FLUSH_BUFFER = int(1e6)
+
     def __init__(self, main: 'Main', tx_freq: int = DEFAULT_FREQ, heartbeat_freq: int = 1) -> None:
         """Initialize a Controller instance.
 
@@ -870,11 +873,72 @@ class Controller:
         self._txfreq = tx_freq
         self._heartbeatfreq = heartbeat_freq
 
+        self._last_cam_beat = False
+
         self._gcs_id = None
         self._mav_conn_gcs: mavutil.mavfile = mavutil.mavlink_connection(self.main.config.get('mavlink', 'uav_gcs_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1, input=False, autoreconnect=True)
         import common.key as key
         self._mav_conn_gcs.setup_signing(key.KEY.encode('utf-8'))
-        self.cam_conn: mavutil.mavfile = mavutil.mavlink_connection(self.main.config.get('mavlink', 'uav_camera_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1, input=False)
+        asyncio.create_task(self._establish_cam(key=key.CAMKEY.encode('utf-8')))
+
+    class PreExistingConnection(Exception):
+        """Exception subclass to prevent repeated MAVLINK Connection."""
+        def __init__(self, message=f"A mavlink connection already exists on this node"):
+            """Inits the Excpetion class with a custom message."""
+            self.message = message
+            super().__init__(self.message)
+
+    @staticmethod
+    def flush_buffer(connection: mavutil.mavfile) -> None:
+        """Removes any MAV messages still in the connection buffer"""
+        # Buffer flusher limited by MAX_FLUSH_BUFFER to avoid loop.
+        try:
+            for i in range(Controller.MAX_FLUSH_BUFFER):
+                msg = connection.recv_match(blocking=False)
+                if msg is None:
+                    logging.debug(f"Buffer flushed, {i} messages cleared")
+                    break
+                elif i >= Controller.MAX_FLUSH_BUFFER-1:
+                    logging.error(f"Messages still in buffer after {Controller.MAX_FLUSH_BUFFER} flush cycles")     
+        except ConnectionError:
+            logging.debug("No connection to flush.")
+
+    async def _establish_cam(self, key: bytes, timeout_cycles: int = 5):
+        try:
+            self._cam_conn: mavutil.mavfile = mavutil.mavlink_connection(self.main.config.get('mavlink', 'uav_camera_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1, input=True)
+            self._cam_conn.setup_signing(key)
+
+            Controller.flush_buffer(self._cam_conn)
+
+            target=self.main.config.getint('main', 'cam_id')
+
+            logging.info(f"Connecting to camera #{target}...")
+
+            self._cam_conn.mav.change_operator_control_send(target, 0, 0, key)
+            await asyncio.sleep(1)
+
+            while not self.main.stop.is_set():
+                try:
+                    msg = self._cam_conn.recv_msg()
+                except ConnectionResetError:
+                    raise Controller.PreExistingConnection
+
+                if msg is not None and msg.get_type()=='CHANGE_OPERATOR_CONTROL_ACK':# and msg.get_srcSystem()==target and msg.gcs_system_id==self.main.systemid:
+                    match msg.ack:
+                        case 0:
+                            logging.info(f"Connected to camera #{target}")
+                            break
+                        case 1 | 2:
+                            logging.info(f"Bad connection key for camera #{target}")
+                            break
+                        case 3:
+                            logging.info(f"Camera #{target} is connected to another UAV")
+                            break
+
+                self._cam_conn.mav.change_operator_control_send(target, 0, 0, key)
+                await asyncio.sleep(0)
+        except KeyboardInterrupt:
+            pass
 
     #region Handlers
     def _handle_heartbeat(self, msg) -> None:
@@ -962,8 +1026,8 @@ class Controller:
                     logging.info(f"New PID state: {msg.param1}, {msg.param2}, {msg.param3} @ {msg.param4}")
                 # TODO TEMPORARY SCREENSHOT
                 case 1:
-                    logging.debug("Commanding camera...")
-                    self.cam_conn.mav.command_long_send(
+                    logging.info("Commanding camera...")
+                    self._cam_conn.mav.command_long_send(
                         self.main.systemid,
                         m.MAV_COMP_ID_CAMERA,
                         m.MAV_CMD_IMAGE_START_CAPTURE,
@@ -1004,6 +1068,7 @@ class Controller:
         """Manage the controller's various operations."""
         asyncio.create_task(self._heartbeat())
         asyncio.create_task(self._rx())
+        asyncio.create_task(self._rxcam())
         asyncio.create_task(self._tx())
 
         logging.info("Starting Controller")
@@ -1035,10 +1100,45 @@ class Controller:
 
         await asyncio.sleep(0)
 
+    @async_loop_decorator(close=False)
+    async def _controller_rxcam_loop(self) -> None:
+        """Recieve messages from GCS over mavlink."""
+        try:
+            msg = self._cam_conn.recv_msg()
+        except ConnectionError:
+            logging.debug("No connection to listen to.")
+            return
+        except OSError:
+            logging.debug("No connection to listen to.")
+            return
+
+        target = self.main.config.getint('main', 'cam_id')
+
+        
+        if msg is not None:
+            if msg.get_type() == 'HEARTBEAT' and msg.get_srcSystem()==target:
+                logging.debug(f"Heartbeat message from camera #{msg.get_srcSystem()}")
+                self._last_cam_beat = time.time()
+
+        if self._last_cam_beat:
+            if time.time()-self._last_cam_beat > HEARTBEAT_TIMEOUT:
+                logging.warning(f"Heartbeat timeout from camera #{target}, closing...")
+                self._last_cam_beat = False
+                self._cam_conn.close()
+                import common.key as key
+                asyncio.create_task(self._establish_cam(key=key.CAMKEY.encode('utf-8')))
+
+        await asyncio.sleep(0)
+
     async def _rx(self) -> None:
         """Recieve messages from GCS over mavlink."""
         logging.debug("Starting Controller (RX)")
         await self._controller_rx_loop()
+
+    async def _rxcam(self) -> None:
+        """Recieve messages from camera over mavlink."""
+        logging.debug("Starting camera (RX)")
+        await self._controller_rxcam_loop()
 
     @async_loop_decorator(close=False)
     async def _controller_tx_loop(self) -> None:
@@ -1052,13 +1152,16 @@ class Controller:
 
     @async_loop_decorator(close=False)
     async def _controller_heartbeat_loop(self) -> None:
-        self._mav_conn_gcs.mav.heartbeat_send(
+        msg = [
             m.MAV_TYPE_VTOL_RESERVED4, # 24
             m.MAV_AUTOPILOT_GENERIC_WAYPOINTS_AND_SIMPLE_NAVIGATION_ONLY,
             int(self.main.state.mode),
             int(self.main.state.custom_mode),
             int(self.main.state.state)
-        )
+        ]
+
+        self._mav_conn_gcs.mav.heartbeat_send(*msg)
+        self._cam_conn.mav.heartbeat_send(*msg)
         
         logging.debug("TX Heartbeat")
         await asyncio.sleep(1 / self._heartbeatfreq)
@@ -1071,6 +1174,10 @@ class Controller:
     def close(self) -> None:
         """Close the instance."""
         self._mav_conn_gcs.close()
+
+        import common.key as key
+        self._cam_conn.mav.change_operator_control_send(self.main.config.getint('main', 'cam_id'), 1, 0, key.CAMKEY.encode('utf-8'))
+        self._cam_conn.close()
         logging.info("Closing Controller")
 
 
@@ -1200,7 +1307,7 @@ class Main:
             controller_manager.cancel()
             await asyncio.sleep(0)
             logging.warning(f"Never booted, closing instance #{self.systemid}")
-            quit()
+            sys.exit()
 
         logging.warning(f"Booting instance #{self.systemid}...")
 
@@ -1215,7 +1322,7 @@ class Main:
             controller_manager.cancel()
             await asyncio.sleep(0)
             logging.warning(f"Ctrl-C during boot cycle, closing instance #{self.systemid}")
-            quit()
+            sys.exit()
 
         logging.warning(f"Boot successful on #{self.systemid}")
 
@@ -1239,6 +1346,7 @@ class Main:
             self.stop.set()
 
         logging.warning(f"Closing instance #{self.systemid}")
+
 
 if __name__ == '__main__':
     main = Main()

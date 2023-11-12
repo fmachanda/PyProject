@@ -15,6 +15,9 @@ from functools import wraps
 
 if os.path.basename(os.getcwd()) == 'uav':
     os.chdir('..')
+elif os.path.basename(os.getcwd()) != 'fmuas-main':
+    logging.critical("Must run scripts from 'fmuas-main' directory!")
+    sys.exit()
 sys.path.append(os.getcwd())
 os.environ['CYPHAL_PATH']='./common/data_types/custom_data_types;./common/data_types/public_regulated_data_types'
 os.environ['PYCYPHAL_PATH']='./common/pycyphal_generated'
@@ -36,7 +39,7 @@ config = ConfigParser()
 config.read('./common/CONFIG.ini')
 
 filehandler = logging.FileHandler('uav/xpio.log', mode='w')
-filehandler.setLevel(logging.WARNING)
+filehandler.setLevel(logging.DEBUG)
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO, handlers=[filehandler, logging.StreamHandler()])
 os.system('cls' if os.name == 'nt' else 'clear')
 
@@ -101,14 +104,14 @@ def async_loop_decorator(close=True):
             try:
                 while not stop.is_set():
                     try:
-                        await func(self, *args, **kwargs)
                         await asyncio.sleep(0)
+                        await func(self, *args, **kwargs)
                     except asyncio.exceptions.CancelledError:
                         stop.set()
                         raise
                     except Exception as e:
                         logging.error(f"Error in {func.__name__}: {e}")
-                        raise # TODO
+                        # raise # TODO
             except KeyboardInterrupt:
                 stop.set()
                 raise
@@ -201,7 +204,6 @@ class TestXPConnect:
         self._freq = freq
         self.rx_indices = rx_indices
 
-        logging.info("Looking for X-Plane...")
         self.X_PLANE_IP="TEST"
         self.UDP_PORT=0
         logging.warning("X-Plane found at IP: %s, port: %s" % (self.X_PLANE_IP,self.UDP_PORT))
@@ -830,44 +832,87 @@ class Clock:
 class Camera:
     DELAY = 0.5
 
-    def __init__(self, xpconnection: XPConnect, target_id: int = 1) -> None:
+    def __init__(self, xpconnection: XPConnect) -> None:
         assert isinstance(xpconnection, XPConnect), "Must pass an instance of XPConnect"
         self.sock = xpconnection.sock
         self.X_PLANE_IP = xpconnection.X_PLANE_IP
         self.UDP_PORT = xpconnection.UDP_PORT
         
-        assert isinstance(target_id,int) and 0<target_id<256, "Camera target ID must be UINT8"
-        self.target_id = target_id
+        self._cam_id = config.getint('main', 'cam_id')
+        self._uav_id = None
 
         self.xp_path = config.get('xplane', 'xp_screenshot_path')
         self.destination_dir = './stored_images'
         if not os.path.exists(self.destination_dir):
            os.makedirs(self.destination_dir)
         
-        self.camera_mav_conn: mavutil.mavfile = mavutil.mavlink_connection(config.get('mavlink', 'camera_uav_conn'), source_system=self.target_id, source_component=m.MAV_COMP_ID_CAMERA, input=True)
+        self._camera_mav_conn: mavutil.mavfile = mavutil.mavlink_connection(config.get('mavlink', 'camera_uav_conn'), source_system=self._cam_id, source_component=m.MAV_COMP_ID_CAMERA, input=False, autoreconnect=True)
+        import common.key as key
+        self._camera_mav_conn.setup_signing(key.CAMKEY.encode('utf-8'))
 
     @async_loop_decorator()
     async def _camera_run_loop(self) -> None:
-        msg = self.camera_mav_conn.recv_msg()
-        if msg is not None and msg.get_srcSystem()==self.target_id and msg.target_system==self.target_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'COMMAND_LONG':
-            if msg.command == m.MAV_CMD_IMAGE_START_CAPTURE:
-                cap = asyncio.create_task(self._capture_cycle(int(msg.param3), msg.param2))
-                self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_START_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self.target_id, 0)
-            elif msg.command == m.MAV_CMD_IMAGE_STOP_CAPTURE:
-                try:
-                    cap.cancel()
-                    self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self.target_id, 0)
-                except AttributeError:
-                    pass
-                    self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_DENIED, 255, 0, self.target_id, 0)
+        try:
+            msg = self._camera_mav_conn.recv_msg()
+        except ConnectionError:
+            try:
+                logging.debug("Controller connection refused")
+                await asyncio.sleep(0)
+            except asyncio.exceptions.CancelledError:
+                stop.set()
+                raise
+            finally:
+                return
+            
+        if msg is not None and msg.get_type() == 'CHANGE_OPERATOR_CONTROL':
+            import common.key as key
+            if msg.control_request == 0 and msg.passkey==key.CAMKEY:
+                if self._uav_id is None or self._uav_id==msg.get_srcSystem():
+                    # Accepted
+                    if self._uav_id!=msg.get_srcSystem():
+                        logging.info(f"Camera accepting control request from UAV ({msg.get_srcSystem()})")
+                    self._uav_id = msg.get_srcSystem()
+                    self._camera_mav_conn.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
+                else:
+                    # Already controlled
+                    logging.info(f"Camera rejecting second control request from {msg.get_srcSystem()}")
+                    self._camera_mav_conn.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 3)
+            elif msg.control_request == 1 and msg.passkey==key.CAMKEY:
+                # Accepted (released)
+                logging.info(f"Releasing from UAV ({self._uav_id})")
+                self._uav_id = None
+                self._camera_mav_conn.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
             else:
-                self.camera_mav_conn.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, self.target_id, 0)
+                # Bad key
+                logging.info(f"Bad key in UAV control request")
+                self._camera_mav_conn.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 1)
+        elif msg is not None and msg.get_srcSystem()==self._uav_id:
+            if msg.get_type() == 'HEARTBEAT':
+                logging.debug("Camera rx heartbeat from UAV")
+            elif msg.target_system==self._uav_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'COMMAND_LONG':
+                if msg.command == m.MAV_CMD_IMAGE_START_CAPTURE:
+                    cap = asyncio.create_task(self._capture_cycle(int(msg.param3), msg.param2))
+                    self._camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_START_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self._cam_id, 0)
+                elif msg.command == m.MAV_CMD_IMAGE_STOP_CAPTURE:
+                    try:
+                        cap.cancel()
+                        self._camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self._cam_id, 0)
+                    except AttributeError:
+                        pass
+                        self._camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_DENIED, 255, 0, self._cam_id, 0)
+                else:
+                    self._camera_mav_conn.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, self._cam_id, 0)
 
-        await asyncio.sleep(0)  
+        await asyncio.sleep(0)
+
+    async def _camera_run(self) -> None:
+        await self._camera_run_loop()
 
     async def run(self) -> None:
-        # asyncio.create_task(self._heartbeat())
-        await self._camera_run_loop()
+        asyncio.create_task(self._heartbeat())
+        asyncio.create_task(self._camera_run())
+
+        await asyncio.sleep(0)
 
     async def _capture(self) -> None:
         previous_file_list = [f for f in os.listdir(self.xp_path) if os.path.isfile(os.path.join(self.xp_path, f))]
@@ -903,8 +948,8 @@ class Camera:
                     logging.error(f"Error moving file {f} to {self.destination_dir}")
                 except PermissionError:
                     logging.error(f"Error moving file {f} to {self.destination_dir}")
-                finally:
-                    pass
+        
+        self.sock.sendto(struct.pack('<4sx400s', b'CMND', b'fmuas/commands/image_capture_reset'), (self.X_PLANE_IP, self.UDP_PORT))
 
     async def _capture_cycle(self, iterations: int, period: float) -> None:
         if iterations != 0:
@@ -925,55 +970,97 @@ class Camera:
 
     @async_loop_decorator(close=False)
     async def _camera_heartbeat_loop(self) -> None:
-        self.camera_mav_conn.mav.heartbeat_send(
+        self._camera_mav_conn.mav.heartbeat_send(
             m.MAV_TYPE_CAMERA,
             m.MAV_AUTOPILOT_INVALID,
             m.MAV_MODE_PREFLIGHT,
             0,
             m.MAV_STATE_ACTIVE
         )
+        await asyncio.sleep(1)
 
     async def _heartbeat(self) -> None:
         await self._camera_heartbeat_loop()
 
     async def close(self) -> None:
+        self._camera_mav_conn.close()
         logging.debug("Closing CAM")
-        self.camera_mav_conn.close()
 
 
 class TestCamera:
-    def __init__(self, xpconnection: TestXPConnect, target_id: int = 1) -> None:
+    def __init__(self, xpconnection: TestXPConnect) -> None:
         assert isinstance(xpconnection, TestXPConnect), "Must pass an instance of TestXPConnect"
-
-        assert isinstance(target_id,int) and 0<target_id<256, "Camera target ID must be UINT8"
-        self.target_id = target_id
-
-        self.xp_path = config.get('xplane', 'xp_screenshot_path')
         
-        self.camera_mav_conn: mavutil.mavfile = mavutil.mavlink_connection(config.get('mavlink', 'camera_uav_conn'), source_system=self.target_id, source_component=m.MAV_COMP_ID_CAMERA, input=True)
+        self._cam_id = config.getint('main', 'cam_id')
+        self._uav_id = None
         
-    @async_loop_decorator()
+        self._camera_mav_conn: mavutil.mavfile = mavutil.mavlink_connection(config.get('mavlink', 'camera_uav_conn'), source_system=self._cam_id, source_component=m.MAV_COMP_ID_CAMERA, input=False, autoreconnect=True)
+        import common.key as key
+        self._camera_mav_conn.setup_signing(key.CAMKEY.encode('utf-8'))
+
+    @async_loop_decorator(close=False)
     async def _testcamera_run_loop(self) -> None:
-        msg = self.camera_mav_conn.recv_msg()
-        if msg is not None and msg.get_srcSystem()==self.target_id and msg.target_system==self.target_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'COMMAND_LONG':
-            if msg.command == m.MAV_CMD_IMAGE_START_CAPTURE:
-                cap = asyncio.create_task(self._capture_cycle(int(msg.param3), msg.param2))
-                self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_START_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self.target_id, 0)
-            elif msg.command == m.MAV_CMD_IMAGE_STOP_CAPTURE:
-                try:
-                    cap.cancel()
-                    self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self.target_id, 0)
-                except AttributeError:
-                    pass
-                    self.camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_DENIED, 255, 0, self.target_id, 0)
+        try:
+            msg = self._camera_mav_conn.recv_msg()
+        except ConnectionError:
+            try:
+                logging.debug("Controller connection refused")
+                await asyncio.sleep(0)
+            except asyncio.exceptions.CancelledError:
+                stop.set()
+                raise
+            finally:
+                return
+            
+        if msg is not None and msg.get_type() == 'CHANGE_OPERATOR_CONTROL':
+            import common.key as key
+            if msg.control_request == 0 and msg.passkey==key.CAMKEY:
+                if self._uav_id is None or self._uav_id==msg.get_srcSystem():
+                    # Accepted
+                    if self._uav_id!=msg.get_srcSystem():
+                        logging.info(f"Camera accepting control request from UAV ({msg.get_srcSystem()})")
+                    self._uav_id = msg.get_srcSystem()
+                    self._camera_mav_conn.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
+                else:
+                    # Already controlled
+                    logging.info(f"Camera rejecting second control request from {msg.get_srcSystem()}")
+                    self._camera_mav_conn.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 3)
+            elif msg.control_request == 1 and msg.passkey==key.CAMKEY:
+                # Accepted (released)
+                logging.info(f"Releasing from UAV ({self._uav_id})")
+                self._uav_id = None
+                self._camera_mav_conn.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
             else:
-                self.camera_mav_conn.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, self.target_id, 0)
+                # Bad key
+                logging.info(f"Bad key in UAV control request")
+                self._camera_mav_conn.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 1)
+        elif msg is not None and msg.get_srcSystem()==self._uav_id:
+            if msg.get_type() == 'HEARTBEAT':
+                logging.debug("Camera rx heartbeat from UAV")
+            elif msg.target_system==self._uav_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'COMMAND_LONG':
+                if msg.command == m.MAV_CMD_IMAGE_START_CAPTURE:
+                    cap = asyncio.create_task(self._capture_cycle(int(msg.param3), msg.param2))
+                    self._camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_START_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self._cam_id, 0)
+                elif msg.command == m.MAV_CMD_IMAGE_STOP_CAPTURE:
+                    try:
+                        cap.cancel()
+                        self._camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self._cam_id, 0)
+                    except AttributeError:
+                        pass
+                        self._camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_DENIED, 255, 0, self._cam_id, 0)
+                else:
+                    self._camera_mav_conn.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, self._cam_id, 0)
 
         await asyncio.sleep(0)
 
-    async def run(self) -> None:
-        # asyncio.create_task(self._heartbeat())
+    async def _testcamera_run(self) -> None:
         await self._testcamera_run_loop()
+
+    async def run(self) -> None:
+        asyncio.create_task(self._heartbeat())
+        asyncio.create_task(self._testcamera_run())
+
+        await asyncio.sleep(0)
 
     async def _capture(self) -> None:
         logging.info("Commanding screenshot...")
@@ -998,7 +1085,7 @@ class TestCamera:
 
     @async_loop_decorator(close=False)
     async def _testcamera_heartbeat_loop(self) -> None:
-        self.camera_mav_conn.mav.heartbeat_send(
+        self._camera_mav_conn.mav.heartbeat_send(
             m.MAV_TYPE_CAMERA,
             m.MAV_AUTOPILOT_INVALID,
             m.MAV_MODE_PREFLIGHT,
@@ -1011,17 +1098,17 @@ class TestCamera:
         await self._testcamera_heartbeat_loop()
 
     async def close(self) -> None:
-        logging.debug("Closing CAM")
-        self.camera_mav_conn.close()
+        self._camera_mav_conn.close()
+        logging.info("Closing CAM")
 
 
 async def main():
     try:
         xpl = XPConnect()
-        cam = Camera(xpl, target_id=config.getint('main', 'uav_id'))
+        cam = Camera(xpl)
     except find_xp.XPlaneIpNotFound or KeyboardInterrupt:
         xpl = TestXPConnect()
-        cam = TestCamera(xpl, target_id=config.getint('main', 'uav_id'))
+        cam = TestCamera(xpl)
     clk = Clock()
     att = AttitudeSensor()
     alt = AltitudeSensor()
@@ -1030,6 +1117,7 @@ async def main():
     aoa = AOASensor()
     srv = ServoIO()
     esc = ESCIO()
+
 
     tasks = [
         asyncio.create_task(xpl.run()),

@@ -18,7 +18,7 @@ import common.key as key
 m = mavutil.mavlink
 
 filehandler = logging.FileHandler('gcs/gcs.log', mode='w')
-filehandler.setLevel(logging.WARNING)
+filehandler.setLevel(logging.DEBUG)
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO, handlers=[filehandler, logging.StreamHandler()])
 logging.getLogger('pymavlink').setLevel(logging.ERROR)
 
@@ -49,10 +49,9 @@ def flush_buffer() -> None:
                 logging.debug(f"Buffer flushed, {i} messages cleared")
                 break
             elif i >= MAX_FLUSH_BUFFER-1:
-                logging.error(f"Messages still in buffer after {MAX_FLUSH_BUFFER} flush cycles")
+                logging.error(f"Messages still in buffer after {MAX_FLUSH_BUFFER} flush cycles")     
     except ConnectionError:
         logging.debug("No connection to flush.")
-        pass
 
 
 def check_mav_conn() -> None:
@@ -151,9 +150,9 @@ class Connect:
                                 break
                             case m.MAV_RESULT_TEMPORARILY_REJECTED:
                                 pass
-                            case m.MAV_RESULT_COMMAND_INT_ONLY:
-                                self._command_int(name, *params)
-                                break
+                            # case m.MAV_RESULT_COMMAND_INT_ONLY:
+                            #     self._command_int(name, *params)
+                            #     break
                             case _:
                                 logging.info(f"{name} failed on #{self.target}")
                                 break
@@ -303,31 +302,37 @@ class Connect:
         """DEVELOPMENT ONLY - send new PID parameters."""
         asyncio.run(self._command_int('PID',kp, ti, td, setpoint, int(0), int(0), int(0), acknowledge=False))
 
-    def img(self, interval: float, num: float, sequence: float = 0):
+    def img(self, interval: float = 1, num: float = 1, sequence: float = 0):
         """DEVELOPMENT ONLY - send screenshot command."""
         asyncio.run(self._command_int('IMG',interval, num, sequence, 0.0, int(0), int(0), int(0), acknowledge=False))
     # endregion
 
-    async def _heartbeat(self) -> None:
-        """Publish heartbeat message periodically in background."""
-        while True:
-            try:
-                mav_conn.mav.heartbeat_send(
-                            m.MAV_TYPE_GCS,
-                            m.MAV_AUTOPILOT_INVALID,
-                            m.MAV_MODE_PREFLIGHT,
-                            0,
-                            m.MAV_STATE_ACTIVE
-                        )
-                
-                await asyncio.sleep(1)
-            except KeyboardInterrupt: 
-                self.close()
-            except asyncio.exceptions.CancelledError:
-                self.close()
-                raise
+    def heartbeat(self) -> None:
+        """Publish heartbeat message."""
+        mav_conn.mav.heartbeat_send(
+                    m.MAV_TYPE_GCS,
+                    m.MAV_AUTOPILOT_INVALID,
+                    m.MAV_MODE_PREFLIGHT,
+                    0,
+                    m.MAV_STATE_ACTIVE
+                )
 
-    def close(self) -> None:
+    def listen(self) -> bool:
+        try:
+            msg = mav_conn.recv_msg()
+        except ConnectionError:
+            logging.debug("No connection to listen to.")
+            return
+        except OSError:
+            logging.debug("No connection to listen to.")
+            return
+        if msg is not None:
+            if msg.get_type() == 'HEARTBEAT':
+                logging.debug(f"Heartbeat message from link #{msg.get_srcSystem()}")
+            return msg.get_type()
+        return False
+
+    def close(self, because_heartbeat: bool = False) -> None:
         """Close the instance's MAVLINK connection."""
         global mav_conn_open
 
@@ -336,6 +341,8 @@ class Connect:
         try:
             ids.remove(self.target)
             mav_conn.mav.change_operator_control_send(self.target, 1, 0, key.KEY.encode('utf-8'))
+            if because_heartbeat:
+                logging.warning("Heartbeat timeout")
             logging.warning("Closing GCS")
 
             if not ids:
