@@ -1,11 +1,14 @@
 import asyncio
 import cv2
 import cv2.typing
-import imutils
 import logging
 import matplotlib.pyplot as plt
 import numpy as np
+import os
+import sys
 
+os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
+sys.path.append(os.getcwd())
 templates: np.ndarray = np.load('./common/templates.npy')
 
 CONFIDENCE_THRESHOLD = 0.4
@@ -13,7 +16,6 @@ ROI_MIN_WIDTH = 15
 ROI_MIN_HEIGHT = 15
 ANNOTATION_COLOR = (200, 0, 200)
 ROI_RESCALE_WIDTH, ROI_RESCALE_HEIGHT = templates.shape[1:]
-
 
 async def find_contour(image: str | cv2.typing.MatLike) -> tuple[np.ndarray] | bool:
     """Find contours in image for landing UAV.
@@ -40,7 +42,7 @@ async def find_contour(image: str | cv2.typing.MatLike) -> tuple[np.ndarray] | b
         
     await asyncio.sleep(0)
 
-    image = imutils.resize(image, 1024)
+    image = cv2.resize(image, (1024, int(image.shape[0] * (1024/image.shape[1]))))
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     image = cv2.GaussianBlur(image, (3, 3), 0)
     await asyncio.sleep(0)
@@ -94,6 +96,7 @@ async def find_h(image: str | cv2.typing.MatLike, radius: int = 160, display: bo
     bool
         False if nothing exciting happens.
     """
+
     await asyncio.sleep(0)
 
     if out := await find_contour(image):
@@ -167,7 +170,7 @@ async def find_h(image: str | cv2.typing.MatLike, radius: int = 160, display: bo
 
 async def _test(file):
     if out := await find_h(file, display=True):
-        x_offset, y_offset, confidence = out
+        x_offset, y_offset, confidence, _ = out
         print(f"'H' detected in {file} at ({x_offset},{y_offset}) with a confidence of {confidence:.2f}.")
     else:
         print(f"None detected in {file}.")

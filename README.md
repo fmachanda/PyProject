@@ -20,7 +20,7 @@ The software is designed to be simulated using the [X-Plane 12][xplane-link] fli
 
 ## Requirements
 * Windows 11.0+ or MacOS 13.0+
-* Python 3.12+
+* Python 3.11.6+
     * **pip** modules listed in `requirements.txt`
 * X-Plane 12.06+ (if using simulation)
 
@@ -58,7 +58,7 @@ git clone https://github.com/fmachanda/fmuas-xp.git <aircraft-directory>
         └── xpio.py # Run this
     ├── gcs
         ├── gcs.py # Use this in a python terminal
-        └── gcs_gui.py # Run this
+        └── gui.py # Run this
     └── common
         ├──  data_types
             ├── public_regulated_data_types # INIT THIS SUBMODULE!
@@ -73,7 +73,7 @@ git clone https://github.com/fmachanda/fmuas-xp.git <aircraft-directory>
 `uav/uav.py` runs the UAV  
 `uav/xpio.py` runs the connection with X-Plane 12  
 
-`gcs/gcs_gui.py` runs a GCS window  
+`gcs/gui.py` runs a GCS window  
 `gcs/gcs.py` can be used as a [CLI](#gcs-command-line-interface) if imported in a python terminal  
 
 `common/CONFIG.ini` contains changeable settings for UAV and GCS instances  
@@ -95,10 +95,10 @@ To use with X-Plane 12:
 
     > The flight will remain paused until `xpio.py` starts running
 
-4. Run the following scripts:
-    * `gcs_gui.py`
-    * `uav.py`
-    * `xpio.py`
+4. Run the following scripts from the terminal:
+    * `gcs/gui.py`
+    * `uav/uav.py`
+    * `uav/xpio.py`
 
 5. Use the [GCS Interface](#gcs-command-line-interface) to boot and control the UAV.  
 

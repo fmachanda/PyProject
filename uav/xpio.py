@@ -13,16 +13,17 @@ from configparser import ConfigParser
 from functools import wraps
 # import numpy as np
 
-if os.path.basename(os.getcwd()) == 'uav':
-    os.chdir('..')
-elif os.path.basename(os.getcwd()) != 'fmuas-main':
-    logging.critical("Must run scripts from 'fmuas-main' directory!")
-    sys.exit()
+os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
 sys.path.append(os.getcwd())
 os.environ['CYPHAL_PATH']='./common/data_types/custom_data_types;./common/data_types/public_regulated_data_types'
 os.environ['PYCYPHAL_PATH']='./common/pycyphal_generated'
 os.environ['UAVCAN__DIAGNOSTIC__SEVERITY'] = '2'
 os.environ['MAVLINK20'] = '1'
+
+filehandler = logging.FileHandler('uav/xpio.log', mode='w')
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO, handlers=[filehandler, logging.StreamHandler()])
+
+logging.warning("Generating UAVCAN files, please wait...")
 
 import pycyphal
 import pycyphal.application
@@ -33,14 +34,12 @@ from uavcan_archived.equipment import actuator, ahrs, air_data, esc, gnss, range
 
 import common.find_xp as find_xp
 
+logging.getLogger('pymavlink').setLevel(logging.ERROR)
 m = mavutil.mavlink
 
 config = ConfigParser()
 config.read('./common/CONFIG.ini')
 
-filehandler = logging.FileHandler('uav/xpio.log', mode='w')
-filehandler.setLevel(logging.DEBUG)
-logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO, handlers=[filehandler, logging.StreamHandler()])
 os.system('cls' if os.name == 'nt' else 'clear')
 
 stop = asyncio.Event()
@@ -93,14 +92,11 @@ FREQ = 60
 FT_TO_M = 3.048e-1
 KT_TO_MS = 5.14444e-1
 
-type LoopedClass = XPConnect | TestXPConnect | ServoIO | ESCIO | AltitudeSensor | AttitudeSensor | GPSSensor | IASSensor | AOASensor | Clock | Camera | TestCamera
-
-
 def async_loop_decorator(close=True):
     """Provide decorator to gracefully loop coroutines."""
     def decorator(func):
         @wraps(func) # Preserve metadata like func.__name__
-        async def wrapper(self: LoopedClass, *args, **kwargs):
+        async def wrapper(self: 'XPConnect | TestXPConnect | ServoIO | ESCIO | AltitudeSensor | AttitudeSensor | GPSSensor | IASSensor | AOASensor | Clock | Camera | TestCamera', *args, **kwargs):
             try:
                 while not stop.is_set():
                     try:

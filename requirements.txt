@@ -4,4 +4,3 @@ pycyphal
 pymavlink
 setuptools
 opencv-python
-imutils

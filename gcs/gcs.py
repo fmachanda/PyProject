@@ -6,8 +6,7 @@ import time
 from configparser import ConfigParser
 from typing import Any
 
-if os.path.basename(os.getcwd()) == 'gcs':
-    os.chdir('..')
+os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
 sys.path.append(os.getcwd())
 os.environ['MAVLINK20'] = '1'
 
@@ -18,7 +17,6 @@ import common.key as key
 m = mavutil.mavlink
 
 filehandler = logging.FileHandler('gcs/gcs.log', mode='w')
-filehandler.setLevel(logging.DEBUG)
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO, handlers=[filehandler, logging.StreamHandler()])
 logging.getLogger('pymavlink').setLevel(logging.ERROR)
 
