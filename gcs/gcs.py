@@ -27,6 +27,7 @@ systemid = 0
 ids = []
 mav_conn_open = False
 MAX_FLUSH_BUFFER = int(1e6)
+FT_TO_M = 0.3048
 
 
 class PreExistingConnection(Exception):
@@ -68,6 +69,8 @@ class Connect:
         """Initialize the connection and send command change."""
         self.target = None
         assert 0<target<256 and isinstance(target, int) and target!=systemid, "System ID target must be unique UINT8"
+
+        self.map_pos = [0.0, 0.0]
 
         check_mav_conn()
 
@@ -271,10 +274,12 @@ class Connect:
         logging.info("Calling set_speed()")
         asyncio.run(self._command('DO_CHANGE_SPEED', m.SPEED_TYPE_AIRSPEED, airspeed, -1))
 
-    def reposition(self, latitude: float, longitude: float, altitude: float, speed: float = -1, radius: float = 0, yaw: float = 1):
+    def reposition(self, lat: float | None = None, lon: float | None = None, alt: float = 0, speed: float = -1, radius: float = 0, yaw: float = 1):
         """Change UAV current waypoint."""
         logging.info("Calling reposition()")
-        asyncio.run(self._command_int('DO_REPOSITION', speed, 0, radius, yaw, int(latitude), int(longitude), int(altitude)))
+        lat = self.map_pos[0] if lat is None else lat
+        lon = self.map_pos[1] if lon is None else lon
+        asyncio.run(self._command_int('DO_REPOSITION', speed, 0, radius, yaw, int(lat*1e7), int(lon*1e7), alt*FT_TO_M, acknowledge=False))
 
     def f_takeoff(self, latitude: float, longitude: float, altitude: float, yaw: float = float('nan'), pitch: float = 10):
         """Command UAV conventional takeoff."""

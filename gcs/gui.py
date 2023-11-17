@@ -2,6 +2,7 @@
 import threading
 import time
 import tkinter as tk
+import tkintermapview as tkmap
 
 from gcs import Connect
 
@@ -15,6 +16,9 @@ class GCSUI:
         self.root = root
         self.root.title("GCS Control")
         self.root.protocol("WM_DELETE_WINDOW", self.window_close)
+
+        self.map_open = False
+        self.map_marker = None
 
         self.target_label = tk.Label(root, text="Target ID:")
         self.target_label.pack()
@@ -43,8 +47,41 @@ class GCSUI:
         self.log_text = tk.Text(root, height=10, width=40)
         self.log_text.pack()
 
+        self.map_button = tk.Button(root, text="Open Map", command=self.open_map)
+        self.map_button.pack()
+
         self.connect_instance: Connect | None = None
         self.heartbeat = None
+
+    def open_map(self):
+        if not self.map_open:
+            self.map = tk.Toplevel(self.root)
+            self.map.title("Map")
+            self.map_widget = tkmap.TkinterMapView(self.map, width=800, height=600, corner_radius=0)
+            self.map_widget.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+            self.map_widget.set_position(41.688306, -83.716114)
+            self.map_widget.set_zoom(10)
+            self.map_widget.add_right_click_menu_command(label="Add Marker", command=self.add_map_marker, pass_coords=True)
+            self.map_widget.add_right_click_menu_command(label="Remove Marker", command=self.delete_map_marker, pass_coords=True)
+            self.map.protocol("WM_DELETE_WINDOW", self.close_map)
+            self.map_open = True
+
+    def close_map(self):
+        self.map.destroy()
+        self.map_open = False
+
+    def add_map_marker(self, coords: tuple):
+        self.delete_map_marker()
+        self.map_marker = self.map_widget.set_marker(coords[0], coords[1])
+
+    def delete_map_marker(self, _: tuple | None = None):
+        if self.map_marker:
+            try:
+                self.map_marker.delete()
+            except tk.TclError:
+                pass
+            finally:
+                self.map_marker = None
 
     def connect(self):
         try:
@@ -70,6 +107,10 @@ class GCSUI:
 
     def command(self):
         cmd = str(self.command_entry.get())
+        try:
+            self.connect_instance.map_pos = list(self.map_marker.position)
+        except AttributeError:
+            self.connect_instance.map_pos = [0.0, 0.0]
 
         if self.connect_instance is not None:
             try:

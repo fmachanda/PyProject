@@ -11,6 +11,7 @@ See https://github.com/fmachanda/fmuas-main for more details.
 """
 
 import asyncio
+import argparse
 import logging
 import math
 import os
@@ -210,8 +211,8 @@ class GlobalRx:
         """Store GPS data."""
         def __init__(self) -> None:
             self.time = 0.0
-            self.latitude = 0.0
-            self.longitude = 0.0
+            self.latitude = 41.688306
+            self.longitude = -83.716114
             self.altitude = 0.0
             self.nspeed = 0.0
             self.espeed = 0.0
@@ -237,8 +238,8 @@ class GlobalRx:
             # self._last_dspeed = self.dspeed
 
             self.time = msg.timestamp.usec
-            self.latitude = msg.latitude_deg_1e8# / 1e8
-            self.longitude = msg.longitude_deg_1e8# / 1e8
+            self.latitude = msg.latitude_deg_1e8 / 1e8
+            self.longitude = msg.longitude_deg_1e8 / 1e8
             self.altitude = msg.height_msl_mm / 1e3
             self.nspeed, self.espeed, self.dspeed= msg.ned_velocity
 
@@ -503,8 +504,6 @@ class Navigator:
         self.main = main
         self._waypoint_list: list[Waypoint] = [] # Navigating from waypoint 0 to waypoint 1
         self._current_waypoint = None
-        self._dlat = 0.0
-        self._dlong = 0.0
         self.commanded_heading = 0.0
         self.commanded_altitude = self.main.processor.spf_altitude
 
@@ -512,8 +511,9 @@ class Navigator:
         """Perform boot-related tasks."""
         # TODO: do boot stuff here, calibrate gps etc
         # TODO: await gps online
-        self.append_wpt(Waypoint(self.main.rxdata.gps.latitude, self.main.rxdata.gps.latitude, self.main.rxdata.gps.altitude, name='Start'))
+        self.append_wpt(Waypoint(self.main.rxdata.gps.latitude, self.main.rxdata.gps.longitude, self.main.rxdata.gps.altitude, name='Start'))
         self._current_waypoint = self._waypoint_list[0]
+        logging.debug(f"Navigator aligning at {self._waypoint_list[0].latitude}, {self._waypoint_list[0].longitude}")
         # TODO: load flight plan from a file
         await asyncio.sleep(0)
 
@@ -529,10 +529,14 @@ class Navigator:
     def calc_heading(self) -> float:
         """"Determine the desired heading to the next waypoint."""
         if len(self._waypoint_list)>1:
-            self._dlat = self._waypoint_list[1].latitude - self.main.rxdata.gps.latitude
-            self._dlong = self._waypoint_list[1].longitude - self.main.rxdata.gps.longitude
+            lata = self.main.rxdata.gps.latitude
+            latb = self._waypoint_list[1].latitude
+            dlon = self._waypoint_list[1].longitude - self.main.rxdata.gps.longitude
+
+            x = math.cos(latb) * math.sin(dlon)
+            y = math.cos(lata)*math.sin(latb) - math.sin(lata)*math.cos(latb)*math.cos(dlon)
             
-            self.commanded_heading = math.degrees(math.atan2(self._dlat, self._dlong))
+            self.commanded_heading = -math.degrees(math.atan2(x, y))
             self.commanded_heading %= 360.0
         else:
             self.commanded_heading = self.main.rxdata.att.yaw + 15.0 # Enter right hand continuous turn
@@ -541,7 +545,12 @@ class Navigator:
     
     def calc_altitude(self) -> float:
         """Determine the desired altitude from the next waypoint."""
-        return self._waypoint_list[1].altitude
+        if len(self._waypoint_list)>1:
+            self.commanded_altitude = self._waypoint_list[1].altitude
+        else:
+            # TODO
+            pass
+        return self.commanded_altitude
 
     @async_loop_decorator(close=False)
     async def _navigator_run_loop(self) -> None:
@@ -1049,8 +1058,10 @@ class Controller:
                 # DO_REPOSITION
                 case m.MAV_CMD_DO_REPOSITION:
                     self.main.navigator.next_wpt(
-                        Waypoint(msg.latitude, msg.longitude, msg.altitude)
+                        Waypoint(msg.x / 1e7, msg.y / 1e7, msg.z)
                     )
+
+                    logging.info(f"Directing to {self.main.navigator._waypoint_list[1].latitude}, {self.main.navigator._waypoint_list[1].longitude}")
                 # TODO TEMPORARY PID
                 case 0:
                     # PID TUNER GOTO
@@ -1310,7 +1321,7 @@ class Main:
             self._grapher.close()
             logging.info('Closing Grapher')
 
-    async def run(self, graph: str | None = None) -> None:
+    async def run(self, graph: str | bool = False) -> None:
         """Run the main system components.
 
         Leaving graph set to default will not start a graphing window.
@@ -1370,7 +1381,7 @@ class Main:
             asyncio.create_task(self.img.run()),
         ]
 
-        if graph is not None:
+        if graph:
             logging.info("Grapher on")
             tasks.append(asyncio.create_task(self._graph(name=graph)))
 
@@ -1383,5 +1394,9 @@ class Main:
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-g", "--graph", nargs='?', default=False, const='self.rxdata.alt.altitude', help="Attribute to graph")
+    args = parser.parse_args()
+
     main = Main()
-    asyncio.run(main.run(graph='self.rxdata.alt.altitude'))
+    asyncio.run(main.run(graph=args.graph))
