@@ -63,7 +63,7 @@ git clone https://github.com/fmachanda/fmuas-xp.git <aircraft-directory>
         ├──  data_types
             ├── public_regulated_data_types # INIT THIS SUBMODULE!
             └── ...
-        ├── CONFIG.ini # Change this
+        ├── config.ini # Change this
         ├── key.py # Shared mavlink encryption key
         └── ...
 └── fmuas-xp
@@ -76,7 +76,7 @@ git clone https://github.com/fmachanda/fmuas-xp.git <aircraft-directory>
 `gcs/gui.py` runs a GCS window  
 `gcs/gcs.py` can be used as a [CLI](#gcs-command-line-interface) if imported in a python terminal  
 
-`common/CONFIG.ini` contains changeable settings for UAV and GCS instances  
+`common/config.ini` contains changeable settings for UAV and GCS instances  
 
 `common/key.py` contains the shared custom key used by MAVLINK connections
 > The `KEY = ...` line in `key.py` can be changed to any desired MAVLINK key (must be length 25). If using separate folders for GCS and UAV instances, ensure that this key is the same for both.  

@@ -5,7 +5,7 @@ MAVLINK protocols. The script recieves data from various sensors and
 publishes desired servo and throttle settings. A method to connect with 
 a GCS over MAVLINK is provided. The UAV is designed to be autonomous.
 
-This script uses values from the common/CONFIG.ini file.
+This script uses values from the common/config.ini file.
 
 See https://github.com/fmachanda/fmuas-main for more details.
 """
@@ -501,23 +501,60 @@ class Navigator:
         """
 
         self.main = main
-        self._waypoint_list = []
+        self._waypoint_list: list[Waypoint] = [] # Navigating from waypoint 0 to waypoint 1
+        self._current_waypoint = None
+        self._dlat = 0.0
+        self._dlong = 0.0
+        self.commanded_heading = 0.0
+        self.commanded_altitude = self.main.processor.spf_altitude
 
-    # async def boot(self) -> None:
-    #     """Perform boot-related tasks."""
-    #     # TODO: do boot stuff here, calibrate gps etc
-    #     # await gps online
-    #     self.add_wpt(Waypoint(self.main.rxdata.gps.latitude, self.main.rxdata.gps.latitude, self.main.rxdata.gps.altitude, name='Start'))
-    #     await asyncio.sleep(0)
+    async def boot(self) -> None:
+        """Perform boot-related tasks."""
+        # TODO: do boot stuff here, calibrate gps etc
+        # TODO: await gps online
+        self.append_wpt(Waypoint(self.main.rxdata.gps.latitude, self.main.rxdata.gps.latitude, self.main.rxdata.gps.altitude, name='Start'))
+        self._current_waypoint = self._waypoint_list[0]
+        # TODO: load flight plan from a file
+        await asyncio.sleep(0)
 
-    # def add_wpt(self, wpt: Waypoint) -> None:
-    #     self._waypoint_list.append(wpt)
+    def append_wpt(self, *wpts: Waypoint) -> None:
+        """Add a Waypoint to the end of the flight plan."""
+        for wpt in wpts:
+            self._waypoint_list.append(wpt)
 
-    # def calc_heading(self) -> None:
-    #     pass
+    def next_wpt(self, wpt: Waypoint) -> None:
+        """Direct to a waypoint."""
+        self._waypoint_list.insert(1, wpt)
 
-    # async def run(self) -> None:
-    #     pass
+    def calc_heading(self) -> float:
+        """"Determine the desired heading to the next waypoint."""
+        if len(self._waypoint_list)>1:
+            self._dlat = self._waypoint_list[1].latitude - self.main.rxdata.gps.latitude
+            self._dlong = self._waypoint_list[1].longitude - self.main.rxdata.gps.longitude
+            
+            self.commanded_heading = math.degrees(math.atan2(self._dlat, self._dlong))
+            self.commanded_heading %= 360.0
+        else:
+            self.commanded_heading = self.main.rxdata.att.yaw + 15.0 # Enter right hand continuous turn
+            self.commanded_heading %= 360.0
+        return self.commanded_heading
+    
+    def calc_altitude(self) -> float:
+        """Determine the desired altitude from the next waypoint."""
+        return self._waypoint_list[1].altitude
+
+    @async_loop_decorator(close=False)
+    async def _navigator_run_loop(self) -> None:
+        """Set processor setpoints based on flight plan."""
+        # TODO: navigator modes, safety checks
+        self.main.processor.spf_heading = self.calc_heading()
+        self.main.processor.spf_altitude = self.calc_altitude()
+        await asyncio.sleep(0)
+
+    async def run(self) -> None:
+        """Calculate desired heading from flight plan."""
+        logging.info("Starting Navigator")
+        await self._navigator_run_loop()
 
 
 class Processor:
@@ -1010,8 +1047,10 @@ class Controller:
         if msg.target_system==self.main.systemid and msg.get_srcSystem()==self._gcs_id:
             match msg.command:
                 # DO_REPOSITION
-                case m.MAV_CMD_DO_REPOSITION: 
-                    pass # TODO
+                case m.MAV_CMD_DO_REPOSITION:
+                    self.main.navigator.next_wpt(
+                        Waypoint(msg.latitude, msg.longitude, msg.altitude)
+                    )
                 # TODO TEMPORARY PID
                 case 0:
                     # PID TUNER GOTO
@@ -1307,6 +1346,7 @@ class Main:
 
         boot_tasks = [
             asyncio.create_task(self.processor.boot()),
+            asyncio.create_task(self.navigator.boot()),
             asyncio.create_task(self.io.boot()),
         ]
 
@@ -1325,7 +1365,7 @@ class Main:
 
         tasks = [
             asyncio.create_task(self.processor.run()),
-            # asyncio.create_task(self.navigator.run()), TODO
+            asyncio.create_task(self.navigator.run()),
             asyncio.create_task(self.io.run()),
             asyncio.create_task(self.img.run()),
         ]
