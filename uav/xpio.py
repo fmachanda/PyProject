@@ -32,8 +32,8 @@ import pycyphal
 import pycyphal.application
 import uavcan
 import uavcan_archived
-from pymavlink import mavutil
 from uavcan_archived.equipment import actuator, ahrs, air_data, esc, gnss, range_sensor
+from pymavlink import mavutil
 
 import common.find_xp as find_xp
 
@@ -92,7 +92,7 @@ tx_data = [
 ]
 
 XP_FIND_TIMEOUT = 1
-TX_DATA_LAST_SERVO = 3 # Index of final servo dref before esc
+TX_DATA_FIRST_ESC = 4 # Index of first esc dref in tx_data
 XP_FREQ = 60
 FREQ = 60
 FT_TO_M = 3.048e-1
@@ -311,7 +311,7 @@ class ServoIO:
     async def run(self) -> None:
         """docstring placeholder"""
         def on_servo(msg: actuator.ArrayCommand_1, _: pycyphal.transport.TransferFrom) -> None:
-            for index, command in enumerate(msg.commands[:(TX_DATA_LAST_SERVO+1)]):
+            for index, command in enumerate(msg.commands[:TX_DATA_FIRST_ESC]):
                 if command.command_type==actuator.Command_1.COMMAND_TYPE_POSITION:
                     tx_data[index][1] = math.degrees(command.command_value)
         self._sub_servo.receive_in_background(on_servo)
@@ -405,8 +405,8 @@ class ESCIO:
     async def run(self) -> None:
         """docstring placeholder"""
         def on_esc(msg: esc.RawCommand_1, _: pycyphal.transport.TransferFrom) -> None:
-            for index, value in enumerate(msg.cmd[(TX_DATA_LAST_SERVO+1):]):
-                tx_data[index + 1 + TX_DATA_LAST_SERVO][1] = value / 8192
+            for index, value in enumerate(msg.cmd):
+                tx_data[index + TX_DATA_FIRST_ESC][1] = value / 8192
         self._sub_esc.receive_in_background(on_esc)
 
         await self._escio_run_loop()

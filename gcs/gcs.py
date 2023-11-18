@@ -34,6 +34,7 @@ ids = []
 mav_conn_open = False
 MAX_FLUSH_BUFFER = int(1e6)
 FT_TO_M = 0.3048
+KT_TO_MS = 0.514444
 
 
 class PreExistingConnection(Exception):
@@ -278,7 +279,7 @@ class Connect:
     def set_speed(self, airspeed: float) -> None:
         """Change UAV speed setpoint."""
         logging.info("Calling set_speed()")
-        asyncio.run(self._command('DO_CHANGE_SPEED', m.SPEED_TYPE_AIRSPEED, airspeed, -1))
+        asyncio.run(self._command('DO_CHANGE_SPEED', m.SPEED_TYPE_AIRSPEED, airspeed*KT_TO_MS, -1))
 
     def reposition(self, lat: float | None = None, lon: float | None = None, alt: float = 0, speed: float = -1, radius: float = 0, yaw: float = 1):
         """Change UAV current waypoint."""

@@ -41,9 +41,8 @@ logging.warning("Generating UAVCAN files, please wait...")
 import pycyphal
 import pycyphal.application
 import uavcan
-# import uavcan_archived
-from pymavlink import mavutil
 from uavcan_archived.equipment import actuator, ahrs, air_data, esc, gnss, range_sensor
+from pymavlink import mavutil
 
 import common.grapher as grapher
 import common.image_processor as img
@@ -225,6 +224,9 @@ class GlobalRx:
             self.nspeed = 0.0
             self.espeed = 0.0
             self.dspeed = 0.0
+            
+            self.xspeed = 0.0
+            self.yspeed = 0.0
 
             self._last_time = 0.0
             self.dt = 0.0
@@ -235,7 +237,7 @@ class GlobalRx:
             # self._last_espeed = 0.0
             # self._last_dspeed = 0.0
 
-        def dump(self, msg: gnss.Fix2_1) -> None:
+        def dump(self, msg: gnss.Fix2_1, heading: 'GlobalRx.Att.yaw') -> None:
             """Store data from a message."""
             self._last_time = self.time
             # self._last_latitude = self.latitude
@@ -249,7 +251,10 @@ class GlobalRx:
             self.latitude = msg.latitude_deg_1e8 / 1e8
             self.longitude = msg.longitude_deg_1e8 / 1e8
             self.altitude = msg.height_msl_mm / 1e3
-            self.nspeed, self.espeed, self.dspeed= msg.ned_velocity
+            self.nspeed, self.espeed, self.dspeed = msg.ned_velocity
+
+            self.yspeed = self.nspeed*math.cos(heading) + self.espeed*math.sin(heading)
+            self.xspeed = self.nspeed*math.sin(heading) + self.espeed*math.cos(heading)
 
             self.dt = self.time - self._last_time
 
@@ -293,6 +298,29 @@ class GlobalRx:
 
             self.dt = self.time - self._last_time
 
+    class Cam:
+        """Store CAM data."""
+        def __init__(self) -> None:
+            self.time = 0.0
+            self.xdp = 0.0
+            self.ydp = 0.0
+
+            self._last_time = 0.0
+            self.dt = 0.0
+            # self._last_xdp = 0.0
+            # self._last_ydp = 0.0
+
+        def dump(self, xdp: float, ydp: float, time: 'GlobalRx.Time.time') -> None:
+            """Store data from a message."""
+            self._last_time = self.time
+            # self._last_aoa = self.aoa
+            
+            self.time = time
+            self.xdp = xdp
+            self.ydp = ydp
+
+            self.dt = self.time - self._last_time
+
     def __init__(self) -> None:
         self.time = GlobalRx.Time()
         self.att =  GlobalRx.Att()
@@ -300,6 +328,7 @@ class GlobalRx:
         self.gps =  GlobalRx.Gps()
         self.ias =  GlobalRx.Ias()
         self.aoa =  GlobalRx.Aoa()
+        self.cam =  GlobalRx.Cam()
 
 
 class GlobalTx:
@@ -467,7 +496,7 @@ class MainIO:
         self._sub_alt.receive_in_background(on_alt)
 
         def on_gps(msg: gnss.Fix2_1, _: pycyphal.transport.TransferFrom) -> None:
-            self.main.rxdata.gps.dump(msg)
+            self.main.rxdata.gps.dump(msg, self.main.rxdata.att.yaw)
         self._sub_gps.receive_in_background(on_gps)
 
         def on_ias(msg: air_data.IndicatedAirspeed_1, _: pycyphal.transport.TransferFrom) -> None:
@@ -499,7 +528,6 @@ class MainIO:
 
 class Navigator:
     """Converts navigational commands to autopilot commands."""
-
     def __init__(self, main: 'Main') -> None:
         """Initializes the Navigator class.
 
@@ -635,7 +663,7 @@ class Processor:
 
         self.spf_altitude = 100.0
         self.spf_heading = 0.0
-        self.spf_ias = 0.0
+        self.spf_ias = 40.0
 
         self._spf_vpath = 0.0
         self._spf_aoa = 0.1
@@ -644,9 +672,6 @@ class Processor:
 
         self.spv_altitude = 100.0
         self.spv_heading = 0.0
-
-        self.xdisp = 0.0
-        self.ydisp = 0.0
 
         self._spv_xspeed = 0.0
         self._spv_yspeed = 0.0
@@ -661,30 +686,36 @@ class Processor:
         self._outf_roll = 0.0
         self._outf_throttle = 0.0
 
+        self._outv_pitch = 0.0
+        self._outv_roll = 0.0
+        self._outv_yaw = 0.0
+        self._outv_throttle = 0.0
+
         # self._pid{f or v}_{from}_{to}
 
         self._pidf_alt_vpa = PID(kp=0.007, ti=0.01, td=0.1, integral_limit=0.05, maximum=0.05, minimum=-0.05)
         self._pidf_vpa_aoa = PID(kp=0.7, ti=3.0, td=0.05, integral_limit=0.2, maximum=0.15, minimum=-0.05)
         self._pidf_aoa_out = PID(kp=-0.07, ti=-0.008, td=0.02, integral_limit=1, maximum=0.0, minimum=-math.pi/12)
-
-        self._pidf_ias_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=0.25, maximum=0.25, minimum=0.02)
-
         self._pidf_dyw_rol = PID(kp=-0.75, ti=-8.0, td=0.002, integral_limit=0.1, maximum=math.pi/6, minimum=-math.pi/6)
         self._pidf_rol_rls = PID(kp=1.5, ti=6.0, td=0.02, integral_limit=0.2, maximum=2.0, minimum=-2.0)
         self._pidf_rls_out = PID(kp=0.005, ti=0.003, td=0.005, integral_limit=0.1, maximum=0.1, minimum=-0.1)
+        self._pidf_ias_out = PID(kp=0.1, ti=0.0, td=0.0, integral_limit=0.25, maximum=0.25, minimum=0.02) # TODO
 
-        self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=0.1)
-        self._pidv_xsp_rol = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=0.1)
-        self._pidv_rol_rls = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=0.1)
-        self._pidv_rls_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=1.0)
+        self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
+        self._pidv_xsp_rol = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
+        self._pidv_rol_rls = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
+        self._pidv_rls_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-0.5, maximum=0.5)
 
-        self._pidv_ydp_ysp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=0.1)
-        self._pidv_ysp_pit = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=0.1)
-        self._pidv_pit_pts = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=0.1)
-        self._pidv_pts_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=1.0)
+        self._pidv_ydp_ysp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
+        self._pidv_ysp_pit = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
+        self._pidv_pit_pts = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
+        self._pidv_pts_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-0.5, maximum=0.5)
 
-        self._pidv_alt_vsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=0.1)
-        self._pidv_vsp_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=0.1)
+        self._pidv_alt_vsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-50.0, maximum=100.0)
+        self._pidv_vsp_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=1.0)
+
+        self._pidv_dyw_yws = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=-math.pi/6)
+        self._pidv_yws_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-0.2, maximum=0.2)
 
     async def boot(self) -> None:
         """Perform boot-related tasks."""
@@ -720,42 +751,45 @@ class Processor:
 
     def _flight_servos(self) -> np.ndarray:
         """Calculate flight servo commands from sensors."""
-        if self.main.rxdata.alt.dt > 0.0:
-            self._spf_vpath = self._pidf_alt_vpa.cycle(self.main.rxdata.alt.altitude, self.spf_altitude, self.main.rxdata.alt.dt)
+        if (alt:=self.main.rxdata.alt).dt > 0.0:
+            self._spf_vpath = self._pidf_alt_vpa.cycle(alt.altitude, self.spf_altitude, alt.dt)
             self.main.rxdata.alt.dt = 0.0
 
-        if self.main.rxdata.att.dt > 0.0 or self.main.rxdata.aoa.dt > 0.0:
-            if not self.main.rxdata.aoa.dt > 0.0:
-                dt = self.main.rxdata.att.dt
-            elif not self.main.rxdata.att.dt > 0.0:
-                dt = self.main.rxdata.aoa.dt
+        if any([(att:=self.main.rxdata.att).dt > 0.0, (aoa:=self.main.rxdata.aoa).dt > 0.0]):
+            if not aoa.dt > 0.0:
+                dt = att.dt
+            elif not att.dt > 0.0:
+                dt = aoa.dt
             else:
-                dt = (self.main.rxdata.att.dt + self.main.rxdata.aoa.dt) / 2
+                dt = (att.dt + aoa.dt) / 2
 
-            self._vpath = self.main.rxdata.att.pitch - math.cos(self.main.rxdata.att.roll) * self.main.rxdata.aoa.aoa
+            self._vpath = att.pitch - math.cos(att.roll) * aoa.aoa
             self._spf_aoa = self._pidf_vpa_aoa.cycle(self._vpath, self._spf_vpath, dt) # TODO
 
-        if self.main.rxdata.att.dt > 0.0:
-            self._dyaw = Processor._calc_dyaw(self.main.rxdata.att.yaw, self.spf_heading)
+        if (att:=self.main.rxdata.att).dt > 0.0:
+            self._dyaw = Processor._calc_dyaw(att.yaw, self.spf_heading)
 
-            self._spf_roll = self._pidf_dyw_rol.cycle(self._dyaw, 0.0, self.main.rxdata.att.dt)
-            self._spf_rollspeed = self._pidf_rol_rls.cycle(self.main.rxdata.att.roll, self._spf_roll, self.main.rxdata.att.dt)
-            self._outf_roll = self._pidf_rls_out.cycle(self.main.rxdata.att.rollspeed, self._spf_rollspeed, self.main.rxdata.att.dt)
+            self._spf_roll = self._pidf_dyw_rol.cycle(self._dyaw, 0.0, att.dt)
+            self._spf_rollspeed = self._pidf_rol_rls.cycle(att.roll, self._spf_roll, att.dt)
+            self._outf_roll = self._pidf_rls_out.cycle(att.rollspeed, self._spf_rollspeed, att.dt)
 
             self.main.rxdata.att.dt = 0.0
 
-        if self.main.rxdata.aoa.dt > 0.0:
-            self._outf_pitch = self._pidf_aoa_out.cycle(self.main.rxdata.aoa.aoa, self._spf_aoa, self.main.rxdata.aoa.dt)
+        if (aoa:=self.main.rxdata.aoa).dt > 0.0:
+            self._outf_pitch = self._pidf_aoa_out.cycle(aoa.aoa, self._spf_aoa, aoa.dt)
             self.main.rxdata.aoa.dt = 0.0
 
         self._fservos[0] = self._outf_pitch + self._outf_roll # TODO
         self._fservos[1] = self._outf_pitch - self._outf_roll # TODO
+        self._fservos[2:].fill(0.0)
 
         return self._fservos
 
     def _vtol_servos(self) -> np.ndarray:
         """Calculate VTOL servo commands from sensors."""
-        
+        self._vservos.fill(math.pi/2)
+        if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_HOVER:
+            self._vservos[2] = 0.0
         return self._vservos
 
     def _flight_throttles(self) -> np.ndarray:
@@ -770,12 +804,30 @@ class Processor:
 
     def _vtol_throttles(self) -> np.ndarray:
         """Calculate VTOL throttle commands from sensors."""
-        if self.main.rxdata.gps.dt > 0.0:
-            ...
+        if (alt:=self.main.rxdata.alt).dt > 0.0:
+            self._spv_vs = self._pidv_alt_vsp.cycle(alt.altitude, self.spv_altitude, alt.dt)
+            self._outv_throttle = self._pidv_vsp_out.cycle(alt.vs, self._spv_vs, alt.dt)
+            self.main.rxdata.alt.dt = 0.0
+
+        if (cam:=self.main.rxdata.cam).dt > 0.0:
+            self._spv_xspeed = self._pidv_xdp_xsp.cycle(cam.xdp, 0.0, cam.dt)
+            self._spv_yspeed = self._pidv_ydp_ysp.cycle(cam.ydp, 0.0, cam.dt)
+            self.main.rxdata.cam.dt = 0.0
+
+        if (gps:=self.main.rxdata.gps).dt > 0.0:
+            self._spv_roll = self._pidv_xsp_rol.cycle(gps.xspeed, self._spv_xspeed, gps.dt)
+            self._spv_pitch = self._pidv_ysp_pit.cycle(gps.yspeed, self._spv_yspeed, gps.dt)
             self.main.rxdata.gps.dt = 0.0
 
-        if self.main.rxdata.att.dt > 0.0:
-            ...
+        if (att:=self.main.rxdata.att).dt > 0.0:
+            self._spv_rollspeed = self._pidv_rol_rls.cycle(att.roll, self._spv_roll, att.dt)
+            self._spv_pitchspeed = self._pidv_pit_pts.cycle(att.pitch, self._spv_pitch, att.dt)
+            self._outv_roll = self._pidv_rls_out.cycle(att.rollspeed, self._spv_rollspeed, att.dt)
+            self._outv_pitch = self._pidv_pts_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt)
+
+            self._dyaw = Processor._calc_dyaw(att.yaw, self.spf_heading)
+            self._spv_yawspeed = self._pidv_dyw_yws.cycle(self._dyaw, 0.0, att.dt)
+            self._outv_yaw = self._pidv_yws_out.cycle(att.yawspeed, self._spv_yawspeed, att.dt)
             self.main.rxdata.att.dt = 0.0
 
         return self._vthrottles
@@ -792,24 +844,28 @@ class Processor:
         match self.main.state.custom_submode:
             case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT | g.CUSTOM_SUBMODE_TAKEOFF_HOVER | g.CUSTOM_SUBMODE_LANDING_DESCENT | g.CUSTOM_SUBMODE_LANDING_HOVER:
                 # VTOL
-                self._servos =  self._ias_scalar * self._vtol_servos()
+                self._servos = self._vtol_servos()
                 self._throttles = self._vtol_throttles()
             case g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT | g.CUSTOM_SUBMODE_LANDING_TRANSIT:
                 # Transit modes
-                # TODO mixing
-                self._servos =  self._ias_scalar * np.sum(np.array([0.0 * self._flight_servos(), 1.0 * self._vtol_servos()]), axis=0, dtype=np.float16)
-                self._throttles = np.sum(np.array([0.0 * self._flight_throttles(), 1.0 * self._vtol_throttles()]), axis=0, dtype=np.float16)
+                # TODO mixing (DO NOT USE BOTH FUNCTIONS BECAUSE RACE CONDITION TO RESET dt)
+                pass
             case g.CUSTOM_SUBMODE_FLIGHT_NORMAL | g.CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE:
                 # Normal flight
                 self._servos =  self._ias_scalar * self._flight_servos()
                 self._throttles = self._flight_throttles()
+            case g.CUSTOM_SUBMODE_FLIGHT_MANUAL:
+                # Manual flight via GCS
+                # TODO switch from lua to GCS
+                pass
             case _:
                 # Safed
-                self._servos = np.zeros(4, dtype=np.float16).fill(0.0)
+                self._servos = np.array([0.0, 0.0, math.pi/2, math.pi/2], dtype=np.float16)
                 self._throttles = np.zeros(4, dtype=np.float16).fill(0.0)
 
-        np.clip(self._servos, -65504, 65504)
-        np.clip(self._throttles, 0.0, 1.0)
+        self._servos[:2] = np.clip(self._servos[:2], -math.pi/12, 7*math.pi/12)
+        self._servos[2:] = np.clip(self._servos[2:], 0.0, math.pi/2)
+        self._throttles = np.clip(self._throttles, 0.0, 1.0)
 
         self.main.txdata.servo = actuator.ArrayCommand_1([
             actuator.Command_1(0, actuator.Command_1.COMMAND_TYPE_POSITION, self._servos[0]), # Elevon 1
@@ -847,7 +903,6 @@ class ImageProcessor:
     @async_loop_decorator(close=False)
     async def _image_processor_run_loop(self):
         """Find and process new images."""
-        # if self.main.state.custom_mode == g.CUSTOM_MODE_LANDING:
         previous_file_list = [f for f in os.listdir(self._path) if os.path.isfile(os.path.join(self._path, f))]
 
         await asyncio.sleep(1 / self._freq)
@@ -856,18 +911,21 @@ class ImageProcessor:
         file_diff = [x for x in new_file_list if x not in previous_file_list]
         previous_file_list = new_file_list
 
-        if len(file_diff) != 0:
-            for f in file_diff:
-                logging.info(f"Proccesing image {f}")
-                # task = asyncio.create_task()
-                if out := await img.find_h(os.path.join(self._path, f), display=False):
-                    self.main.processor.xdisp, self.main.processor.ydisp, confidence, image = out
-                    logging.info(f"'H' detected in {f} at ({self.main.processor.xdisp},{self.main.processor.ydisp}) with a confidence of {confidence:.2f}.")
-                    await grapher.imshow(image)
-                else:
-                    logging.info(f"None detected in {f}.")
-        # else:
-            # await asyncio.sleep(1 / self._freq)
+        if self.main.state.custom_mode == g.CUSTOM_MODE_LANDING or True: # TODO
+            if len(file_diff) != 0:
+                for f in file_diff:
+                    logging.info(f"Proccesing image {f}")
+                    # task = asyncio.create_task()
+                    if out := await img.find_h(os.path.join(self._path, f), display=False):
+                        dx, dy, confidence, image = out
+                        logging.info(f"'H' detected in {f} at ({dx},{dy}) with a confidence of {confidence:.2f}.")
+                        self.main.rxdata.cam.dump(dx, dy, self.main.rxdata.time.time)
+                        await grapher.imshow(image)
+                    else:
+                        self.main.rxdata.cam.dump(0.0, 0.0, self.main.rxdata.time.time)
+                        logging.info(f"None detected in {f}.")
+        else:
+            await asyncio.sleep(1 / self._freq)
 
     async def run(self) -> None:
         """Find and process new images."""
@@ -1318,7 +1376,7 @@ class Main:
         try:
             while not self.stop.is_set():
                 try:
-                    self._grapher.add(eval('self.'+name))
+                    self._grapher.add(eval('self.' + name))
                     self._grapher.graph()
 
                     try:
@@ -1349,7 +1407,7 @@ class Main:
             try:
                 while not self.stop.is_set():
                     try:
-                        print(eval('self.'+name))
+                        print(eval('self.' + name))
 
                         try:
                             await asyncio.sleep(1 / freq)

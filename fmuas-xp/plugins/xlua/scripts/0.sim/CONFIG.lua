@@ -10,6 +10,8 @@ if (uasDR_WOW_weight_on_wheels == 1) or (uasDR_RADALT_altitude < 1.0) then
     simDR_wing_tilt_actual = 1.0
     simDR_wing_stow = 1.0
     simDR_wing_stow_actual = 1.0
+    simDR_elevons[20] = 45.0
+    simDR_elevons[30] = 45.0
 
     print("FMUAS: CONFIG initialized (ground)")
 

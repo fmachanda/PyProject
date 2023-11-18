@@ -50,9 +50,6 @@ cmd_handler = create_command("fmuas/commands/servos/temporary_direct_mode", "Tem
 uasSET_SERVOS_rate_limiter = create_dataref("fmuas/config/servos/elevon_rate_limiter", "number", writable) --deg/s
 uasSET_SERVOS_noise_gain = create_dataref("fmuas/config/servos/noise_gain", "number", writable)
 
-uasDR_AFCS_master_mode = create_dataref("fmuas/afcs/master_mode", "number", writable)
-uasDR_AFCS_master_mode = 4
-
 uasDR_AFCS_elevon1 = create_dataref("fmuas/afcs/output/elevon1", "number", writable)
 uasDR_AFCS_elevon2 = create_dataref("fmuas/afcs/output/elevon2", "number", writable)
 uasDR_AFCS_throttle1 = create_dataref("fmuas/afcs/output/throttle1", "number", writable)
@@ -88,7 +85,7 @@ simDR_cant3 = find_dataref("sim/aircraft/prop/acf_vertcant[2]")
 simDR_cant4 = find_dataref("sim/aircraft/prop/acf_vertcant[3]")
 
 simDR_wing_stow = find_dataref("sim/cockpit2/controls/wingsweep_ratio") -- RATIO: 0 is flight / 1 is stowed
-simDR_wing_stow_actual = find_dataref("sim/flightmodel2/controls/wingsweep_ratio")
+-- simDR_wing_stow_actual = find_dataref("sim/flightmodel2/controls/wingsweep_ratio")
 simDR_wing_tilt = find_dataref("sim/cockpit2/controls/incidence_ratio") -- RATIO: 0 is flight / 1 is VTOL
 simDR_wing_tilt_actual = find_dataref("sim/flightmodel2/controls/incidence_ratio")
 
@@ -98,9 +95,6 @@ simDR_joystick_pitch = find_dataref("sim/joystick/yoke_pitch_ratio")
 simDR_joystick_roll = find_dataref("sim/joystick/yoke_roll_ratio")
 
 simDR_axes_values_array = find_dataref("sim/joystick/joystick_axis_values")
-
-simDR_engine_speed = find_dataref("sim/flightmodel/engine/ENGN_tacrad")
-simDR_prop_speed = find_dataref("sim/flightmodel/engine/POINT_tacrad")
 
 ----------------------------------------------------------------
 -- INTERNAL FUNCTIONS ------------------------------------------
@@ -144,56 +138,19 @@ function SERVOS_after_physics()
 
     servo_noiser()
 
-    if uasDR_AFCS_master_mode == 0 then
-
-        simDR_throttle1 = 0.0
-        simDR_throttle2 = 0.0
-        simDR_throttle3 = 0.0
-        simDR_throttle4 = 0.0
-
-        simDR_wing_tilt = 1.0
-        simDR_wing_tilt_actual = 1.0
-        simDR_wing_stow = 1.0
-        simDR_wing_stow_actual = 1.0
-
-        pitch_deflection = -0.75
-        roll_deflection = 0.0
-
-    elseif uasDR_SERVOS_direct_mode == 1 then
-
-        if uasDR_AFCS_master_mode == 4 then
-            pitch_deflection_raw = simDR_axes_values_array[simSET_pitch_axis]
-            pitch_deflection = ((pitch_deflection_raw - 0.5) / 2) + 0.75
-            -- pitch_deflection = -(((uasDR_AFCS_elevon1 + uasDR_AFCS_elevon2) / 2) - 45) / 60.0
-            roll_deflection_raw = simDR_axes_values_array[simSET_roll_axis]
-            roll_deflection = (roll_deflection_raw - 0.5) / 24
-            -- roll_deflection = (uasDR_AFCS_elevon1 - uasDR_AFCS_elevon2) / 120.0
-
-        end
-
-        --throttle_deflection = simDR_axes_values_array[simSET_throttle_axis]
-        -- yaw_deflection = simDR_axes_values_array[simSET_yaw_axis] - 0.5
-        --yaw_deflection = uasDR_AFCS_yaw_out / 30
-
-        simDR_throttle1 = 0.16
-        simDR_throttle2 = 0.16
-        simDR_throttle3 = 0.16
-        simDR_throttle4 = 0.16
-        -- simDR_engine_speed[0] = 0.0
-        -- simDR_engine_speed[1] = 0.0
-        -- simDR_engine_speed[2] = 0.0
-        -- simDR_engine_speed[3] = 0.0
-        -- simDR_prop_speed[0] = 0.0
-        -- simDR_prop_speed[1] = 0.0
-        -- simDR_prop_speed[2] = 0.0
-        -- simDR_prop_speed[3] = 0.0
-
+    if uasDR_SERVOS_direct_mode == 1 then
+        pitch_deflection_raw = simDR_axes_values_array[simSET_pitch_axis]
+        pitch_deflection = ((pitch_deflection_raw - 0.5) / 2) + 0.75
+        -- pitch_deflection = -(((uasDR_AFCS_elevon1 + uasDR_AFCS_elevon2) / 2) - 45) / 60.0
+        roll_deflection_raw = simDR_axes_values_array[simSET_roll_axis]
+        roll_deflection = (roll_deflection_raw - 0.5) / 24
+        -- roll_deflection = (uasDR_AFCS_elevon1 - uasDR_AFCS_elevon2) / 120.0
     else
 
-        simDR_throttle1 = 0.16 -- uasDR_AFCS_throttle1
-        simDR_throttle2 = 0.16 -- uasDR_AFCS_throttle2
-        simDR_throttle3 = 0.16 -- uasDR_AFCS_throttle3
-        simDR_throttle4 = 0.16 -- uasDR_AFCS_throttle4
+        simDR_throttle1 = uasDR_AFCS_throttle1
+        simDR_throttle2 = uasDR_AFCS_throttle2
+        simDR_throttle3 = uasDR_AFCS_throttle3
+        simDR_throttle4 = uasDR_AFCS_throttle4
 
         simDR_wing_tilt = uasDR_AFCS_wing_tilt / 90.0
         simDR_wing_stow = uasDR_AFCS_wing_stow / 90.0
