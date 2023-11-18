@@ -10,5 +10,8 @@ uav.log
 xpio.log
 _old
 stored_images
+backups
+aptnav
 test
 test.py
+test.acf

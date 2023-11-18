@@ -2,8 +2,6 @@
 
 # fmuas-main
 
-> Optional X-Plane files can be found at [fmuas-xp][fmuas-xp-link]
-
 **Table of Contents**
 * [Overview](#overview)
 * [Requirements](#requirements)
@@ -30,6 +28,8 @@ The software is designed to be simulated using the [X-Plane 12][xplane-link] fli
 
 Clone this repo into the desired directory. This project contains the [public_regulated_data_types][prdt-link] submodule, so you must use `--recurse-submodules`.
 
+The X-Plane simulation requires that the files are placed into the `X-Plane 12/Aircraft/` directory. Replace `<directory>` below with the correct path.
+
 ```bash
 git clone https://github.com/fmachanda/fmuas-main.git <directory> --recurse-submodules
 
@@ -40,12 +40,6 @@ Install and update required python modules with [pip](https://pip.pypa.io/en/sta
 
 ```bash
 python -m pip install -r requirements.txt --upgrade
-```
-
-X-Plane simulation requires the files from the [fmuas-xp][fmuas-xp-link] repo to be cloned into `X-Plane 12/Aircraft/`.
-
-```bash
-git clone https://github.com/fmachanda/fmuas-xp.git <aircraft-directory>
 ```
 
 ## Important Files
@@ -59,14 +53,14 @@ git clone https://github.com/fmachanda/fmuas-xp.git <aircraft-directory>
     ├── gcs
         ├── gcs.py # Use this in a python terminal
         └── gui.py # Run this
-    └── common
+    ├── common
         ├──  data_types
             ├── public_regulated_data_types # INIT THIS SUBMODULE!
             └── ...
         ├── config.ini # Change this
         ├── key.py # Shared mavlink encryption key
         └── ...
-└── fmuas-xp
+    └── fmuas-xp # Contains the X-Plane files for simulation
 ```
 
 
@@ -74,7 +68,9 @@ git clone https://github.com/fmachanda/fmuas-xp.git <aircraft-directory>
 `uav/xpio.py` runs the connection with X-Plane 12  
 
 `gcs/gui.py` runs a GCS window  
-`gcs/gcs.py` can be used as a [CLI](#gcs-command-line-interface) if imported in a python terminal  
+`gcs/gcs.py` can be used as a [CLI](#gcs-command-line-interface) if imported in a python terminal
+
+`fmuas-xp` contains the X-Plane aircraft files
 
 `common/config.ini` contains changeable settings for UAV and GCS instances  
 
@@ -87,7 +83,7 @@ git clone https://github.com/fmachanda/fmuas-xp.git <aircraft-directory>
 
 To use with X-Plane 12:
 
-1. Ensure that a clone of [fmuas-xp][fmuas-xp-link] is in `/X-Plane 12/Aircraft`
+1. Ensure that the `fmuas-main` folder is in `/X-Plane 12/Aircraft`
 
 2. Launch X-Plane 12 ([free demo][xplane-link] will work)
 
@@ -104,7 +100,7 @@ To use with X-Plane 12:
 
 ## GCS Command Line Interface
 
-The `gcs.py` script provides a very simple interface that can be used to connect with a UAV running `uav.py`. To use the provided commands, open a python terminal and type:
+The `gcs.py` script provides a very simple interface that can be used to connect with a UAV running `uav.py`. To use the provided commands, open a python terminal and type: -->
 
 ```python
 import gcs
@@ -141,7 +137,9 @@ Refer to the `gcs.py` script for further documentation.
 
 `common/find_xp.py` copied from the [XPPython3 Docs](https://xppython3.readthedocs.io/en/latest/_static/find_xp.py)  
 
-`GlobalRx.Att.quaternion_to_euler()` method in `uav/uav.py` copied from [automaticaddison](https://automaticaddison.com/how-to-convert-a-quaternion-into-euler-angles-in-python/)  
+`GlobalRx.Att.quaternion_to_euler()` method in `uav/uav.py` copied from [automaticaddison](https://automaticaddison.com/how-to-convert-a-quaternion-into-euler-angles-in-python/)
+
+`xlua.xpl` and `init.lua` in `fmuas-xp/plugins/` copied from X-Plane
 
 *All  other code is original.*
 
@@ -149,7 +147,9 @@ Refer to the `gcs.py` script for further documentation.
 
 *Previous commit history (commits before 10/12/2023) can be found at [fmuas-main-history](https://github.com/fmachanda/fmuas-main-history)*
 
-*Updated 10/24/2023*
+*Previous X-Plane file repo (before 11/18/2023) can be found at [fmuas-xp][fmuas-xp-link]*
+
+*Updated 11/18/2023*
 
 
 [prdt-link]: https://github.com/OpenCyphal/public_regulated_data_types
