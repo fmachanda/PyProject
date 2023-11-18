@@ -1318,7 +1318,7 @@ class Main:
         try:
             while not self.stop.is_set():
                 try:
-                    self._grapher.add(eval(name))
+                    self._grapher.add(eval('self.'+name))
                     self._grapher.graph()
 
                     try:
@@ -1349,7 +1349,7 @@ class Main:
             try:
                 while not self.stop.is_set():
                     try:
-                        print(eval(name))
+                        print(eval('self.'+name))
 
                         try:
                             await asyncio.sleep(1 / freq)
