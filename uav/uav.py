@@ -10,8 +10,8 @@ This script uses values from the common/config.ini file.
 See https://github.com/fmachanda/fmuas-main for more details.
 """
 
-import asyncio
 import argparse
+import asyncio
 import logging
 import math
 import os
@@ -19,6 +19,7 @@ import sys
 import time
 from configparser import ConfigParser
 from functools import wraps
+
 import numpy as np
 
 os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
@@ -29,7 +30,11 @@ os.environ['UAVCAN__DIAGNOSTIC__SEVERITY'] = '2'
 os.environ['MAVLINK20'] = '1'
 
 filehandler = logging.FileHandler('uav/uav.log', mode='w')
-logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO, handlers=[filehandler, logging.StreamHandler()])
+filehandler.setLevel(logging.INFO)
+filehandler.setFormatter(logging.Formatter('(%(asctime)s %(name)s) %(levelname)s:%(message)s'))
+streamhandler = logging.StreamHandler()
+streamhandler.setLevel(logging.INFO)
+logging.basicConfig(format='%(name)s %(levelname)s:%(message)s', level=logging.DEBUG, handlers=[filehandler, streamhandler])
 
 logging.warning("Generating UAVCAN files, please wait...")
 
@@ -45,8 +50,11 @@ import common.image_processor as img
 from common.pid import PID
 from common.state_manager import GlobalState as g
 
-logging.getLogger('pymavlink').setLevel(logging.ERROR)
 m = mavutil.mavlink
+
+for name in ['pymavlink', 'pycyphal', 'pydsdl', 'nunavut', 'matplotlib']:
+    logging.getLogger(name).setLevel(logging.WARNING)
+filehandler.setLevel(logging.DEBUG)
 
 os.system('cls' if os.name == 'nt' else 'clear')
 
@@ -504,7 +512,7 @@ class Navigator:
         self.main = main
         self._waypoint_list: list[Waypoint] = [] # Navigating from waypoint 0 to waypoint 1
         self._current_waypoint = None
-        self.commanded_heading = 0.0
+        self.commanded_heading = 0.0 # DEGREES
         self.commanded_altitude = self.main.processor.spf_altitude
 
     async def boot(self) -> None:
@@ -541,12 +549,12 @@ class Navigator:
         else:
             self.commanded_heading = self.main.rxdata.att.yaw + 15.0 # Enter right hand continuous turn
             self.commanded_heading %= 360.0
-        return self.commanded_heading
+        return self.commanded_heading # DEGREES
     
     def calc_altitude(self) -> float:
         """Determine the desired altitude from the next waypoint."""
         if len(self._waypoint_list)>1:
-            self.commanded_altitude = self._waypoint_list[1].altitude
+            self.commanded_altitude = self._waypoint_list[1].altitude if self._waypoint_list[1].altitude is not None else self.main.processor.spf_altitude
         else:
             # TODO
             pass
@@ -556,7 +564,7 @@ class Navigator:
     async def _navigator_run_loop(self) -> None:
         """Set processor setpoints based on flight plan."""
         # TODO: navigator modes, safety checks
-        self.main.processor.spf_heading = self.calc_heading()
+        self.main.processor.spf_heading = math.radians(self.calc_heading())
         self.main.processor.spf_altitude = self.calc_altitude()
         await asyncio.sleep(0)
 
@@ -577,9 +585,9 @@ class Processor:
     main : 'Main'
         The main object representing the core of the system.
     spf_altitude : float
-        Setpoint for altitude.
+        Setpoint for altitude in meters.
     spf_heading : float
-        Setpoint for heading.
+        Setpoint for heading in radians.
     spf_ias : float
         Setpoint for indicated airspeed.
 
@@ -615,6 +623,9 @@ class Processor:
         self._vpath = 0.0
         self._dyaw = 0.0
         self._ias_scalar = 1.0
+
+        self._servos: np.ndarray = np.zeros(4, dtype=np.float16)
+        self._throttles: np.ndarray = np.zeros(4, dtype=np.float16)
 
         self._fservos = np.zeros(4, dtype=np.float16) # elevons*2, rudder, wingtilt
         self._vservos = np.zeros(4, dtype=np.float16)
@@ -658,7 +669,7 @@ class Processor:
 
         self._pidf_ias_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=0.25, maximum=0.25, minimum=0.02)
 
-        self._pidf_dyw_rol = PID(kp=-0.8, ti=-8.0, td=0.005, integral_limit=0.1, maximum=math.pi/6, minimum=-math.pi/6)
+        self._pidf_dyw_rol = PID(kp=-0.75, ti=-8.0, td=0.002, integral_limit=0.1, maximum=math.pi/6, minimum=-math.pi/6)
         self._pidf_rol_rls = PID(kp=1.5, ti=6.0, td=0.02, integral_limit=0.2, maximum=2.0, minimum=-2.0)
         self._pidf_rls_out = PID(kp=0.005, ti=0.003, td=0.005, integral_limit=0.1, maximum=0.1, minimum=-0.1)
 
@@ -796,6 +807,9 @@ class Processor:
                 # Safed
                 self._servos = np.zeros(4, dtype=np.float16).fill(0.0)
                 self._throttles = np.zeros(4, dtype=np.float16).fill(0.0)
+
+        np.clip(self._servos, -65504, 65504)
+        np.clip(self._throttles, 0.0, 1.0)
 
         self.main.txdata.servo = actuator.ArrayCommand_1([
             actuator.Command_1(0, actuator.Command_1.COMMAND_TYPE_POSITION, self._servos[0]), # Elevon 1
@@ -1058,7 +1072,7 @@ class Controller:
                 # DO_REPOSITION
                 case m.MAV_CMD_DO_REPOSITION:
                     self.main.navigator.next_wpt(
-                        Waypoint(msg.x / 1e7, msg.y / 1e7, msg.z)
+                        Waypoint(msg.x / 1e7, msg.y / 1e7, msg.z) if msg.z > 0.1 else Waypoint(msg.x / 1e7, msg.y / 1e7)
                     )
 
                     logging.info(f"Directing to {self.main.navigator._waypoint_list[1].latitude}, {self.main.navigator._waypoint_list[1].longitude}")
@@ -1321,7 +1335,34 @@ class Main:
             self._grapher.close()
             logging.info('Closing Grapher')
 
-    async def run(self, graph: str | bool = False) -> None:
+    async def _print(self, name: str = 'Nothing to print.', freq: int = 10) -> None:
+            """Asynchronously collect and print data.
+
+            Parameters
+            ----------
+            name : str, optional
+                The name of the data variable to graph (default is 'Nothing to print.').
+            freq : int, optional
+                The terminal update frequency in Hz (default is 10).
+            """
+
+            try:
+                while not self.stop.is_set():
+                    try:
+                        print(eval(name))
+
+                        try:
+                            await asyncio.sleep(1 / freq)
+                        except asyncio.exceptions.CancelledError:
+                            self.stop.set()
+                            raise
+                    except Exception as e:
+                        logging.error(f'Error in Printer: {e}')
+            except KeyboardInterrupt:
+                self.stop.set()
+                raise
+
+    async def run(self, graph: str | bool = False, print_: str | bool = False) -> None:
         """Run the main system components.
 
         Leaving graph set to default will not start a graphing window.
@@ -1385,6 +1426,10 @@ class Main:
             logging.info("Grapher on")
             tasks.append(asyncio.create_task(self._graph(name=graph)))
 
+        if print_:
+            logging.info("Printer on")
+            tasks.append(asyncio.create_task(self._print(name=print_)))
+
         try:
             await asyncio.gather(*tasks)
         except asyncio.exceptions.CancelledError:
@@ -1396,7 +1441,14 @@ class Main:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-g", "--graph", nargs='?', default=False, const='self.rxdata.alt.altitude', help="Attribute to graph")
+    parser.add_argument("-p", "--print", nargs='?', default=False, const='self.processor.spf_heading', help="Attribute to print")
     args = parser.parse_args()
 
+    whitelisted = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._")
+    if args.graph:
+        assert all(char in whitelisted for char in args.graph) and '__' not in args.graph
+    if args.print:
+        assert all(char in whitelisted for char in args.print) and '__' not in args.print
+
     main = Main()
-    asyncio.run(main.run(graph=args.graph))
+    asyncio.run(main.run(graph=args.graph, print_=args.print))

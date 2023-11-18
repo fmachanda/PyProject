@@ -1,7 +1,9 @@
 # import asyncio
+import re
 import threading
 import time
 import tkinter as tk
+
 import tkintermapview as tkmap
 
 from gcs import Connect
@@ -65,6 +67,8 @@ class GCSUI:
             self.map_widget.add_right_click_menu_command(label="Remove Marker", command=self.delete_map_marker, pass_coords=True)
             self.map.protocol("WM_DELETE_WINDOW", self.close_map)
             self.map_open = True
+        else:
+            self.map.lift()
 
     def close_map(self):
         self.map.destroy()
@@ -113,16 +117,39 @@ class GCSUI:
             self.connect_instance.map_pos = [0.0, 0.0]
 
         if self.connect_instance is not None:
-            try:
-                assert ';' not in cmd and '=' not in cmd
-                exec(f'self.connect_instance.{cmd}')
-                self.log(f"Sent command '{cmd}'")
-            except AssertionError:
-                self.log(f"Command '{cmd}' invalid")
-            except AttributeError:
-                self.log(f"Command '{cmd}' invalid")
-            except SyntaxError:
-                self.log(f"Command '{cmd}' invalid")
+            allowed_commands = {
+                'boot': self.connect_instance.boot,
+                'set_mode': self.connect_instance.set_mode,
+                'set_alt': self.connect_instance.set_alt,
+                'set_speed': self.connect_instance.set_speed,
+                'reposition': self.connect_instance.reposition,
+                'f_takeoff': self.connect_instance.f_takeoff,
+                'v_takeoff': self.connect_instance.v_takeoff,
+                'f_land': self.connect_instance.f_land,
+                'v_land': self.connect_instance.v_land,
+                'pid': self.connect_instance.pid,
+                'img': self.connect_instance.img,
+            }
+
+            pattern = re.compile(r'(\w+)\((.*?)\)')
+            match_ = pattern.match(cmd)
+
+            if match_:
+                function_name = match_.group(1)
+                arguments_str = match_.group(2)
+
+                arguments = [arg.strip() for arg in arguments_str.split(',')]
+                arguments = [arg for arg in arguments if arg and not arg.isspace()]
+
+                method_to_call = allowed_commands.get(function_name)
+
+                if method_to_call:
+                    result = method_to_call(*arguments)
+                    self.log(f"Executed command '{cmd}' with result: {result}")
+                else:
+                    print(f"Invalid function name: {function_name}")
+            else:
+                print(f"Invalid command format: {cmd}")
         else:
             self.log("Connect first")
 

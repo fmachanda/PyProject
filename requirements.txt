@@ -4,3 +4,4 @@ pycyphal
 pymavlink
 setuptools
 opencv-python
+tkintermapview

@@ -10,15 +10,21 @@ os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
 sys.path.append(os.getcwd())
 os.environ['MAVLINK20'] = '1'
 
+filehandler = logging.FileHandler('gcs/gcs.log', mode='w')
+filehandler.setLevel(logging.INFO)
+filehandler.setFormatter(logging.Formatter('(%(asctime)s %(name)s) %(levelname)s:%(message)s'))
+streamhandler = logging.StreamHandler()
+streamhandler.setLevel(logging.INFO)
+logging.basicConfig(format='%(name)s %(levelname)s:%(message)s', level=logging.DEBUG, handlers=[filehandler, streamhandler])
+
 from pymavlink import mavutil
 
 import common.key as key
 
 m = mavutil.mavlink
 
-filehandler = logging.FileHandler('gcs/gcs.log', mode='w')
-logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO, handlers=[filehandler, logging.StreamHandler()])
-logging.getLogger('pymavlink').setLevel(logging.ERROR)
+logging.getLogger('pymavlink').setLevel(logging.WARNING)
+filehandler.setLevel(logging.DEBUG)
 
 config = ConfigParser()
 config.read('./common/CONFIG.ini')

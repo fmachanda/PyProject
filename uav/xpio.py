@@ -11,7 +11,6 @@ import sys
 import time
 from configparser import ConfigParser
 from functools import wraps
-# import numpy as np
 
 os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
 sys.path.append(os.getcwd())
@@ -21,7 +20,11 @@ os.environ['UAVCAN__DIAGNOSTIC__SEVERITY'] = '2'
 os.environ['MAVLINK20'] = '1'
 
 filehandler = logging.FileHandler('uav/xpio.log', mode='w')
-logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO, handlers=[filehandler, logging.StreamHandler()])
+filehandler.setLevel(logging.INFO)
+filehandler.setFormatter(logging.Formatter('(%(asctime)s %(name)s) %(levelname)s:%(message)s'))
+streamhandler = logging.StreamHandler()
+streamhandler.setLevel(logging.INFO)
+logging.basicConfig(format='%(name)s %(levelname)s:%(message)s', level=logging.DEBUG, handlers=[filehandler, streamhandler])
 
 logging.warning("Generating UAVCAN files, please wait...")
 
@@ -34,8 +37,11 @@ from uavcan_archived.equipment import actuator, ahrs, air_data, esc, gnss, range
 
 import common.find_xp as find_xp
 
-logging.getLogger('pymavlink').setLevel(logging.ERROR)
 m = mavutil.mavlink
+
+for name in ['pymavlink', 'pycyphal', 'pydsdl', 'nunavut']:
+    logging.getLogger(name).setLevel(logging.WARNING)
+filehandler.setLevel(logging.DEBUG)
 
 config = ConfigParser()
 config.read('./common/CONFIG.ini')
@@ -160,8 +166,8 @@ class XPConnect:
                     rx_data[list(rx_data.keys())[index]] = value
 
         for index, dref in enumerate(tx_data):
-                msg = struct.pack('<4sxf500s', b'DREF', dref[1], dref[0])
-                self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
+            msg = struct.pack('<4sxf500s', b'DREF', dref[1], dref[0])
+            self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
 
         await asyncio.sleep(1 / self._freq)
 
@@ -305,7 +311,7 @@ class ServoIO:
     async def run(self) -> None:
         """docstring placeholder"""
         def on_servo(msg: actuator.ArrayCommand_1, _: pycyphal.transport.TransferFrom) -> None:
-            for index, command in enumerate(msg.commands[:TX_DATA_LAST_SERVO]):
+            for index, command in enumerate(msg.commands[:(TX_DATA_LAST_SERVO+1)]):
                 if command.command_type==actuator.Command_1.COMMAND_TYPE_POSITION:
                     tx_data[index][1] = math.degrees(command.command_value)
         self._sub_servo.receive_in_background(on_servo)
