@@ -16,6 +16,17 @@ simDR_view_z = find_dataref("sim/graphics/view/pilots_head_z")
 simDR_cockpit_data  = find_dataref("sim/network/dataout/data_to_screen")
 old_cockpit_data = {}
 
+simDR_fuels = find_dataref("sim/flightmodel/weight/m_fuel")
+simDR_station_weights = find_dataref("sim/flightmodel/weight/m_stations")
+
+simSET_WEIGHT_avionics = create_dataref("fmuas/config/weight/avionics_weight", "number", writable)
+simSET_WEIGHT_batt = create_dataref("fmuas/config/weight/batt_weight", "number", writable)
+simSET_WEIGHT_dome = create_dataref("fmuas/config/weight/dome_weight", "number", writable)
+simSET_WEIGHT_fwing = create_dataref("fmuas/config/weight/fwing_weight", "number", writable)
+simSET_WEIGHT_iwing = create_dataref("fmuas/config/weight/iwing_weight", "number", writable)
+simSET_WEIGHT_owing = create_dataref("fmuas/config/weight/owing_weight", "number", writable)
+simSET_WEIGHT_stab = create_dataref("fmuas/config/weight/stab_weight", "number", writable)
+
 simSET_pitch_axis = create_dataref("fmuas/config/joystick/pitch_axis_index", "number")
 simSET_roll_axis = create_dataref("fmuas/config/joystick/roll_axis_index", "number")
 simSET_yaw_axis = create_dataref("fmuas/config/joystick/yaw_axis_index", "number")
@@ -98,6 +109,28 @@ dofile('0.sim.servos.lua')
 function flight_start()
 
 	uasDR_python_running = 0
+
+	simSET_WEIGHT_avionics = 0.03
+	simSET_WEIGHT_batt = 2.2
+	simSET_WEIGHT_dome = 0.75
+
+	simSET_WEIGHT_fwing = 0.21
+	simSET_WEIGHT_iwing = 0.23
+	simSET_WEIGHT_owing = 0.08
+	simSET_WEIGHT_stab = 0.12
+
+	simDR_station_weights[0] = simSET_WEIGHT_avionics
+	simDR_station_weights[1] = simSET_WEIGHT_batt
+	simDR_station_weights[2] = simSET_WEIGHT_batt
+	simDR_station_weights[3] = simSET_WEIGHT_dome
+
+	simDR_fuels[0] = simSET_WEIGHT_fwing
+	simDR_fuels[1] = simSET_WEIGHT_iwing
+	simDR_fuels[2] = simSET_WEIGHT_owing
+	simDR_fuels[3] = simSET_WEIGHT_fwing
+	simDR_fuels[4] = simSET_WEIGHT_iwing
+	simDR_fuels[5] = simSET_WEIGHT_owing
+	simDR_fuels[6] = simSET_WEIGHT_stab
 	
 	for i=0,199 do
 		old_cockpit_data[i] = simDR_cockpit_data[i]
@@ -128,6 +161,19 @@ end
 
 function before_physics()
 
+	simDR_station_weights[0] = simSET_WEIGHT_avionics
+	simDR_station_weights[1] = simSET_WEIGHT_batt
+	simDR_station_weights[2] = simSET_WEIGHT_batt
+	simDR_station_weights[3] = simSET_WEIGHT_dome
+
+	simDR_fuels[0] = simSET_WEIGHT_fwing
+	simDR_fuels[1] = simSET_WEIGHT_iwing
+	simDR_fuels[2] = simSET_WEIGHT_owing
+	simDR_fuels[3] = simSET_WEIGHT_fwing
+	simDR_fuels[4] = simSET_WEIGHT_iwing
+	simDR_fuels[5] = simSET_WEIGHT_owing
+	simDR_fuels[6] = simSET_WEIGHT_stab
+
 	if uasDR_python_running == 1 then
 
 		WOW_before_physics()
@@ -143,6 +189,19 @@ function before_physics()
 end
 
 function after_physics()
+
+	simDR_station_weights[0] = simSET_WEIGHT_avionics
+	simDR_station_weights[1] = simSET_WEIGHT_batt
+	simDR_station_weights[2] = simSET_WEIGHT_batt
+	simDR_station_weights[3] = simSET_WEIGHT_dome
+
+	simDR_fuels[0] = simSET_WEIGHT_fwing
+	simDR_fuels[1] = simSET_WEIGHT_iwing
+	simDR_fuels[2] = simSET_WEIGHT_owing
+	simDR_fuels[3] = simSET_WEIGHT_fwing
+	simDR_fuels[4] = simSET_WEIGHT_iwing
+	simDR_fuels[5] = simSET_WEIGHT_owing
+	simDR_fuels[6] = simSET_WEIGHT_stab
 
 	SERVOS_after_physics()
 

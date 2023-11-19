@@ -89,7 +89,17 @@ simDR_wing_stow = find_dataref("sim/cockpit2/controls/wingsweep_ratio") -- RATIO
 simDR_wing_tilt = find_dataref("sim/cockpit2/controls/incidence_ratio") -- RATIO: 0 is flight / 1 is VTOL
 simDR_wing_tilt_actual = find_dataref("sim/flightmodel2/controls/incidence_ratio")
 
+simDR_gear = find_dataref("sim/cockpit2/controls/gear_handle_down")
+
 simDR_elevons = find_dataref("sim/flightmodel2/wing/elements/element_incidence_increase") -- Elevon L/1 is [20], Elevon R/2 is [30]
+
+simDR_prop_speeds = find_dataref("sim/cockpit2/engine/indicators/prop_speed_rpm")
+
+esc_pid_kp = 0.0
+esc_pid_ti = 0.0
+esc_pid_td = 0.0
+esc_pid_integral = 0.0
+esc_pid_prev_error = 0.0
 
 simDR_joystick_pitch = find_dataref("sim/joystick/yoke_pitch_ratio")
 simDR_joystick_roll = find_dataref("sim/joystick/yoke_roll_ratio")
@@ -110,6 +120,21 @@ function servo_noiser()
 
 end
 
+function esc_pid(actual, setpoint)
+    error = setpoint-actual
+
+    esc_pid_integral = esc_pid_integral + (esc_pid_kp/esc_pid_ti)*error*SIM_PERIOD
+    esc_pid_integral = math.min(math.max(esc_pid_integral, 0.0), 1.0)
+
+    local d = esc_pid_kp*esc_pid_td*(error - esc_pid_prev_error)/SIM_PERIOD
+    esc_pid_prev_error = error
+
+    local p = esc_pid_kp*error
+
+    local out = p + esc_pid_integral + d
+    return out
+end
+
 ----------------------------------------------------------------
 -- SIM FUNCTIONS -----------------------------------------------
 ----------------------------------------------------------------
@@ -128,6 +153,14 @@ function SERVOS_flight_start()
 	simDR_cant4 = simDR_elevons[30] + 45.0
     simDR_cant1 = simDR_wing_tilt_actual * 90.0
 	simDR_cant2 = simDR_wing_tilt_actual * 90.0
+    
+    uasDR_AFCS_wing_stow = 90.0
+
+    if simDR_wing_tilt_actual > 0.99 then
+        simDR_gear = 1.0
+    else
+        simDR_gear = 0.0
+    end
 
 end
 
@@ -139,12 +172,25 @@ function SERVOS_after_physics()
     servo_noiser()
 
     if uasDR_SERVOS_direct_mode == 1 then
-        pitch_deflection_raw = simDR_axes_values_array[simSET_pitch_axis]
-        pitch_deflection = ((pitch_deflection_raw - 0.5) / 2) + 0.75
+        pitch_deflection_raw = simDR_axes_values_array[simSET_pitch_axis] - 0.5
+        -- pitch_deflection = ((pitch_deflection_raw - 0.5) / 2) + 0.75
         -- pitch_deflection = -(((uasDR_AFCS_elevon1 + uasDR_AFCS_elevon2) / 2) - 45) / 60.0
-        roll_deflection_raw = simDR_axes_values_array[simSET_roll_axis]
-        roll_deflection = (roll_deflection_raw - 0.5) / 24
+        roll_deflection_raw = simDR_axes_values_array[simSET_roll_axis] - 0.5
+        -- roll_deflection = (roll_deflection_raw - 0.5) / 24
         -- roll_deflection = (uasDR_AFCS_elevon1 - uasDR_AFCS_elevon2) / 120.0
+        throttle_raw = 1 - simDR_axes_values_array[simSET_throttle_axis]
+
+        simDR_throttle1 = throttle_raw + pitch_deflection_raw + roll_deflection_raw
+        simDR_throttle2 = throttle_raw + pitch_deflection_raw - roll_deflection_raw
+        simDR_throttle3 = throttle_raw - pitch_deflection_raw + roll_deflection_raw
+        simDR_throttle4 = throttle_raw - pitch_deflection_raw - roll_deflection_raw
+
+        simDR_wing_tilt = 90 / 90.0
+        simDR_wing_stow = uasDR_AFCS_wing_stow / 90.0
+
+        pitch_deflection = -(((90 + 90) / 2) - 45) / 60.0
+        roll_deflection = (90 - 90) / 120.0
+
     else
 
         simDR_throttle1 = uasDR_AFCS_throttle1
@@ -172,6 +218,12 @@ function SERVOS_after_physics()
 	simDR_cant4 = simDR_elevons[30] + 45.0
     simDR_cant1 = simDR_wing_tilt_actual * 90.0
 	simDR_cant2 = simDR_wing_tilt_actual * 90.0
+
+    if simDR_wing_tilt_actual > 0.99 then
+        simDR_gear = 1.0
+    else
+        simDR_gear = 0.0
+    end
 
 end
 
