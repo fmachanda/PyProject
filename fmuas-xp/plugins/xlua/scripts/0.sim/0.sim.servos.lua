@@ -52,19 +52,19 @@ uasSET_SERVOS_noise_gain = create_dataref("fmuas/config/servos/noise_gain", "num
 
 uasDR_AFCS_elevon1 = create_dataref("fmuas/afcs/output/elevon1", "number", writable)
 uasDR_AFCS_elevon2 = create_dataref("fmuas/afcs/output/elevon2", "number", writable)
-uasDR_AFCS_throttle1 = create_dataref("fmuas/afcs/output/throttle1", "number", writable)
-uasDR_AFCS_throttle2 = create_dataref("fmuas/afcs/output/throttle2", "number", writable)
-uasDR_AFCS_throttle3 = create_dataref("fmuas/afcs/output/throttle3", "number", writable)
-uasDR_AFCS_throttle4 = create_dataref("fmuas/afcs/output/throttle4", "number", writable)
+uasDR_AFCS_rpm1 = create_dataref("fmuas/afcs/output/rpm1", "number", writable)
+uasDR_AFCS_rpm2 = create_dataref("fmuas/afcs/output/rpm2", "number", writable)
+uasDR_AFCS_rpm3 = create_dataref("fmuas/afcs/output/rpm3", "number", writable)
+uasDR_AFCS_rpm4 = create_dataref("fmuas/afcs/output/rpm4", "number", writable)
 uasDR_AFCS_wing_tilt = create_dataref("fmuas/afcs/output/wing_tilt", "number", writable)
 uasDR_AFCS_wing_stow = create_dataref("fmuas/afcs/output/wing_stow", "number", writable)
 
 uasDR_AFCS_elevon1 = 0.0
 uasDR_AFCS_elevon2 = 0.0
-uasDR_AFCS_throttle1 = 0.0
-uasDR_AFCS_throttle2 = 0.0
-uasDR_AFCS_throttle3 = 0.0
-uasDR_AFCS_throttle4 = 0.0
+uasDR_AFCS_rpm1 = 0.0
+uasDR_AFCS_rpm2 = 0.0
+uasDR_AFCS_rpm3 = 0.0
+uasDR_AFCS_rpm4 = 0.0
 uasDR_AFCS_wing_tilt = 0.0
 uasDR_AFCS_wing_stow = 0.0
 
@@ -85,9 +85,14 @@ simDR_cant3 = find_dataref("sim/aircraft/prop/acf_vertcant[2]")
 simDR_cant4 = find_dataref("sim/aircraft/prop/acf_vertcant[3]")
 
 simDR_wing_stow = find_dataref("sim/cockpit2/controls/wingsweep_ratio") -- RATIO: 0 is flight / 1 is stowed
--- simDR_wing_stow_actual = find_dataref("sim/flightmodel2/controls/wingsweep_ratio")
+simDR_wing_stow_actual = find_dataref("sim/flightmodel2/controls/wingsweep_ratio")
 simDR_wing_tilt = find_dataref("sim/cockpit2/controls/incidence_ratio") -- RATIO: 0 is flight / 1 is VTOL
 simDR_wing_tilt_actual = find_dataref("sim/flightmodel2/controls/incidence_ratio")
+
+rpm_cmd1 = create_dataref("fmuas/esc/rpm1", "number", writable)
+rpm_cmd2 = create_dataref("fmuas/esc/rpm2", "number", writable)
+rpm_cmd3 = create_dataref("fmuas/esc/rpm3", "number", writable)
+rpm_cmd4 = create_dataref("fmuas/esc/rpm4", "number", writable)
 
 simDR_gear = find_dataref("sim/cockpit2/controls/gear_handle_down")
 
@@ -95,9 +100,9 @@ simDR_elevons = find_dataref("sim/flightmodel2/wing/elements/element_incidence_i
 
 simDR_prop_speeds = find_dataref("sim/cockpit2/engine/indicators/prop_speed_rpm")
 
-esc_pid_kp = 0.0
-esc_pid_ti = 0.0
-esc_pid_td = 0.0
+esc_pid_kp = create_dataref("fmuas/esc/pid_kp", "number", writable)
+esc_pid_ti = create_dataref("fmuas/esc/pid_ti", "number", writable)
+esc_pid_td = create_dataref("fmuas/esc/pid_td", "number", writable)
 esc_pid_integral = 0.0
 esc_pid_prev_error = 0.0
 
@@ -121,9 +126,20 @@ function servo_noiser()
 end
 
 function esc_pid(actual, setpoint)
+
+    if setpoint<10 then
+        return 0.0
+    end
+
     error = setpoint-actual
 
-    esc_pid_integral = esc_pid_integral + (esc_pid_kp/esc_pid_ti)*error*SIM_PERIOD
+    if math.abs(esc_pid_ti)>0.00000000000000001 then
+        esc_pid_ki = esc_pid_kp/esc_pid_ti
+    else
+        esc_pid_ki = 0.0
+    end
+
+    esc_pid_integral = esc_pid_integral + esc_pid_ki*error*SIM_PERIOD
     esc_pid_integral = math.min(math.max(esc_pid_integral, 0.0), 1.0)
 
     local d = esc_pid_kp*esc_pid_td*(error - esc_pid_prev_error)/SIM_PERIOD
@@ -141,6 +157,12 @@ end
 
 function SERVOS_flight_start()
 
+    esc_pid_kp = 0.004
+    esc_pid_ti = 0.8
+    esc_pid_td = 0.0
+    esc_pid_integral = 0.0
+    esc_pid_prev_error = 0.0
+
     uasSET_SERVOS_noise_gain = 0.001
     noise = 0.0
 
@@ -153,8 +175,16 @@ function SERVOS_flight_start()
 	simDR_cant4 = simDR_elevons[30] + 45.0
     simDR_cant1 = simDR_wing_tilt_actual * 90.0
 	simDR_cant2 = simDR_wing_tilt_actual * 90.0
-    
+
     uasDR_AFCS_wing_stow = 90.0
+    uasDR_AFCS_wing_tilt = 90.0
+    uasDR_AFCS_elevon1 = 90.0
+    uasDR_AFCS_elevon2 = 90.0
+    simDR_wing_tilt = 1.0
+    simDR_wing_stow = 1.0
+    simDR_wing_stow_actual = 1.0
+    simDR_wing_tilt_actual = 1.0
+    uasDR_SERVOS_direct_mode = 1
 
     if simDR_wing_tilt_actual > 0.99 then
         simDR_gear = 1.0
@@ -165,6 +195,7 @@ function SERVOS_flight_start()
 end
 
 function SERVOS_after_physics()
+    uasDR_SERVOS_direct_mode = 1
 
     prev_pitch_deflection = pitch_deflection
     prev_roll_deflection = roll_deflection
@@ -180,23 +211,23 @@ function SERVOS_after_physics()
         -- roll_deflection = (uasDR_AFCS_elevon1 - uasDR_AFCS_elevon2) / 120.0
         throttle_raw = 1 - simDR_axes_values_array[simSET_throttle_axis]
 
-        simDR_throttle1 = throttle_raw + pitch_deflection_raw + roll_deflection_raw
-        simDR_throttle2 = throttle_raw + pitch_deflection_raw - roll_deflection_raw
-        simDR_throttle3 = throttle_raw - pitch_deflection_raw + roll_deflection_raw
-        simDR_throttle4 = throttle_raw - pitch_deflection_raw - roll_deflection_raw
+        rpm_cmd1 = 12000*(throttle_raw + 0*roll_deflection_raw + pitch_deflection_raw) + uasDR_AFCS_rpm1
+        rpm_cmd2 = 12000*(throttle_raw - 0*roll_deflection_raw + pitch_deflection_raw) + uasDR_AFCS_rpm2
+        rpm_cmd3 = 12000*(throttle_raw + 0*roll_deflection_raw - pitch_deflection_raw) + uasDR_AFCS_rpm3
+        rpm_cmd4 = 12000*(throttle_raw - 0*roll_deflection_raw - pitch_deflection_raw) + uasDR_AFCS_rpm4
 
-        simDR_wing_tilt = 90 / 90.0
+        simDR_wing_tilt = uasDR_AFCS_wing_tilt / 90.0
         simDR_wing_stow = uasDR_AFCS_wing_stow / 90.0
 
-        pitch_deflection = -(((90 + 90) / 2) - 45) / 60.0
-        roll_deflection = (90 - 90) / 120.0
+        pitch_deflection = -(((uasDR_AFCS_elevon1 + uasDR_AFCS_elevon2) / 2) - 45) / 60.0
+        roll_deflection = (uasDR_AFCS_elevon1 - uasDR_AFCS_elevon2) / 120.0
 
     else
 
-        simDR_throttle1 = uasDR_AFCS_throttle1
-        simDR_throttle2 = uasDR_AFCS_throttle2
-        simDR_throttle3 = uasDR_AFCS_throttle3
-        simDR_throttle4 = uasDR_AFCS_throttle4
+        rpm_cmd1 = uasDR_AFCS_rpm1
+        rpm_cmd2 = uasDR_AFCS_rpm2
+        rpm_cmd3 = uasDR_AFCS_rpm3
+        rpm_cmd4 = uasDR_AFCS_rpm4
 
         simDR_wing_tilt = uasDR_AFCS_wing_tilt / 90.0
         simDR_wing_stow = uasDR_AFCS_wing_stow / 90.0
@@ -218,6 +249,16 @@ function SERVOS_after_physics()
 	simDR_cant4 = simDR_elevons[30] + 45.0
     simDR_cant1 = simDR_wing_tilt_actual * 90.0
 	simDR_cant2 = simDR_wing_tilt_actual * 90.0
+
+    rpm_cmd1 = math.max(math.min(rpm_cmd1, 12000), 0)
+    rpm_cmd2 = math.max(math.min(rpm_cmd2, 12000), 0)
+    rpm_cmd3 = math.max(math.min(rpm_cmd3, 12000), 0)
+    rpm_cmd4 = math.max(math.min(rpm_cmd4, 12000), 0)
+
+    simDR_throttle1 = esc_pid(simDR_prop_speeds[0], rpm_cmd1)
+    simDR_throttle2 = esc_pid(simDR_prop_speeds[1], rpm_cmd2)
+    simDR_throttle3 = esc_pid(simDR_prop_speeds[2], rpm_cmd3)
+    simDR_throttle4 = esc_pid(simDR_prop_speeds[3], rpm_cmd4)
 
     if simDR_wing_tilt_actual > 0.99 then
         simDR_gear = 1.0

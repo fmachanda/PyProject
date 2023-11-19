@@ -85,10 +85,10 @@ tx_data = [
     [b'fmuas/afcs/output/elevon2', 0.0],
     [b'fmuas/afcs/output/wing_tilt', 0.0],
     [b'fmuas/afcs/output/wing_stow', 0.0],
-    [b'fmuas/afcs/output/throttle1', 0.0],
-    [b'fmuas/afcs/output/throttle2', 0.0],
-    [b'fmuas/afcs/output/throttle3', 0.0],
-    [b'fmuas/afcs/output/throttle4', 0.0],
+    [b'fmuas/afcs/output/rpm1', 0.0],
+    [b'fmuas/afcs/output/rpm2', 0.0],
+    [b'fmuas/afcs/output/rpm3', 0.0],
+    [b'fmuas/afcs/output/rpm4', 0.0],
 ]
 
 XP_FIND_TIMEOUT = 1
@@ -142,6 +142,8 @@ class XPConnect:
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((self.X_PLANE_IP, 0))
+        self.sock.settimeout(1)
+        self.conn_open = True
     
         msg = struct.pack('<4sxf500s', b'DREF', 1.0, b'fmuas/python_running')
         self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
@@ -150,26 +152,51 @@ class XPConnect:
             msg = struct.pack('<4sxii400s', b'RREF', self._freq, index, dref)
             self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
 
+    @async_loop_decorator(close=False)
+    async def _xpconnect_reconnect_loop(self):
+        await asyncio.sleep(1)
+
+    async def _xpconnect_reconnect(self):
+        await self._xpconnect_reconnect_loop()
+
     @async_loop_decorator()
     async def _xpconnect_run_loop(self) -> None:
         global rx_data
+        if self.conn_open:
+            try:
+                data, _ = self.sock.recvfrom(2048)
+            except socket.timeout:
+                logging.error("Socket timeout")
+                self.conn_open = False
+            else:
+                header = data[0:4]
 
-        data, _ = self.sock.recvfrom(2048)
-        header = data[0:4]
+                if header == b'RREF':
+                    num_values = int(len(data[5:]) / 8)
+                    for i in range(num_values):
+                        dref_info = data[(5 + 8 * i):(5 + 8 * (i + 1))]
+                        (index, value) = struct.unpack('<if', dref_info)
+                        if index < len(rx_data):
+                            rx_data[list(rx_data.keys())[index]] = value
 
-        if header == b'RREF':
-            num_values = int(len(data[5:]) / 8)
-            for i in range(num_values):
-                dref_info = data[(5 + 8 * i):(5 + 8 * (i + 1))]
-                (index, value) = struct.unpack('<if', dref_info)
-                if index < len(rx_data):
-                    rx_data[list(rx_data.keys())[index]] = value
+                for index, dref in enumerate(tx_data):
+                    msg = struct.pack('<4sxf500s', b'DREF', dref[1], dref[0])
+                    self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
 
-        for index, dref in enumerate(tx_data):
-            msg = struct.pack('<4sxf500s', b'DREF', dref[1], dref[0])
-            self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
-
-        await asyncio.sleep(1 / self._freq)
+                await asyncio.sleep(1 / self._freq)
+        else:
+            logging.debug("Attempting to reestablish socket")
+            self.sock.settimeout(0.1)
+            try:
+                self.sock.recvfrom(2048)
+            except socket.timeout:
+                await asyncio.sleep(0.1)
+            else:
+                logging.info("Socket reestablished")
+                self.sock.settimeout(1)
+                self.conn_open = True
+                msg = struct.pack('<4sxf500s', b'DREF', 1.0, b'fmuas/python_running')
+                self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
 
     async def run(self) -> None:
         logging.warning("Data streaming...\n----- Ctrl-C to exit -----")
@@ -197,6 +224,8 @@ class XPConnect:
         msg = struct.pack('<4sxf500s', b'DREF', 0.0, b'fmuas/python_running')
         self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
         logging.info("LUA suspended")
+
+        self.sock.close()
 
 
 class TestXPConnect:
@@ -349,7 +378,7 @@ class ESCIO:
         self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
         self._node.heartbeat_publisher.vendor_specific_status_code = os.getpid() % 100
         
-        self._sub_esc = self._node.make_subscriber(esc.RawCommand_1, 'esc')
+        self._sub_esc = self._node.make_subscriber(esc.RPMCommand_1, 'esc')
 
         self._pub_esc1_status = self._node.make_publisher(esc.Status_1, 'esc1_status')
         self._pub_esc2_status = self._node.make_publisher(esc.Status_1, 'esc2_status')
@@ -404,9 +433,9 @@ class ESCIO:
 
     async def run(self) -> None:
         """docstring placeholder"""
-        def on_esc(msg: esc.RawCommand_1, _: pycyphal.transport.TransferFrom) -> None:
-            for index, value in enumerate(msg.cmd):
-                tx_data[index + TX_DATA_FIRST_ESC][1] = value / 8192
+        def on_esc(msg: esc.RPMCommand_1, _: pycyphal.transport.TransferFrom) -> None:
+            for index, value in enumerate(msg.rpm):
+                tx_data[index + TX_DATA_FIRST_ESC][1] = value
         self._sub_esc.receive_in_background(on_esc)
 
         await self._escio_run_loop()

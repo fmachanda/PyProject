@@ -111,12 +111,13 @@ class GCSUI:
 
     def command(self):
         cmd = str(self.command_entry.get())
-        try:
-            self.connect_instance.map_pos = list(self.map_marker.position)
-        except AttributeError:
-            self.connect_instance.map_pos = [0.0, 0.0]
 
         if self.connect_instance is not None:
+            try:
+                self.connect_instance.map_pos = list(self.map_marker.position)
+            except AttributeError:
+                self.connect_instance.map_pos = [0.0, 0.0]
+
             allowed_commands = {
                 'boot': self.connect_instance.boot,
                 'set_mode': self.connect_instance.set_mode,
@@ -144,12 +145,17 @@ class GCSUI:
                 method_to_call = allowed_commands.get(function_name)
 
                 if method_to_call:
-                    result = method_to_call(*arguments)
-                    self.log(f"Executed command '{cmd}' with result: {result}")
+                    try:
+                        method_to_call(*arguments)
+                        result = "pass"
+                    except Exception as result:
+                        raise
+                    finally:
+                        self.log(f"Executed command '{function_name}' with result: {result}")
                 else:
-                    print(f"Invalid function name: {function_name}")
+                    self.log(f"Invalid function name: {function_name}")
             else:
-                print(f"Invalid command format: {cmd}")
+                self.log(f"Invalid command format: {cmd}")
         else:
             self.log("Connect first")
 

@@ -16,6 +16,8 @@ simDR_view_z = find_dataref("sim/graphics/view/pilots_head_z")
 simDR_cockpit_data  = find_dataref("sim/network/dataout/data_to_screen")
 old_cockpit_data = {}
 
+simDR_brake = find_dataref("sim/cockpit2/controls/parking_brake_ratio")
+
 simDR_fuels = find_dataref("sim/flightmodel/weight/m_fuel")
 simDR_station_weights = find_dataref("sim/flightmodel/weight/m_stations")
 
@@ -131,7 +133,9 @@ function flight_start()
 	simDR_fuels[4] = simSET_WEIGHT_iwing
 	simDR_fuels[5] = simSET_WEIGHT_owing
 	simDR_fuels[6] = simSET_WEIGHT_stab
-	
+
+	simDR_brake = 1.0
+
 	for i=0,199 do
 		old_cockpit_data[i] = simDR_cockpit_data[i]
 	end
@@ -161,6 +165,10 @@ end
 
 function before_physics()
 
+	if (simDR_rollrate>100 or simDR_pitchrate>100 or simDR_yawrate>100) and (simDR_pause==0) then
+		simCMD_pause:once()
+	end
+
 	simDR_station_weights[0] = simSET_WEIGHT_avionics
 	simDR_station_weights[1] = simSET_WEIGHT_batt
 	simDR_station_weights[2] = simSET_WEIGHT_batt
@@ -173,6 +181,8 @@ function before_physics()
 	simDR_fuels[4] = simSET_WEIGHT_iwing
 	simDR_fuels[5] = simSET_WEIGHT_owing
 	simDR_fuels[6] = simSET_WEIGHT_stab
+
+	simDR_brake = 1.0
 
 	if uasDR_python_running == 1 then
 
@@ -202,6 +212,8 @@ function after_physics()
 	simDR_fuels[4] = simSET_WEIGHT_iwing
 	simDR_fuels[5] = simSET_WEIGHT_owing
 	simDR_fuels[6] = simSET_WEIGHT_stab
+
+	simDR_brake = 1.0
 
 	SERVOS_after_physics()
 

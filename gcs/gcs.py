@@ -136,13 +136,13 @@ class Connect:
                 0,
                 command,
                 0,
-                params_full[0],
-                params_full[1],
-                params_full[2],
-                params_full[3],
-                params_full[4],
-                params_full[5],
-                params_full[6],
+                float(params_full[0]),
+                float(params_full[1]),
+                float(params_full[2]),
+                float(params_full[3]),
+                float(params_full[4]),
+                float(params_full[5]),
+                float(params_full[6]),
             )
 
             await asyncio.sleep(period)
@@ -170,13 +170,13 @@ class Connect:
                         0,
                         command,
                         0,
-                        params_full[0],
-                        params_full[1],
-                        params_full[2],
-                        params_full[3],
-                        params_full[4],
-                        params_full[5],
-                        params_full[6],
+                        float(params_full[0]),
+                        float(params_full[1]),
+                        float(params_full[2]),
+                        float(params_full[3]),
+                        float(params_full[4]),
+                        float(params_full[5]),
+                        float(params_full[6]),
                     )
 
                     await asyncio.sleep(period)
@@ -209,13 +209,13 @@ class Connect:
                 frame,
                 command,
                 0,0,
-                params_full[0],
-                params_full[1],
-                params_full[2],
-                params_full[3],
-                params_full[4],
-                params_full[5],
-                params_full[6],
+                float(params_full[0]),
+                float(params_full[1]),
+                float(params_full[2]),
+                float(params_full[3]),
+                int(float(params_full[4])),
+                int(float(params_full[5])),
+                int(float(params_full[6])),
             )
 
             await asyncio.sleep(period)
@@ -244,13 +244,13 @@ class Connect:
                         frame,
                         command,
                         0,0,
-                        params_full[0],
-                        params_full[1],
-                        params_full[2],
-                        params_full[3],
-                        params_full[4],
-                        params_full[5],
-                        params_full[6],
+                        float(params_full[0]),
+                        float(params_full[1]),
+                        float(params_full[2]),
+                        float(params_full[3]),
+                        int(float(params_full[4])),
+                        int(float(params_full[5])),
+                        int(float(params_full[6])),
                     )
 
                     await asyncio.sleep(period)
@@ -310,7 +310,7 @@ class Connect:
 
     def pid(self, kp: float, ti: float, td: float, setpoint: float):
         """DEVELOPMENT ONLY - send new PID parameters."""
-        asyncio.run(self._command_int('PID',kp, ti, td, setpoint, int(0), int(0), int(0), acknowledge=False))
+        asyncio.run(self._command_int('PID',kp, ti, td, setpoint, 0.0, 0.0, 0.0, acknowledge=False))
 
     def img(self, interval: float = 1, num: float = 1, sequence: float = 0):
         """DEVELOPMENT ONLY - send screenshot command."""

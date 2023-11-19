@@ -341,11 +341,11 @@ class GlobalTx:
             actuator.Command_1(3, actuator.Command_1.COMMAND_TYPE_POSITION, 0.0)  # Wing-stow
         ])
         
-        self.esc = esc.RawCommand_1([
-            int(0.0 * 8191), # Throttle 1
-            int(0.0 * 8191), # Throttle 2
-            int(0.0 * 8191), # Throttle 3
-            int(0.0 * 8191)  # Throttle 4
+        self.esc = esc.RPMCommand_1([
+            0, # Throttle 1
+            0, # Throttle 2
+            0, # Throttle 3
+            0  # Throttle 4
         ])
 
 
@@ -454,7 +454,7 @@ class MainIO:
         self._sub_slip = self._node.make_subscriber(air_data.Sideslip_1, 'slip')
 
         self._pub_servos = self._node.make_publisher(actuator.ArrayCommand_1, 'servos')
-        self._pub_escs = self._node.make_publisher(esc.RawCommand_1, 'escs')
+        self._pub_escs = self._node.make_publisher(esc.RPMCommand_1, 'escs')
 
         self._sub_clock_sync_time = self._node.make_subscriber(uavcan.time.SynchronizedTimestamp_1, 'clock_sync_time')
         # self._sub_clock_sync_time_last = self._node.make_subscriber(uavcan.time.Synchronization_1, 'clock_sync_time_last')
@@ -715,7 +715,7 @@ class Processor:
         self._pidv_vsp_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=1.0)
 
         self._pidv_dyw_yws = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=-math.pi/6)
-        self._pidv_yws_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-0.2, maximum=0.2)
+        self._pidv_yws_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-0.5, maximum=0.5)
 
     async def boot(self) -> None:
         """Perform boot-related tasks."""
@@ -800,7 +800,7 @@ class Processor:
 
         self._fthrottles.fill(self._outf_throttle)
 
-        return self._fthrottles
+        return 12000*self._fthrottles
 
     def _vtol_throttles(self) -> np.ndarray:
         """Calculate VTOL throttle commands from sensors."""
@@ -820,7 +820,7 @@ class Processor:
             self.main.rxdata.gps.dt = 0.0
 
         if (att:=self.main.rxdata.att).dt > 0.0:
-            self._spv_rollspeed = self._pidv_rol_rls.cycle(att.roll, self._spv_roll, att.dt)
+            # self._spv_rollspeed = self._pidv_rol_rls.cycle(att.roll, self._spv_roll, att.dt)
             self._spv_pitchspeed = self._pidv_pit_pts.cycle(att.pitch, self._spv_pitch, att.dt)
             self._outv_roll = self._pidv_rls_out.cycle(att.rollspeed, self._spv_rollspeed, att.dt)
             self._outv_pitch = self._pidv_pts_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt)
@@ -830,7 +830,13 @@ class Processor:
             self._outv_yaw = self._pidv_yws_out.cycle(att.yawspeed, self._spv_yawspeed, att.dt)
             self.main.rxdata.att.dt = 0.0
 
-        return self._vthrottles
+        t1 = self._outv_pitch + self._outv_roll + self._outv_yaw
+        t2 = self._outv_pitch - self._outv_roll - self._outv_yaw
+        t3 = -self._outv_pitch + self._outv_roll - self._outv_yaw
+        t4 = -self._outv_pitch - self._outv_roll + self._outv_yaw
+        self._vthrottles = np.array([t1, t2, t3, t4], dtype=np.float16)
+
+        return 12000*self._vthrottles
     #endregion
 
     @async_loop_decorator()
@@ -865,7 +871,7 @@ class Processor:
 
         self._servos[:2] = np.clip(self._servos[:2], -math.pi/12, 7*math.pi/12)
         self._servos[2:] = np.clip(self._servos[2:], 0.0, math.pi/2)
-        self._throttles = np.clip(self._throttles, 0.0, 1.0)
+        self._throttles = np.clip(self._throttles, -12000, 12000) # TODO: reset min to 0
 
         self.main.txdata.servo = actuator.ArrayCommand_1([
             actuator.Command_1(0, actuator.Command_1.COMMAND_TYPE_POSITION, self._servos[0]), # Elevon 1
@@ -874,11 +880,11 @@ class Processor:
             actuator.Command_1(3, actuator.Command_1.COMMAND_TYPE_POSITION, self._servos[3])  # Wing-tilt
         ])
         
-        self.main.txdata.esc = esc.RawCommand_1([
-            int(self._throttles[0] * 8191), # Throttle 1
-            int(self._throttles[1] * 8191), # Throttle 2
-            int(self._throttles[2] * 8191), # Throttle 3
-            int(self._throttles[3] * 8191)  # Throttle 4
+        self.main.txdata.esc = esc.RPMCommand_1([
+            int(self._throttles[0]), # Throttle 1
+            int(self._throttles[1]), # Throttle 2
+            int(self._throttles[2]), # Throttle 3
+            int(self._throttles[3])  # Throttle 4
         ])
 
         await asyncio.sleep(0)
@@ -1137,8 +1143,8 @@ class Controller:
                 # TODO TEMPORARY PID
                 case 0:
                     # PID TUNER GOTO
-                    self.main.processor._pidf_alt_vpa.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
-                    self.main.processor.spf_altitude = msg.param4
+                    self.main.processor._pidv_rls_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    self.main.processor._spv_rollspeed = msg.param4
                     logging.info(f"New PID state: {msg.param1}, {msg.param2}, {msg.param3} @ {msg.param4}")
                 # TODO TEMPORARY SCREENSHOT
                 case 1:
@@ -1470,7 +1476,7 @@ class Main:
 
         logging.warning(f"Boot successful on #{self.systemid}")
 
-        for _ in range(5):
+        for _ in range(2):
             self.state.inc_mode()
 
         tasks = [
@@ -1498,8 +1504,8 @@ class Main:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("-g", "--graph", nargs='?', default=False, const='self.rxdata.alt.altitude', help="Attribute to graph")
-    parser.add_argument("-p", "--print", nargs='?', default=False, const='self.processor.spf_heading', help="Attribute to print")
+    parser.add_argument("-g", "--graph", nargs='?', default=False, const='rxdata.att.rollspeed', help="Attribute to graph")
+    parser.add_argument("-p", "--print", nargs='?', default=False, const='processor._throttles', help="Attribute to print")
     args = parser.parse_args()
 
     whitelisted = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._")
