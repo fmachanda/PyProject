@@ -704,18 +704,18 @@ class Processor:
         self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
         self._pidv_xsp_rol = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
         self._pidv_rol_rls = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
-        self._pidv_rls_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-0.5, maximum=0.5)
+        self._pidv_rls_out = PID(kp=0.8, ti=0.5, td=1.9, integral_limit=None, minimum=-0.3, maximum=0.3)
 
         self._pidv_ydp_ysp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
         self._pidv_ysp_pit = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
         self._pidv_pit_pts = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
-        self._pidv_pts_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-0.5, maximum=0.5)
+        self._pidv_pts_out = PID(kp=0.8, ti=0.5, td=1.9, integral_limit=None, minimum=-0.3, maximum=0.5)
 
         self._pidv_alt_vsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-50.0, maximum=100.0)
         self._pidv_vsp_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=1.0)
 
         self._pidv_dyw_yws = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=-math.pi/6)
-        self._pidv_yws_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-0.5, maximum=0.5)
+        self._pidv_yws_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-0.3, maximum=0.3)
 
     async def boot(self) -> None:
         """Perform boot-related tasks."""
@@ -1143,8 +1143,11 @@ class Controller:
                 # TODO TEMPORARY PID
                 case 0:
                     # PID TUNER GOTO
+                    if msg.param4 > 0.1:
+                        self.main.processor._pidv_rls_out.reset()
+                        self.main.processor._pidv_pts_out.reset()
                     self.main.processor._pidv_rls_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
-                    self.main.processor._spv_rollspeed = msg.param4
+                    self.main.processor._pidv_pts_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
                     logging.info(f"New PID state: {msg.param1}, {msg.param2}, {msg.param3} @ {msg.param4}")
                 # TODO TEMPORARY SCREENSHOT
                 case 1:

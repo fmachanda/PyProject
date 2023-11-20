@@ -166,7 +166,7 @@ class XPConnect:
             try:
                 data, _ = self.sock.recvfrom(2048)
             except socket.timeout:
-                logging.error("Socket timeout")
+                logging.info("Socket timeout")
                 self.conn_open = False
             else:
                 header = data[0:4]
