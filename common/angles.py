@@ -1,7 +1,7 @@
 import math
 
 
-def quaternion_to_euler(q: list[float]) -> tuple[float]:
+def quaternion_to_euler(q: list[float, float, float, float]) -> tuple[float, float, float]:
     """Convert a quaternion angle to Euler. 
 
     Copied on 10/2/2023 from automaticaddison.com
@@ -103,29 +103,78 @@ def py_to_rp(Pc: float, Yc: float) -> tuple[float, float]:
 def rp_to_py(Rd: float, Pd: float) -> tuple[float, float]:
     """Convert angles from roll/pitch frame to pitch/yaw frame."""
     assert 0<=Pd<=180, "Input pitch angle must be between 0 degrees and 180 degrees."
-    print("------------------")
-    print("Input: ", Rd, Pd)
+    # print("------------------")
+    # print("Input: ", Rd, Pd)
     Rd = math.radians(Rd)
     Pd = math.radians(Pd)
 
     Pc = math.asin(math.sin(Pd) * math.cos(Rd))
-    print("Pc: ", math.degrees(Pc))
+    # print("Pc: ", math.degrees(Pc))
 
     try:
-        print("acos: ", _clip(math.cos(Pd) / math.cos(Pc)))
+        # print("acos: ", _clip(math.cos(Pd) / math.cos(Pc)))
         Yc = math.acos(_clip(math.cos(Pd) / math.cos(Pc)))
-        print("Yc v1: ", math.degrees(Yc))
+        # print("Yc v1: ", math.degrees(Yc))
         Yc *= -1 if (-math.pi<Rd<0 or math.pi<Rd<2*math.pi) else 1
-        print("Yc v2: ", math.degrees(Yc))
+        # print("Yc v2: ", math.degrees(Yc))
     except ZeroDivisionError:
         Yc = 0.0
-        print("Yc err: ", math.degrees(Yc))
+        # print("Yc err: ", math.degrees(Yc))
 
     Pc = round(math.degrees(Pc), 5)
     Yc = round(math.degrees(Yc), 5)
 
     # assert abs(math.cos(Pc)*math.sin(Yc) - math.sin(Pd)*math.sin(Rd)) < 1e-6
     return Pc, Yc
+
+def gps_angles(lat1: float, lon1: float, alt1: float, lat2: float, lon2: float, alt2: float) -> tuple[float, float, float]:
+    """Calculate bearing, elevation angle, and distance between two points."""
+    # TODO: doesn't account for curvature of Earth
+    lat1 = math.radians(lat1)
+    lon1 = math.radians(lon1)
+    lat2 = math.radians(lat2)
+    lon2 = math.radians(lon2)
+
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+
+    bearing = math.atan2(math.sin(dlon) * math.cos(lat2), math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon))
+    bearing = bearing % (2* math.pi)
+
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    distance = 6371000 * c
+    slant_angle = math.atan2(alt2 - alt1, distance)
+
+    bearing = math.degrees(bearing)
+    slant_angle = math.degrees(slant_angle)
+
+    return bearing, slant_angle, distance
+
+def calc_dyaw(current: float, desired: float) -> float: # TODO: if negative radians sent by uavcan
+    """Calculate yaw error.
+
+    Calculates the yaw error based on a given value and setpoint, 
+    taking into account wraparound at +/- pi radians.
+
+    Parameters
+    ----------
+    current : float
+        Current yaw value.
+    desired : float
+        Desired yaw setpoint.
+
+    Returns
+    -------
+    float
+        Yaw error.
+    """
+
+    dyaw = current - desired
+    dyaw = dyaw - 2*math.pi if dyaw > math.pi else dyaw
+    dyaw = dyaw + 2*math.pi if dyaw <= -math.pi else dyaw
+    return -dyaw
 
 def _tests() -> bool:
     assert py_to_rp(0, 0)==(0, 0)

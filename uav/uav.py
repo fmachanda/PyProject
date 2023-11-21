@@ -28,6 +28,7 @@ os.environ['CYPHAL_PATH'] = './common/data_types/custom_data_types;./common/data
 os.environ['PYCYPHAL_PATH'] = './common/pycyphal_generated'
 os.environ['UAVCAN__DIAGNOSTIC__SEVERITY'] = '2'
 os.environ['MAVLINK20'] = '1'
+os.environ['MAVLINK_DIALECT'] = 'common'
 
 filehandler = logging.FileHandler('uav/uav.log', mode='w')
 filehandler.setLevel(logging.INFO)
@@ -48,7 +49,7 @@ import common.grapher as grapher
 import common.image_processor as img
 from common.pid import PID
 from common.state_manager import GlobalState as g
-from common.angles import quaternion_to_euler, euler_to_quaternion
+from common.angles import quaternion_to_euler, euler_to_quaternion, gps_angles, calc_dyaw
 
 m = mavutil.mavlink
 
@@ -582,8 +583,6 @@ class Processor:
     -------
     boot(self)
         Initialize and perform boot-related tasks.
-    _calc_dyaw(self, value, setpoint)
-        Calculate yaw error.
     _flight_servos(self)
         Calculate flight servo commands.
     _vtol_servos(self)
@@ -683,31 +682,6 @@ class Processor:
         await asyncio.sleep(0)
 
     #region Calculations
-    @staticmethod
-    def _calc_dyaw(value: float, setpoint: float) -> float: # TODO: if negative radians sent by uavcan
-        """Calculate yaw error.
-
-        Calculates the yaw error based on a given value and setpoint, 
-        taking into account wraparound at +/- pi radians.
-
-        Parameters
-        ----------
-        value : float
-            Current yaw value.
-        setpoint : float
-            Desired yaw setpoint.
-
-        Returns
-        -------
-        float
-            Yaw error.
-        """
-
-        dyaw = value - setpoint
-        dyaw = dyaw - 2*math.pi if dyaw > math.pi else dyaw
-        dyaw = dyaw + 2*math.pi if dyaw <= -math.pi else dyaw
-        return -dyaw
-
     def _flight_servos(self) -> np.ndarray:
         """Calculate flight servo commands from sensors."""
         if (alt:=self.main.rxdata.alt).dt > 0.0:
@@ -726,7 +700,7 @@ class Processor:
             self._spf_aoa = self._pidf_vpa_aoa.cycle(self._vpath, self._spf_vpath, dt) # TODO
 
         if (att:=self.main.rxdata.att).dt > 0.0:
-            self._dyaw = Processor._calc_dyaw(att.yaw, self.spf_heading)
+            self._dyaw = calc_dyaw(att.yaw, self.spf_heading)
 
             self._spf_roll = self._pidf_dyw_rol.cycle(self._dyaw, 0.0, att.dt)
             self._spf_rollspeed = self._pidf_rol_rls.cycle(att.roll, self._spf_roll, att.dt)
@@ -784,7 +758,7 @@ class Processor:
             self._outv_roll = self._pidv_rls_out.cycle(att.rollspeed, self._spv_rollspeed, att.dt)
             self._outv_pitch = self._pidv_pts_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt)
 
-            self._dyaw = Processor._calc_dyaw(att.yaw, self.spf_heading)
+            self._dyaw = calc_dyaw(att.yaw, self.spf_heading)
             self._spv_yawspeed = self._pidv_dyw_yws.cycle(self._dyaw, 0.0, att.dt)
             self._outv_yaw = self._pidv_yws_out.cycle(att.yawspeed, self._spv_yawspeed, att.dt)
             self.main.rxdata.att.dt = 0.0
@@ -956,6 +930,7 @@ class Controller:
         self._mav_conn_gcs: mavutil.mavfile = mavutil.mavlink_connection(self.main.config.get('mavlink', 'uav_gcs_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1, input=False, autoreconnect=True)
         import common.key as key
         self._mav_conn_gcs.setup_signing(key.KEY.encode('utf-8'))
+        self._cam_id = self.main.config.getint('main', 'cam_id')
         asyncio.create_task(self._establish_cam(key=key.CAMKEY.encode('utf-8')))
 
     class PreExistingConnection(Exception):
@@ -987,11 +962,9 @@ class Controller:
 
             Controller.flush_buffer(self._cam_conn)
 
-            target=self.main.config.getint('main', 'cam_id')
+            logging.info(f"Connecting to camera #{self._cam_id}...")
 
-            logging.info(f"Connecting to camera #{target}...")
-
-            self._cam_conn.mav.change_operator_control_send(target, 0, 0, key)
+            self._cam_conn.mav.change_operator_control_send(self._cam_id, 0, 0, key)
             await asyncio.sleep(1)
 
             while not self.main.stop.is_set():
@@ -1003,16 +976,16 @@ class Controller:
                 if msg is not None and msg.get_type()=='CHANGE_OPERATOR_CONTROL_ACK':# and msg.get_srcSystem()==target and msg.gcs_system_id==self.main.systemid:
                     match msg.ack:
                         case 0:
-                            logging.info(f"Connected to camera #{target}")
+                            logging.info(f"Connected to camera #{self._cam_id}")
                             break
                         case 1 | 2:
-                            logging.info(f"Bad connection key for camera #{target}")
+                            logging.info(f"Bad connection key for camera #{self._cam_id}")
                             break
                         case 3:
-                            logging.info(f"Camera #{target} is connected to another UAV")
+                            logging.info(f"Camera #{self._cam_id} is connected to another UAV")
                             break
 
-                self._cam_conn.mav.change_operator_control_send(target, 0, 0, key)
+                self._cam_conn.mav.change_operator_control_send(self._cam_id, 0, 0, key)
                 await asyncio.sleep(0)
         except KeyboardInterrupt:
             pass
@@ -1084,33 +1057,22 @@ class Controller:
                 # DO_GIMBAL_MANAGER_PITCHYAW
                 case m.MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW:
                     logging.info(f"GCS commanding camera to pitch:{msg.param1}, yaw: {msg.param2}")
+                    print(euler_to_quaternion(0.0, math.radians(msg.param1), math.radians(msg.param2)))
                     self._cam_conn.mav.gimbal_device_set_attitude_send(
-                        self.main.config.getint('main', 'cam_id'),
+                        self._cam_id,
                         m.MAV_COMP_ID_CAMERA,
                         m.GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME,
                         euler_to_quaternion(0.0, math.radians(msg.param1), math.radians(msg.param2)), # TODO: q values wxyz
                         0.0, 0.0, 0.0 # angular velocities
                     )
                     # TODO: acknowledge
-                # DO_GIMBAL_SET_ROI_LOCATION
-                case m.MAV_CMD_DO_GIMBAL_SET_ROI_LOCATION:
-                    logging.info(f"GCS commanding camera to lat:{msg.param5}, lon: {msg.param6}, alt: {msg.param7}")
-                    # TODO: roi becomes wxyz
-                    self._cam_conn.mav.gimbal_device_set_attitude_send(
-                        self.main.config.getint('main', 'cam_id'),
-                        m.MAV_COMP_ID_CAMERA,
-                        m.GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME
-                        [0.0, 0.0, 0.0, 0.0], # TODO: q values wxyz
-                        0.0, 0.0, 0.0 # angular velocities
-                    )
-                    # TODO: acknowledge
                 # DO_GIMBAL_SET_ROI_NONE
-                case m.MAV_CMD_DO_GIMBAL_SET_ROI_NONE:
+                case m.MAV_CMD_DO_SET_ROI_NONE:
                     logging.info(f"GCS commanding camera to reset ROI")
                     self._cam_conn.mav.gimbal_device_set_attitude_send(
-                        self.main.config.getint('main', 'cam_id'),
+                        self._cam_id,
                         m.MAV_COMP_ID_CAMERA,
-                        m.GIMBAL_DEVICE_FLAGS_NEUTRAL
+                        m.GIMBAL_DEVICE_FLAGS_NEUTRAL,
                         [1.0, 0.0, 0.0, 0.0],
                         0.0, 0.0, 0.0
                     )
@@ -1143,7 +1105,7 @@ class Controller:
                 case 1:
                     logging.info("Commanding camera...")
                     self._cam_conn.mav.command_long_send(
-                        self.main.systemid,
+                        self._cam_id,
                         m.MAV_COMP_ID_CAMERA,
                         m.MAV_CMD_IMAGE_START_CAPTURE,
                         0,
@@ -1167,6 +1129,28 @@ class Controller:
                 # NAV_VTOL_LAND
                 case m.MAV_CMD_NAV_VTOL_LAND:
                     pass # TODO
+                # DO_GIMBAL_SET_ROI_LOCATION
+                case m.MAV_CMD_DO_SET_ROI_LOCATION:
+                    logging.info(f"GCS commanding camera to lat:{msg.x}, lon: {msg.y}, alt: {msg.z}")
+                    y, p, _ = gps_angles(
+                        self.main.rxdata.gps.latitude, 
+                        self.main.rxdata.gps.longitude, 
+                        self.main.rxdata.gps.altitude,
+                        msg.x,
+                        msg.y,
+                        msg.z
+                    )
+                    y = calc_dyaw(self.main.rxdata.att.yaw, math.radians(y))
+                    p = math.radians(p)
+                    quat = euler_to_quaternion(0.0, p, y)
+                    self._cam_conn.mav.gimbal_device_set_attitude_send(
+                        self._cam_id,
+                        m.MAV_COMP_ID_CAMERA,
+                        m.GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME,
+                        quat, # TODO: q values wxyz
+                        0.0, 0.0, 0.0 # angular velocities
+                    )
+                    # TODO: acknowledge
                 # Command unsupported
                 case _:
                     self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, 0, 0)

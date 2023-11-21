@@ -18,6 +18,7 @@ os.environ['CYPHAL_PATH']='./common/data_types/custom_data_types;./common/data_t
 os.environ['PYCYPHAL_PATH']='./common/pycyphal_generated'
 os.environ['UAVCAN__DIAGNOSTIC__SEVERITY'] = '2'
 os.environ['MAVLINK20'] = '1'
+os.environ['MAVLINK_DIALECT'] = 'common'
 
 filehandler = logging.FileHandler('uav/xpio.log', mode='w')
 filehandler.setLevel(logging.INFO)
@@ -36,6 +37,7 @@ from uavcan_archived.equipment import actuator, ahrs, air_data, esc, gnss, range
 from pymavlink import mavutil
 
 import common.find_xp as find_xp
+from common.angles import quaternion_to_euler, py_to_rp
 
 m = mavutil.mavlink
 
@@ -886,7 +888,7 @@ class Camera:
         import common.key as key
         self._camera_mav_conn.setup_signing(key.CAMKEY.encode('utf-8'))
 
-        self._att = [0.0, 0.0, 0.0, 0.0]
+        self._att = [0.0, 0.0] # r, p
 
     @async_loop_decorator()
     async def _camera_run_loop(self) -> None:
@@ -901,6 +903,9 @@ class Camera:
                 raise
             finally:
                 return
+        
+        if msg is not None:
+            print(msg)
             
         if msg is not None and msg.get_type() == 'CHANGE_OPERATOR_CONTROL':
             import common.key as key
@@ -942,7 +947,8 @@ class Camera:
                     self._camera_mav_conn.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, self._cam_id, 0)
             elif msg.target_system==self._uav_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'GIMBAL_DEVICE_SET_ATTITUDE':
                 # TODO: interpret wxyz in msg.q
-                self._att = msg.q
+                self._att = py_to_rp(*quaternion_to_euler(msg.q)[1:])
+                logging.info(f"Camera to {self._att}")
         await asyncio.sleep(0)
 
     async def _camera_run(self) -> None:
@@ -1090,7 +1096,13 @@ class TestCamera:
                         self._camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_DENIED, 255, 0, self._cam_id, 0)
                 else:
                     self._camera_mav_conn.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, self._cam_id, 0)
-
+            elif msg.target_system==self._cam_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'GIMBAL_DEVICE_SET_ATTITUDE':
+                # TODO: interpret wxyz in msg.q
+                print(math.degrees(quaternion_to_euler([*msg.q[1:], msg.q[0]])[0]))
+                print(math.degrees(quaternion_to_euler([*msg.q[1:], msg.q[0]])[1]))
+                print(math.degrees(quaternion_to_euler([*msg.q[1:], msg.q[0]])[2]))
+                self._att = py_to_rp(*[math.degrees(the) for the in quaternion_to_euler([*msg.q[1:], msg.q[0]])[1:]])
+                logging.info(f"Camera to {self._att}")
         await asyncio.sleep(0)
 
     async def _testcamera_run(self) -> None:

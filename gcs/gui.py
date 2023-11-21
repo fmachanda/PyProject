@@ -145,11 +145,24 @@ class GCSUI:
                 arguments = [arg.strip() for arg in arguments_str.split(',')]
                 arguments = [arg for arg in arguments if arg and not arg.isspace()]
 
+                positional_args = []
+                keyword_args = {}
+
+                for arg in arguments:
+                    if '=' in arg:
+                        key, value = arg.split('=')
+                        key = key.replace(" ", "")
+                        value = value.replace(" ", "")
+                        value = float(value.strip())
+                        keyword_args[key.strip()] = value
+                    else:
+                        positional_args.append(float(arg))
+
                 method_to_call = allowed_commands.get(function_name)
 
                 if method_to_call:
                     try:
-                        method_to_call(*arguments)
+                        method_to_call(*positional_args, **keyword_args)
                         result = "pass"
                     except Exception as result:
                         raise

@@ -9,6 +9,7 @@ from typing import Any
 os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
 sys.path.append(os.getcwd())
 os.environ['MAVLINK20'] = '1'
+os.environ['MAVLINK_DIALECT'] = 'common'
 
 filehandler = logging.FileHandler('gcs/gcs.log', mode='w')
 filehandler.setLevel(logging.INFO)
@@ -286,7 +287,7 @@ class Connect:
         logging.info("Calling reposition()")
         lat = self.map_pos[0] if lat is None else lat
         lon = self.map_pos[1] if lon is None else lon
-        asyncio.run(self._command_int('DO_REPOSITION', speed, 0, radius, yaw, int(lat*1e7), int(lon*1e7), alt*FT_TO_M, acknowledge=False))
+        asyncio.run(self._command_int('DO_REPOSITION', speed, 0, radius, yaw, int(lat*1e7), int(lon*1e7), int(alt*FT_TO_M), acknowledge=False))
 
     def f_takeoff(self, latitude: float, longitude: float, altitude: float, yaw: float = float('nan'), pitch: float = 10):
         """Command UAV conventional takeoff."""
@@ -323,7 +324,7 @@ class Connect:
         logging.info("Calling gimbal_roi()")
         lat = self.map_pos[0] if lat is None else lat
         lon = self.map_pos[1] if lon is None else lon
-        asyncio.run(self._command_int('DO_SET_ROI_LOCATION', id, 0, 0, 0, lat, lon, alt, acknowledge=False))
+        asyncio.run(self._command_int('DO_SET_ROI_LOCATION', id, 0, 0, 0, int(lat*1e7), int(lon*1e7), int(alt*FT_TO_M), acknowledge=False))
 
     def pid(self, kp: float, ti: float, td: float, setpoint: float):
         """DEVELOPMENT ONLY - send new PID parameters."""
