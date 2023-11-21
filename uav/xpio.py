@@ -78,6 +78,9 @@ rx_data = {
     b'sim/time/local_date_days': 0.0,
     b'sim/time/zulu_time_sec': 0.0,
     b'fmuas/clock/time': 0.0,
+
+    b'fmuas/camera/pitch_actual': 0.0,
+    b'fmuas/camera/roll_actual': 0.0,
 }
 
 tx_data = [
@@ -89,6 +92,8 @@ tx_data = [
     [b'fmuas/afcs/output/rpm2', 0.0],
     [b'fmuas/afcs/output/rpm3', 0.0],
     [b'fmuas/afcs/output/rpm4', 0.0],
+    [b'fmuas/camera/pitch', 0.0],
+    [b'fmuas/camera/roll', 0.0],
 ]
 
 XP_FIND_TIMEOUT = 1
@@ -881,6 +886,8 @@ class Camera:
         import common.key as key
         self._camera_mav_conn.setup_signing(key.CAMKEY.encode('utf-8'))
 
+        self._att = [0.0, 0.0, 0.0, 0.0]
+
     @async_loop_decorator()
     async def _camera_run_loop(self) -> None:
         try:
@@ -922,7 +929,7 @@ class Camera:
                 logging.debug("Camera rx heartbeat from UAV")
             elif msg.target_system==self._uav_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'COMMAND_LONG':
                 if msg.command == m.MAV_CMD_IMAGE_START_CAPTURE:
-                    cap = asyncio.create_task(self._capture_cycle(int(msg.param3), msg.param2))
+                    cap: asyncio.Task = asyncio.create_task(self._capture_cycle(int(msg.param3), msg.param2))
                     self._camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_START_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self._cam_id, 0)
                 elif msg.command == m.MAV_CMD_IMAGE_STOP_CAPTURE:
                     try:
@@ -933,7 +940,9 @@ class Camera:
                         self._camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_DENIED, 255, 0, self._cam_id, 0)
                 else:
                     self._camera_mav_conn.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, self._cam_id, 0)
-
+            elif msg.target_system==self._uav_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'GIMBAL_DEVICE_SET_ATTITUDE':
+                # TODO: interpret wxyz in msg.q
+                self._att = msg.q
         await asyncio.sleep(0)
 
     async def _camera_run(self) -> None:

@@ -128,6 +128,9 @@ class GCSUI:
                 'v_takeoff': self.connect_instance.v_takeoff,
                 'f_land': self.connect_instance.f_land,
                 'v_land': self.connect_instance.v_land,
+                'gimbal_pitchyaw': self.connect_instance.gimbal_pitchyaw,
+                'gimbal_roi_clear': self.connect_instance.gimbal_roi_clear,
+                'gimbal_roi': self.connect_instance.gimbal_roi,
                 'pid': self.connect_instance.pid,
                 'img': self.connect_instance.img,
             }

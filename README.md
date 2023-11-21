@@ -137,11 +137,11 @@ Refer to the `gcs.py` script for further documentation.
 
 `common/find_xp.py` copied from the [XPPython3 Docs](https://xppython3.readthedocs.io/en/latest/_static/find_xp.py)  
 
-`GlobalRx.Att.quaternion_to_euler()` method in `uav/uav.py` copied from [automaticaddison](https://automaticaddison.com/how-to-convert-a-quaternion-into-euler-angles-in-python/)
+`quaternion_to_euler()` and `euler_to_quaternion()` functions in `common/angles.py` copied from [automaticaddison](https://automaticaddison.com)
 
 `xlua.xpl` and `init.lua` in `fmuas-xp/plugins/` copied from X-Plane
 
-*All  other code is original.*
+***All  other code is original.***
 
 ##
 

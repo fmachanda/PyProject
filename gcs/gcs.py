@@ -281,7 +281,7 @@ class Connect:
         logging.info("Calling set_speed()")
         asyncio.run(self._command('DO_CHANGE_SPEED', m.SPEED_TYPE_AIRSPEED, airspeed*KT_TO_MS, -1))
 
-    def reposition(self, lat: float | None = None, lon: float | None = None, alt: float = 0, speed: float = -1, radius: float = 0, yaw: float = 1):
+    def reposition(self, lat: float | None = None, lon: float | None = None, alt: float = 0.0, speed: float = -1, radius: float = 0, yaw: float = 1):
         """Change UAV current waypoint."""
         logging.info("Calling reposition()")
         lat = self.map_pos[0] if lat is None else lat
@@ -307,6 +307,23 @@ class Connect:
         """Command UAV vertical landing."""
         logging.info("Calling v_land()")
         asyncio.run(self._command_int('NAV_VTOL_LAND', m.NAV_VTOL_LAND_OPTIONS_DEFAULT, 0, approch_alt, yaw, int(latitude), int(longitude), int(altitude)))
+
+    def gimbal_pitchyaw(self, pitch: float, yaw: float, pitchrate: float = 0.0, yawrate: float = 0.0, flags: int = m.GIMBAL_MANAGER_FLAGS_NEUTRAL, id: int = 0):
+        """Command gimbal attitude."""
+        logging.info("Calling gimbal_pitchyaw()")
+        asyncio.run(self._command('DO_GIMBAL_MANAGER_PITCHYAW', pitch, yaw, pitchrate, yawrate, flags, id, acknowledge=False))
+
+    def gimbal_roi_clear(self, id: int = 0):
+        """Command gimbal to reset roi."""
+        logging.info("Calling gimbal_roi_clear()")
+        asyncio.run(self._command('DO_SET_ROI_NONE', id, acknowledge=False))
+
+    def gimbal_roi(self, lat: float | None = None, lon: float | None = None, alt: float = 0.0, id: int = 0):
+        """Command gimbal to roi."""
+        logging.info("Calling gimbal_roi()")
+        lat = self.map_pos[0] if lat is None else lat
+        lon = self.map_pos[1] if lon is None else lon
+        asyncio.run(self._command_int('DO_SET_ROI_LOCATION', id, 0, 0, 0, lat, lon, alt, acknowledge=False))
 
     def pid(self, kp: float, ti: float, td: float, setpoint: float):
         """DEVELOPMENT ONLY - send new PID parameters."""

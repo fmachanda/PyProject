@@ -48,6 +48,7 @@ import common.grapher as grapher
 import common.image_processor as img
 from common.pid import PID
 from common.state_manager import GlobalState as g
+from common.angles import quaternion_to_euler, euler_to_quaternion
 
 m = mavutil.mavlink
 
@@ -125,48 +126,6 @@ class GlobalRx:
             # self._last_yaw = 0.0
             # self._last_yawspeed = 0.0
 
-        @staticmethod
-        def quaternion_to_euler(q: list[float]) -> tuple[float]:
-            """Convert a quaternion angle to Euler. 
-
-            Copied on 10/2/2023 from automaticaddison.com
-            
-            Parameters
-            ----------
-            q : tuple[float, float, float, float]
-                The quaternion values x, y, z, w
-            
-            Returns
-            -------
-            tuple[float, float, float]
-                A tuple of roll, pitch, yaw as radians in Euler format
-            
-            Raises
-            ------
-            ValueError
-                If the input is not of length 4
-            """
-
-            if len(q)!=4:
-                raise ValueError("Quaternion input must be tuple with length 4")
-
-            x, y, z, w = q
-
-            t0 = +2.0 * (w * x + y * z)
-            t1 = +1.0 - 2.0 * (x * x + y * y)
-            roll = math.atan2(t0, t1)
-        
-            t2 = +2.0 * (w * y - z * x)
-            t2 = +1.0 if t2 > +1.0 else t2
-            t2 = -1.0 if t2 < -1.0 else t2
-            pitch = math.asin(t2)
-        
-            t3 = +2.0 * (w * z + x * y)
-            t4 = +1.0 - 2.0 * (y * y + z * z)
-            yaw = math.atan2(t3, t4)
-        
-            return roll, pitch, yaw # in radians
-
         def dump(self, msg: ahrs.Solution_1) -> None:
             """Store data from a message."""
             self._last_time = self.time
@@ -178,7 +137,7 @@ class GlobalRx:
             # self._last_yawspeed = self.yawspeed
 
             self.time = msg.timestamp.usec
-            self.roll, self.pitch, self.yaw = GlobalRx.Att.quaternion_to_euler(msg.orientation_xyzw)
+            self.roll, self.pitch, self.yaw = quaternion_to_euler(msg.orientation_xyzw)
 
             if self.yaw < 0:
                 self.yaw += 2*math.pi
@@ -1122,9 +1081,40 @@ class Controller:
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_SPEED, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
                     except AttributeError:
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_SPEED, m.MAV_RESULT_TEMPORARILY_REJECTED, 255, 0, 0, 0)
-                # Command int only
-                case m.CMD_DO_REPOSITION | m.CMD_NAV_TAKEOFF | m.MAV_CMD_NAV_VTOL_TAKEOFF | m.MAV_CMD_NAV_LAND | m.MAV_CMD_NAV_VTOL_LAND:
-                    self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_COMMAND_INT_ONLY, 255, 0, 0, 0)
+                # DO_GIMBAL_MANAGER_PITCHYAW
+                case m.MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW:
+                    logging.info(f"GCS commanding camera to pitch:{msg.param1}, yaw: {msg.param2}")
+                    self._cam_conn.mav.gimbal_device_set_attitude_send(
+                        self.main.config.getint('main', 'cam_id'),
+                        m.MAV_COMP_ID_CAMERA,
+                        m.GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME,
+                        euler_to_quaternion(0.0, math.radians(msg.param1), math.radians(msg.param2)), # TODO: q values wxyz
+                        0.0, 0.0, 0.0 # angular velocities
+                    )
+                    # TODO: acknowledge
+                # DO_GIMBAL_SET_ROI_LOCATION
+                case m.MAV_CMD_DO_GIMBAL_SET_ROI_LOCATION:
+                    logging.info(f"GCS commanding camera to lat:{msg.param5}, lon: {msg.param6}, alt: {msg.param7}")
+                    # TODO: roi becomes wxyz
+                    self._cam_conn.mav.gimbal_device_set_attitude_send(
+                        self.main.config.getint('main', 'cam_id'),
+                        m.MAV_COMP_ID_CAMERA,
+                        m.GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME
+                        [0.0, 0.0, 0.0, 0.0], # TODO: q values wxyz
+                        0.0, 0.0, 0.0 # angular velocities
+                    )
+                    # TODO: acknowledge
+                # DO_GIMBAL_SET_ROI_NONE
+                case m.MAV_CMD_DO_GIMBAL_SET_ROI_NONE:
+                    logging.info(f"GCS commanding camera to reset ROI")
+                    self._cam_conn.mav.gimbal_device_set_attitude_send(
+                        self.main.config.getint('main', 'cam_id'),
+                        m.MAV_COMP_ID_CAMERA,
+                        m.GIMBAL_DEVICE_FLAGS_NEUTRAL
+                        [1.0, 0.0, 0.0, 0.0],
+                        0.0, 0.0, 0.0
+                    )
+                    # TODO: acknowledge
                 # Command unsupported
                 case _:
                     self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, 0, 0)
@@ -1177,9 +1167,6 @@ class Controller:
                 # NAV_VTOL_LAND
                 case m.MAV_CMD_NAV_VTOL_LAND:
                     pass # TODO
-                # Command long only
-                case m.MAV_CMD_DO_SET_MODE | m.MAV_CMD_DO_CHANGE_ALTITUDE | m.MAV_CMD_DO_CHANGE_SPEED:
-                    self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_COMMAND_LONG_ONLY, 255, 0, 0, 0)
                 # Command unsupported
                 case _:
                     self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, 0, 0)

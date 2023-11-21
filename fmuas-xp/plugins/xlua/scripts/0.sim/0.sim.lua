@@ -16,6 +16,12 @@ simDR_view_z = find_dataref("sim/graphics/view/pilots_head_z")
 simDR_cockpit_data  = find_dataref("sim/network/dataout/data_to_screen")
 old_cockpit_data = {}
 
+uasDR_CAM_pitch_actual = create_dataref("fmuas/camera/pitch_actual", "number")
+uasDR_CAM_roll_actual = create_dataref("fmuas/camera/roll_actual", "number")
+uasDR_CAM_pitch_cmd = create_dataref("fmuas/camera/pitch", "number", writable)
+uasDR_CAM_roll_cmd = create_dataref("fmuas/camera/roll", "number", writable)
+uasDR_CAM_rate_limit = create_dataref("fmuas/camera/rate_limit", "number", writable)
+
 simDR_brake = find_dataref("sim/cockpit2/controls/parking_brake_ratio")
 
 simDR_fuels = find_dataref("sim/flightmodel/weight/m_fuel")
@@ -136,6 +142,13 @@ function flight_start()
 
 	simDR_brake = 1.0
 
+	uasDR_CAM_rate_limit = 60.0
+
+	uasDR_CAM_pitch_actual = 180.0
+	uasDR_CAM_pitch_cmd = 180.0
+	uasDR_CAM_roll_actual = 0.0
+	uasDR_CAM_roll_cmd = 0.0
+
 	for i=0,199 do
 		old_cockpit_data[i] = simDR_cockpit_data[i]
 	end
@@ -195,6 +208,9 @@ function before_physics()
 	elseif simDR_pause == 0 then
 		simCMD_pause:once()
 	end
+
+	uasDR_CAM_pitch_actual = math.max(math.min(uasDR_CAM_pitch_cmd, uasDR_CAM_pitch_actual+(uasDR_CAM_rate_limit*SIM_PERIOD)), uasDR_CAM_pitch_actual-(uasDR_CAM_rate_limit*SIM_PERIOD))
+	uasDR_CAM_roll_actual = math.max(math.min(uasDR_CAM_roll_cmd, uasDR_CAM_roll_actual+(uasDR_CAM_rate_limit*SIM_PERIOD)), uasDR_CAM_roll_actual-(uasDR_CAM_rate_limit*SIM_PERIOD))
 
 end
 
