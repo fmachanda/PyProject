@@ -157,8 +157,8 @@ end
 
 function SERVOS_flight_start()
 
-    esc_pid_kp = 0.004
-    esc_pid_ti = 0.8
+    esc_pid_kp = 0.001
+    esc_pid_ti = 3.0
     esc_pid_td = 0.0
     esc_pid_integral = 0.0
     esc_pid_prev_error = 0.0
@@ -166,7 +166,7 @@ function SERVOS_flight_start()
     uasSET_SERVOS_noise_gain = 0.001
     noise = 0.0
 
-    uasDR_SERVOS_direct_mode = 0
+    uasDR_SERVOS_direct_mode = 1 --TODO
     simDR_joystick_override = 1
 
     uasSET_SERVOS_rate_limiter = 0.5
@@ -195,7 +195,6 @@ function SERVOS_flight_start()
 end
 
 function SERVOS_after_physics()
-    uasDR_SERVOS_direct_mode = 1
 
     prev_pitch_deflection = pitch_deflection
     prev_roll_deflection = roll_deflection
@@ -211,10 +210,10 @@ function SERVOS_after_physics()
         -- roll_deflection = (uasDR_AFCS_elevon1 - uasDR_AFCS_elevon2) / 120.0
         throttle_raw = 1 - simDR_axes_values_array[simSET_throttle_axis]
 
-        rpm_cmd1 = 14000*(throttle_raw + 0*roll_deflection_raw + 0*pitch_deflection_raw) + uasDR_AFCS_rpm1
-        rpm_cmd2 = 14000*(throttle_raw - 0*roll_deflection_raw + 0*pitch_deflection_raw) + uasDR_AFCS_rpm2
-        rpm_cmd3 = 14000*(throttle_raw + 0*roll_deflection_raw - 0*pitch_deflection_raw) + uasDR_AFCS_rpm3
-        rpm_cmd4 = 14000*(throttle_raw - 0*roll_deflection_raw - 0*pitch_deflection_raw) + uasDR_AFCS_rpm4
+        -- rpm_cmd1 = 14000*(throttle_raw + 0*roll_deflection_raw + 0*pitch_deflection_raw) + uasDR_AFCS_rpm1
+        -- rpm_cmd2 = 14000*(throttle_raw - 0*roll_deflection_raw + 0*pitch_deflection_raw) + uasDR_AFCS_rpm2
+        -- rpm_cmd3 = 14000*(throttle_raw + 0*roll_deflection_raw - 0*pitch_deflection_raw) + uasDR_AFCS_rpm3
+        -- rpm_cmd4 = 14000*(throttle_raw - 0*roll_deflection_raw - 0*pitch_deflection_raw) + uasDR_AFCS_rpm4
 
         simDR_wing_tilt = uasDR_AFCS_wing_tilt / 90.0
         simDR_wing_stow = uasDR_AFCS_wing_stow / 90.0
@@ -250,15 +249,22 @@ function SERVOS_after_physics()
     simDR_cant1 = simDR_wing_tilt_actual * 90.0
 	simDR_cant2 = simDR_wing_tilt_actual * 90.0
 
-    rpm_cmd1 = math.max(math.min(rpm_cmd1, 12000), 0)
-    rpm_cmd2 = math.max(math.min(rpm_cmd2, 12000), 0)
-    rpm_cmd3 = math.max(math.min(rpm_cmd3, 12000), 0)
-    rpm_cmd4 = math.max(math.min(rpm_cmd4, 12000), 0)
+    rpm_cmd1 = math.max(math.min(rpm_cmd1, 14000), 0)
+    rpm_cmd2 = math.max(math.min(rpm_cmd2, 14000), 0)
+    rpm_cmd3 = math.max(math.min(rpm_cmd3, 14000), 0)
+    rpm_cmd4 = math.max(math.min(rpm_cmd4, 14000), 0)
 
-    simDR_throttle1 = esc_pid(simDR_prop_speeds[0], rpm_cmd1)
-    simDR_throttle2 = esc_pid(simDR_prop_speeds[1], rpm_cmd2)
-    simDR_throttle3 = esc_pid(simDR_prop_speeds[2], rpm_cmd3)
-    simDR_throttle4 = esc_pid(simDR_prop_speeds[3], rpm_cmd4)
+    -- if simDR_wing_tilt_actual < 0.99 then
+    --     simDR_throttle1 = rpm_cmd1/14000
+    --     simDR_throttle2 = rpm_cmd2/14000
+    --     simDR_throttle3 = rpm_cmd3/14000
+    --     simDR_throttle4 = rpm_cmd4/14000
+    -- else
+        simDR_throttle1 = esc_pid(simDR_prop_speeds[0], rpm_cmd1)
+        simDR_throttle2 = esc_pid(simDR_prop_speeds[1], rpm_cmd2)
+        simDR_throttle3 = esc_pid(simDR_prop_speeds[2], rpm_cmd3)
+        simDR_throttle4 = esc_pid(simDR_prop_speeds[3], rpm_cmd4)
+    -- end
 
     if simDR_wing_tilt_actual > 0.99 or simDR_radalt<5 then
         simDR_gear = 1.0

@@ -79,6 +79,8 @@ class Connect:
         assert 0<target<256 and isinstance(target, int) and target!=systemid, "System ID target must be unique UINT8"
 
         self.map_pos = [0.0, 0.0]
+        
+        self._heart_inhibit = False
 
         check_mav_conn()
 
@@ -117,7 +119,6 @@ class Connect:
                 if i >= timeout_cycles-1:
                     logging.warning("Connection failed (timeout)")
 
-            # asyncio.create_task(self._heartbeat())
         except KeyboardInterrupt:
             self.close()
     
@@ -146,9 +147,10 @@ class Connect:
                 float(params_full[6]),
             )
 
-            await asyncio.sleep(period)
-
             if acknowledge:
+                self._heart_inhibit = True
+                await asyncio.sleep(period)
+
                 for i in range(timeout_cycles):
                     msg = mav_conn.recv_msg()
 
@@ -184,6 +186,7 @@ class Connect:
 
                     if i >= timeout_cycles-1:
                         logging.warning(f"{name} on #{self.target} failed (timeout)")
+                self._heart_inhibit = False
         except KeyboardInterrupt:
             self.close()
 
@@ -219,9 +222,9 @@ class Connect:
                 int(float(params_full[6])),
             )
 
-            await asyncio.sleep(period)
-
             if acknowledge:
+                self._heart_inhibit = True
+                await asyncio.sleep(period)
                 for i in range(timeout_cycles):
                     msg = mav_conn.recv_msg()
 
@@ -258,6 +261,7 @@ class Connect:
 
                     if i >= timeout_cycles-1:
                         logging.warning(f"{name} on #{self.target} failed (timeout)")
+                self._heart_inhibit = False
         except KeyboardInterrupt:
             self.close()
 
@@ -346,6 +350,9 @@ class Connect:
                 )
 
     def listen(self) -> bool:
+        if self._heart_inhibit:
+            return True
+        
         try:
             msg = mav_conn.recv_msg()
         except ConnectionError:

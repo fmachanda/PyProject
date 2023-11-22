@@ -8669,7 +8669,7 @@ P _body/0/_locked/9,9 0
 P _body/0/_locked/i_count 20
 P _body/0/_locked/j_count 18
 P _body/0/_part_area_rule 1.000000000
-P _body/0/_part_cd 0.100000001
+P _body/0/_part_cd 0.000000000
 P _body/0/_part_phi 0.000000000
 P _body/0/_part_psi 0.000000000
 P _body/0/_part_rad 0.159999996
@@ -10140,7 +10140,7 @@ P _body/1/_locked/9,9 0
 P _body/1/_locked/i_count 20
 P _body/1/_locked/j_count 18
 P _body/1/_part_area_rule 1.000000000
-P _body/1/_part_cd 0.246000007
+P _body/1/_part_cd 0.088000000
 P _body/1/_part_phi 0.000000000
 P _body/1/_part_psi 0.000000000
 P _body/1/_part_rad 0.159999996
@@ -11611,7 +11611,7 @@ P _body/10/_locked/9,9 0
 P _body/10/_locked/i_count 20
 P _body/10/_locked/j_count 18
 P _body/10/_part_area_rule 1.000000000
-P _body/10/_part_cd 0.075000003
+P _body/10/_part_cd 0.177000001
 P _body/10/_part_phi 0.000000000
 P _body/10/_part_psi 0.000000000
 P _body/10/_part_rad 0.119999997
@@ -13082,7 +13082,7 @@ P _body/11/_locked/9,9 0
 P _body/11/_locked/i_count 20
 P _body/11/_locked/j_count 18
 P _body/11/_part_area_rule 1.000000000
-P _body/11/_part_cd 0.075000003
+P _body/11/_part_cd 0.177000001
 P _body/11/_part_phi 0.000000000
 P _body/11/_part_psi 0.000000000
 P _body/11/_part_rad 0.119999997
@@ -14553,7 +14553,7 @@ P _body/12/_locked/9,9 0
 P _body/12/_locked/i_count 20
 P _body/12/_locked/j_count 18
 P _body/12/_part_area_rule 1.000000000
-P _body/12/_part_cd 0.075000003
+P _body/12/_part_cd 0.177000001
 P _body/12/_part_phi 0.000000000
 P _body/12/_part_psi 0.000000000
 P _body/12/_part_rad 0.119999997
@@ -16024,7 +16024,7 @@ P _body/13/_locked/9,9 0
 P _body/13/_locked/i_count 20
 P _body/13/_locked/j_count 18
 P _body/13/_part_area_rule 1.000000000
-P _body/13/_part_cd 0.075000003
+P _body/13/_part_cd 0.177000001
 P _body/13/_part_phi 0.000000000
 P _body/13/_part_psi 0.000000000
 P _body/13/_part_rad 0.119999997
@@ -17495,7 +17495,7 @@ P _body/2/_locked/9,9 0
 P _body/2/_locked/i_count 20
 P _body/2/_locked/j_count 18
 P _body/2/_part_area_rule 1.000000000
-P _body/2/_part_cd 0.100000001
+P _body/2/_part_cd 0.000000000
 P _body/2/_part_phi 0.000000000
 P _body/2/_part_psi 0.000000000
 P _body/2/_part_rad 0.159999996
@@ -17784,27 +17784,7 @@ P _gear/7/_gear_type 0
 P _gear/8/_gear_type 0
 P _gear/9/_gear_type 0
 P _gear/count 10
-P _lite/0/_dist 100.000000000
-P _lite/0/_hide 0
-P _lite/0/_index 0
-P _lite/0/_lite_type landing
-P _lite/0/_rgb/0 1.000000000
-P _lite/0/_rgb/1 1.000000000
-P _lite/0/_rgb/2 1.000000000
-P _lite/0/_rgb/count 3
-P _lite/0/_v10_att_body -1
-P _lite/0/_v10_att_gear -1
-P _lite/0/_v10_att_phi_ref 0.000000000
-P _lite/0/_v10_att_psi_ref 0.000000000
-P _lite/0/_v10_att_the_ref -90.000000000
-P _lite/0/_v10_att_wing -1
-P _lite/0/_v10_att_x_acf_prt_ref 0.000000000
-P _lite/0/_v10_att_y_acf_prt_ref -0.140000001
-P _lite/0/_v10_att_z_acf_prt_ref 0.150000006
-P _lite/0/_v10_is_internal 554
-P _lite/0/_v10_steers_with_gear 0
-P _lite/0/_width 40.000000000
-P _lite/count 1
+P _lite/count 0
 P _lite_equip/_land_lite_off_on_retract_EQ 0
 P _lite_equip/_taxi_lite_off_on_retract_EQ 0
 P _obja/0/_obj_flags 0
@@ -19747,7 +19727,7 @@ P _wing/0/_inc_vect/7 0
 P _wing/0/_inc_vect/8 0
 P _wing/0/_inc_vect/9 0
 P _wing/0/_inc_vect/count 10
-P _wing/0/_incid_chrd_inc 13.698386192
+P _wing/0/_incid_chrd_inc 0.000000000
 P _wing/0/_incid_full_up 90.000000000
 P _wing/0/_incidence/0 0.000000000
 P _wing/0/_incidence/1 0.000000000
@@ -21550,7 +21530,7 @@ P _wing/1/_inc_vect/7 0
 P _wing/1/_inc_vect/8 0
 P _wing/1/_inc_vect/9 0
 P _wing/1/_inc_vect/count 10
-P _wing/1/_incid_chrd_inc 13.698386192
+P _wing/1/_incid_chrd_inc 0.000000000
 P _wing/1/_incid_full_up 90.000000000
 P _wing/1/_incidence/0 0.000000000
 P _wing/1/_incidence/1 0.000000000
@@ -31674,7 +31654,7 @@ P acf/_auto_rpm_with_tvec 0
 P acf/_auto_sync_EQ 0
 P acf/_auto_trim_EQ 0
 P acf/_autopilot_logic 0
-P acf/_average_mac_acf 0.449999988
+P acf/_average_mac_acf 0.449999958
 P acf/_bagg_1/0 0.000000000
 P acf/_bagg_1/1 0.000000000
 P acf/_bagg_1/2 0.000000000
@@ -33359,7 +33339,7 @@ P acf/_ground_pwr/2 0.000000000
 P acf/_ground_pwr/count 3
 P acf/_gyro_spooldown_time 60.000000000
 P acf/_gyro_spoolup_time 5.000000000
-P acf/_h_eqlbm -0.019474534
+P acf/_h_eqlbm -0.013436107
 P acf/_has_ADG 0
 P acf/_has_APU_bleed_air 0
 P acf/_has_APU_generator 0
@@ -34110,7 +34090,7 @@ P acf/_tank_xyz_full/8,1 0.000000000
 P acf/_tank_xyz_full/8,2 0.000000000
 P acf/_tank_xyz_full/i_count 9
 P acf/_tank_xyz_full/j_count 3
-P acf/_the_eqlbm -8.524594307
+P acf/_the_eqlbm -6.842458725
 P acf/_thro_non_vect_props_at_sin_vect 0
 P acf/_thro_x_ctr 356.125000000
 P acf/_throt_max_fwd_emr 1.000000000

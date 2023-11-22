@@ -94,8 +94,8 @@ tx_data = [
     [b'fmuas/afcs/output/rpm2', 0.0],
     [b'fmuas/afcs/output/rpm3', 0.0],
     [b'fmuas/afcs/output/rpm4', 0.0],
-    [b'fmuas/camera/pitch', 0.0],
     [b'fmuas/camera/roll', 0.0],
+    [b'fmuas/camera/pitch', 180.0],
 ]
 
 XP_FIND_TIMEOUT = 1
@@ -903,9 +903,6 @@ class Camera:
                 raise
             finally:
                 return
-        
-        if msg is not None:
-            print(msg)
             
         if msg is not None and msg.get_type() == 'CHANGE_OPERATOR_CONTROL':
             import common.key as key
@@ -945,10 +942,10 @@ class Camera:
                         self._camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_STOP_CAPTURE, m.MAV_RESULT_DENIED, 255, 0, self._cam_id, 0)
                 else:
                     self._camera_mav_conn.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, self._cam_id, 0)
-            elif msg.target_system==self._uav_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'GIMBAL_DEVICE_SET_ATTITUDE':
-                # TODO: interpret wxyz in msg.q
-                self._att = py_to_rp(*quaternion_to_euler(msg.q)[1:])
-                logging.info(f"Camera to {self._att}")
+            elif msg.target_system==self._cam_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'GIMBAL_DEVICE_SET_ATTITUDE':
+                self._att = py_to_rp(*[math.degrees(the) for the in quaternion_to_euler([*msg.q[1:], msg.q[0]])[1:]])
+                tx_data[TX_DATA_FIRST_ESC+4][1] = self._att[0]
+                tx_data[TX_DATA_FIRST_ESC+5][1] = self._att[1]
         await asyncio.sleep(0)
 
     async def _camera_run(self) -> None:
@@ -1097,12 +1094,9 @@ class TestCamera:
                 else:
                     self._camera_mav_conn.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, self._cam_id, 0)
             elif msg.target_system==self._cam_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'GIMBAL_DEVICE_SET_ATTITUDE':
-                # TODO: interpret wxyz in msg.q
-                print(math.degrees(quaternion_to_euler([*msg.q[1:], msg.q[0]])[0]))
-                print(math.degrees(quaternion_to_euler([*msg.q[1:], msg.q[0]])[1]))
-                print(math.degrees(quaternion_to_euler([*msg.q[1:], msg.q[0]])[2]))
                 self._att = py_to_rp(*[math.degrees(the) for the in quaternion_to_euler([*msg.q[1:], msg.q[0]])[1:]])
-                logging.info(f"Camera to {self._att}")
+                tx_data[TX_DATA_FIRST_ESC+4][1] = self._att[0]
+                tx_data[TX_DATA_FIRST_ESC+5][1] = self._att[1]
         await asyncio.sleep(0)
 
     async def _testcamera_run(self) -> None:

@@ -163,10 +163,8 @@ class GCSUI:
                 if method_to_call:
                     try:
                         method_to_call(*positional_args, **keyword_args)
-                        result = "pass"
+                        self.log(f"Executed command '{function_name}'")
                     except Exception as result:
-                        raise
-                    finally:
                         self.log(f"Executed command '{function_name}' with result: {result}")
                 else:
                     self.log(f"Invalid function name: {function_name}")

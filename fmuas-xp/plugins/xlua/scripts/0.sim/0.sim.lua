@@ -20,6 +20,10 @@ uasDR_CAM_pitch_actual = create_dataref("fmuas/camera/pitch_actual", "number")
 uasDR_CAM_roll_actual = create_dataref("fmuas/camera/roll_actual", "number")
 uasDR_CAM_pitch_cmd = create_dataref("fmuas/camera/pitch", "number", writable)
 uasDR_CAM_roll_cmd = create_dataref("fmuas/camera/roll", "number", writable)
+
+uasDR_CAM_eff_pitch = create_dataref("fmuas/camera/effective_pitch", "number", writable)
+uasDR_CAM_eff_yaw = create_dataref("fmuas/camera/effective_yaw", "number", writable)
+
 uasDR_CAM_rate_limit = create_dataref("fmuas/camera/rate_limit", "number", writable)
 
 simDR_brake = find_dataref("sim/cockpit2/controls/parking_brake_ratio")
@@ -60,26 +64,61 @@ function override_python(phase, duration)
 	end
 end
 
+function rp_to_py()
+	Rd = uasDR_CAM_roll_actual
+	Pd = uasDR_CAM_pitch_actual
+
+    Rd = math.pi * Rd / 180
+    Pd = math.pi * Pd / 180
+
+    Pc = math.asin(math.sin(Pd) * math.cos(Rd))
+
+	if math.cos(Pc)~=0.0 then
+		Yc = math.acos(math.max(math.min(math.cos(Pd) / math.cos(Pc), 1), -1))
+		if ((-math.pi<Rd)and(Rd<0)) or ((math.pi<Rd)and(Rd<2*math.pi)) then
+			Yc = -Yc
+		end
+	else
+        Yc = 0.0
+	end
+
+	Pc = 180 * Pc / math.pi
+	Yc = 180 * Yc / math.pi
+
+    uasDR_CAM_eff_pitch = Pc
+	uasDR_CAM_eff_yaw = Yc
+end
+
 cmd_handler = create_command("fmuas/commands/override_python", "Toggle override python lockout", override_python)
 
 function image_capture(phase, duration)
 	if phase == 0 then
+		print("Commanding FLIR image")
 		for i=0,199 do
 			old_cockpit_data[i] = simDR_cockpit_data[i]
 		end
 
-		simDR_view_phi = 0.0
-		simDR_view_psi = 0.0
-		simDR_view_the = -90.0
+		rp_to_py()
+
+		calc_phi = (uasDR_CAM_roll_actual*(1 - math.abs(uasDR_CAM_eff_yaw/90)) + uasDR_CAM_eff_yaw)
+		if (calc_phi<-90) or (calc_phi>90) then
+			simDR_view_phi = (180+calc_phi)%360
+		else
+			simDR_view_phi = calc_phi
+		end
+		simDR_view_psi = uasDR_CAM_eff_yaw
+		simDR_view_the = uasDR_CAM_eff_pitch
 		simDR_view_x = 0.0
-		simDR_view_y = -0.034
-		simDR_view_z = -0.196
+		simDR_view_y = 0.0
+		simDR_view_z = -0.22
 
 		for i=0,199 do
 			simDR_cockpit_data[i] = 0
 		end
 
 		simCMD_screenshot:once()
+		uasCMD_image_reset:once()
+		print("Successful FLIR image")
 	end
 end
 
@@ -92,7 +131,17 @@ function image_capture_reset(phase, duration)
 end
 
 cmd_handler = create_command("fmuas/commands/image_capture", "Capture image with FLIR", image_capture)
-cmd_handler = create_command("fmuas/commands/image_capture_reset", "Reset view/data after capture", image_capture_reset)
+uasCMD_image_reset = create_command("fmuas/commands/_image_capture_reset", "Reset view/data after capture", image_capture_reset)
+
+uasDR_flir_view_on = create_dataref("fmuas/view/camera_view_on", "number")
+
+function flir_view(phase, duration)
+	if phase == 0 then
+		uasDR_flir_view_on = math.abs(uasDR_flir_view_on-1)
+	end
+end
+
+cmd_handler = create_command("fmuas/commands/toggle_camera_view", "Turn on/off FLIR view", flir_view)
 
 ----------------------------------------------------------------
 -- INTERNAL FUNCTIONS ------------------------------------------
@@ -117,6 +166,7 @@ dofile('0.sim.servos.lua')
 function flight_start()
 
 	uasDR_python_running = 0
+	uasDR_flir_view_on = 0
 
 	simSET_WEIGHT_avionics = 0.03
 	simSET_WEIGHT_batt = 2
@@ -211,6 +261,17 @@ function before_physics()
 
 	uasDR_CAM_pitch_actual = math.max(math.min(uasDR_CAM_pitch_cmd, uasDR_CAM_pitch_actual+(uasDR_CAM_rate_limit*SIM_PERIOD)), uasDR_CAM_pitch_actual-(uasDR_CAM_rate_limit*SIM_PERIOD))
 	uasDR_CAM_roll_actual = math.max(math.min(uasDR_CAM_roll_cmd, uasDR_CAM_roll_actual+(uasDR_CAM_rate_limit*SIM_PERIOD)), uasDR_CAM_roll_actual-(uasDR_CAM_rate_limit*SIM_PERIOD))
+
+	rp_to_py()
+
+	if uasDR_flir_view_on==1 then
+		simDR_view_phi = (uasDR_CAM_roll_actual*(1 - math.abs(uasDR_CAM_eff_yaw/90)) + uasDR_CAM_eff_yaw)
+		simDR_view_psi = uasDR_CAM_eff_yaw
+		simDR_view_the = uasDR_CAM_eff_pitch
+		simDR_view_x = 0.0
+		simDR_view_y = 0.0
+		simDR_view_z = -0.22
+	end
 
 end
 
