@@ -62,6 +62,8 @@ os.system('cls' if os.name == 'nt' else 'clear')
 DEFAULT_FREQ = 60
 HEARTBEAT_TIMEOUT = 2.0
 
+_DEBUG_SKIP = 2 # TODO: remove this!!
+
 system_ids = []
 
 
@@ -644,7 +646,9 @@ class Processor:
 
         self._outf_pitch = 0.0
         self._outf_roll = 0.0
-        self._outf_throttle = 0.0
+        self._outf_throttle_ias = 0.0
+        self._throttle_roll_corr = 0.0
+        self._throttle_vpa_corr = 0.0
 
         self._outv_pitch = 0.0
         self._outv_roll = 0.0
@@ -654,28 +658,28 @@ class Processor:
         # self._pid{f or v}_{from}_{to}
 
         self._pidf_alt_vpa = PID(kp=0.007, ti=0.01, td=0.1, integral_limit=0.05, maximum=0.05, minimum=-0.05)
-        self._pidf_vpa_aoa = PID(kp=0.7, ti=3.0, td=0.05, integral_limit=0.2, maximum=math.pi/10, minimum=-0.05)
+        self._pidf_vpa_aoa = PID(kp=0.7, ti=3.0, td=0.05, integral_limit=0.2, maximum=math.pi/8, minimum=-0.05)
         self._pidf_aoa_out = PID(kp=-0.07, ti=-0.008, td=0.02, integral_limit=1, maximum=0.0, minimum=-math.pi/12)
         self._pidf_dyw_rol = PID(kp=-0.75, ti=-8.0, td=0.002, integral_limit=0.1, maximum=math.pi/6, minimum=-math.pi/6)
         self._pidf_rol_rls = PID(kp=1.5, ti=6.0, td=0.02, integral_limit=0.2, maximum=2.0, minimum=-2.0)
         self._pidf_rls_out = PID(kp=0.005, ti=0.003, td=0.005, integral_limit=0.1, maximum=0.1, minimum=-0.1)
-        self._pidf_ias_out = PID(kp=0.1, ti=0.0, td=0.0, integral_limit=1.0, maximum=1.00, minimum=0.02) # TODO
+        self._pidf_ias_thr = PID(kp=0.1, ti=0.0, td=0.0, integral_limit=1.0, maximum=1.00, minimum=0.02) # TODO
 
         self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
         self._pidv_xsp_rol = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
-        self._pidv_rol_rls = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
-        self._pidv_rls_out = PID(kp=0.08, ti=0.1, td=0.05, integral_limit=None, minimum=-0.3, maximum=0.3)
+        self._pidv_rol_rls = PID(kp=2.0, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
+        self._pidv_rls_out = PID(kp=0.02, ti=0.15, td=0.08, integral_limit=None, minimum=-0.08, maximum=0.08)
 
         self._pidv_ydp_ysp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
         self._pidv_ysp_pit = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
-        self._pidv_pit_pts = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
-        self._pidv_pts_out = PID(kp=0.09, ti=0.1, td=0.05, integral_limit=None, minimum=-0.3, maximum=0.5)
+        self._pidv_pit_pts = PID(kp=2.0, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
+        self._pidv_pts_out = PID(kp=0.033, ti=0.12, td=0.08, integral_limit=None, minimum=-0.1, maximum=0.1)
 
         self._pidv_alt_vsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-50.0, maximum=100.0)
         self._pidv_vsp_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=1.0)
 
         self._pidv_dyw_yws = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=-math.pi/6)
-        self._pidv_yws_out = PID(kp=0.02, ti=0.0, td=0.0, integral_limit=None, minimum=-0.3, maximum=0.3)
+        self._pidv_yws_out = PID(kp=0.15, ti=0.0, td=0.0, integral_limit=None, minimum=-0.3, maximum=0.3)
 
     async def boot(self) -> None:
         """Perform boot-related tasks."""
@@ -684,7 +688,7 @@ class Processor:
         await asyncio.sleep(0)
 
     #region Calculations
-    def _flight_servos(self) -> np.ndarray:
+    def _flight_calc(self) -> np.ndarray:
         """Calculate flight servo commands from sensors."""
         if (alt:=self.main.rxdata.alt).dt > 0.0:
             self._spf_vpath = self._pidf_alt_vpa.cycle(alt.altitude, self.spf_altitude, alt.dt)
@@ -700,6 +704,7 @@ class Processor:
 
             self._vpath = att.pitch - math.cos(att.roll) * aoa.aoa
             self._spf_aoa = self._pidf_vpa_aoa.cycle(self._vpath, self._spf_vpath, dt) # TODO
+            self._throttle_vpa_corr = 4*(self._spf_vpath-self._vpath) if self._vpath<self._spf_vpath-0.05 else 0.0
 
         if (att:=self.main.rxdata.att).dt > 0.0:
             self._dyaw = calc_dyaw(att.yaw, self.spf_heading)
@@ -708,38 +713,33 @@ class Processor:
             self._spf_rollspeed = self._pidf_rol_rls.cycle(att.roll, self._spf_roll, att.dt)
             self._outf_roll = self._pidf_rls_out.cycle(att.rollspeed, self._spf_rollspeed, att.dt)
 
+            self._throttle_roll_corr = abs(math.sin(att.roll)) if abs(att.roll)>math.pi/24 else 0.0
+
             self.main.rxdata.att.dt = 0.0
 
         if (aoa:=self.main.rxdata.aoa).dt > 0.0:
             self._outf_pitch = self._pidf_aoa_out.cycle(aoa.aoa, self._spf_aoa, aoa.dt)
             self.main.rxdata.aoa.dt = 0.0
 
+        if (ias:=self.main.rxdata.ias).dt > 0.0:
+            self._outf_throttle_ias = self._pidf_ias_thr.cycle(ias.ias, self.spf_ias, ias.dt)
+            ias.dt = 0.0
+
         self._fservos[0] = self._outf_pitch + self._outf_roll # TODO
         self._fservos[1] = self._outf_pitch - self._outf_roll # TODO
         self._fservos[2:].fill(0.0)
+        self._fservos = self._fservos.clip(-10.0, 10.0) # overflow protection (not servo limits)
 
-        return self._fservos
+        self._throttle_roll_corr = min(self._throttle_roll_corr, 1.0)
+        self._throttle_vpa_corr = min(self._throttle_vpa_corr, 1.0)
 
-    def _vtol_servos(self) -> np.ndarray:
-        """Calculate VTOL servo commands from sensors."""
-        self._vservos.fill(math.pi/2)
-        if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_HOVER:
-            self._vservos[2] = 0.0
-        return self._vservos
+        self._fthrottles.fill(self._outf_throttle_ias + self._throttle_vpa_corr + self._throttle_roll_corr)
+        self._fthrottles = self._fthrottles.clip(0.0, 1.0)
+        self._fthrottles *= Processor.MAX_THROTTLE
 
-    def _flight_throttles(self) -> np.ndarray:
-        """Calculate flight throttle commands from sensors."""
-        if self.main.rxdata.ias.dt > 0.0:
-            self._outf_throttle = self._pidf_ias_out.cycle(self.main.rxdata.ias.ias, self.spf_ias, self.main.rxdata.ias.dt)
-            self.main.rxdata.ias.dt = 0.0
-        
-        _pad = 2000 if self.main.rxdata.alt.altitude < self.spf_altitude-5 else 0
+        return self._fservos, self._fthrottles
 
-        self._fthrottles.fill(self._outf_throttle)
-
-        return Processor.MAX_THROTTLE*self._fthrottles + _pad
-
-    def _vtol_throttles(self) -> np.ndarray:
+    def _vtol_calc(self) -> np.ndarray:
         """Calculate VTOL throttle commands from sensors."""
         if (alt:=self.main.rxdata.alt).dt > 0.0:
             self._spv_vs = self._pidv_alt_vsp.cycle(alt.altitude, self.spv_altitude, alt.dt)
@@ -757,8 +757,8 @@ class Processor:
             self.main.rxdata.gps.dt = 0.0
 
         if (att:=self.main.rxdata.att).dt > 0.0:
-            # self._spv_rollspeed = self._pidv_rol_rls.cycle(att.roll, self._spv_roll, att.dt)
-            # self._spv_pitchspeed = self._pidv_pit_pts.cycle(att.pitch, self._spv_pitch, att.dt)
+            self._spv_rollspeed = self._pidv_rol_rls.cycle(att.roll, self._spv_roll, att.dt)
+            self._spv_pitchspeed = self._pidv_pit_pts.cycle(att.pitch, self._spv_pitch, att.dt)
             self._outv_roll = self._pidv_rls_out.cycle(att.rollspeed, self._spv_rollspeed, att.dt)
             self._outv_pitch = self._pidv_pts_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt)
 
@@ -772,8 +772,13 @@ class Processor:
         t3 = -self._outv_pitch + self._outv_roll + self._outv_yaw
         t4 = -self._outv_pitch - self._outv_roll - self._outv_yaw
         self._vthrottles = np.array([t1, t2, t3, t4], dtype=np.float16)
+        self._vthrottles *= Processor.MAX_THROTTLE
 
-        return Processor.MAX_THROTTLE*self._vthrottles
+        self._vservos.fill(math.pi/2)
+        if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_HOVER:
+            self._vservos[3] = 0.0
+
+        return self._vservos, self._vthrottles
     #endregion
 
     @async_loop_decorator()
@@ -783,20 +788,21 @@ class Processor:
         except ZeroDivisionError:
             self._ias_scalar = 1.0
 
+        self._ias_scalar = min(self._ias_scalar, 10.0)
+
         # TODO: setpoints
         match self.main.state.custom_submode:
             case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT | g.CUSTOM_SUBMODE_TAKEOFF_HOVER | g.CUSTOM_SUBMODE_LANDING_DESCENT | g.CUSTOM_SUBMODE_LANDING_HOVER:
                 # VTOL
-                self._servos = self._vtol_servos()
-                self._throttles = self._vtol_throttles()
+                self._servos, self._throttles = self._vtol_calc()
             case g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT | g.CUSTOM_SUBMODE_LANDING_TRANSIT:
                 # Transit modes
                 # TODO mixing (DO NOT USE BOTH FUNCTIONS BECAUSE RACE CONDITION TO RESET dt)
                 pass
             case g.CUSTOM_SUBMODE_FLIGHT_NORMAL | g.CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE:
                 # Normal flight
-                self._servos =  self._ias_scalar * self._flight_servos()
-                self._throttles = self._flight_throttles()
+                self._servos, self._throttles = self._flight_calc()
+                self._servos *= self._ias_scalar
             case g.CUSTOM_SUBMODE_FLIGHT_MANUAL:
                 # Manual flight via GCS
                 # TODO switch from lua to GCS
@@ -1107,13 +1113,13 @@ class Controller:
                 # TODO TEMPORARY PID
                 case 0:
                     # PID TUNER GOTO
-                    self.main.processor._pidv_rol_rls.reset()
-                    self.main.processor._pidv_pit_pts.reset()
-                    self.main.processor._pidv_rls_out.reset()
-                    self.main.processor._pidv_pts_out.reset()
-                    # self.main.processor._pidv_rol_rls.set(kp=msg.param1, td=msg.param3, ti=msg.param4)
-                    self.main.processor._pidv_pit_pts.set(kp=msg.param2, td=msg.param2, ti=msg.param3)
-                    self.main.processor._spv_pitch = msg.param4
+                    # self.main.processor._pidv_rls_out.reset()
+                    # self.main.processor._pidv_pts_out.reset()
+                    # self.main.processor._pidv_rol_rls.reset()
+                    # self.main.processor._pidv_pit_pts.reset()
+                    # self.main.processor._pidf_vpa_thr.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    # self.main.processor.spf_altitude=msg.param4
+                    # self.main.processor._pidv_pit_pts.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
                     logging.info(f"New PID state: {msg.param1}, {msg.param2}, {msg.param3} @ {msg.param4}")
                 # TODO TEMPORARY SCREENSHOT
                 case 1:
@@ -1248,31 +1254,36 @@ class Controller:
         logging.debug("Starting Controller (TX)")
         await self._controller_tx_loop()
 
-    @async_loop_decorator(close=False)
-    async def _roi_calc_loop(self) -> None:
-        y, p, _ = gps_angles(
-            self.main.rxdata.gps.latitude,
-            self.main.rxdata.gps.longitude,
-            self.main.rxdata.gps.altitude,
-            *self._roi
-        )
-        y = calc_dyaw(self.main.rxdata.att.yaw, math.radians(y))
-        p = self.main.rxdata.att.pitch-math.radians(p)
-        # print(f"slewing to {p}, {y}")
-        quat = euler_to_quaternion(0.0, p, y)
-        self._cam_conn.mav.gimbal_device_set_attitude_send(
-            self._cam_id,
-            m.MAV_COMP_ID_CAMERA,
-            m.GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME,
-            quat, # TODO: q values wxyz
-            0.0, 0.0, 0.0 # angular velocities
-        )
-        await asyncio.sleep(1 / self._txfreq)
-
     async def _roi_calc(self) -> None:
-        logging.info("Starting ROI cycle")
-        await self._roi_calc_loop()
-        logging.info("Closing ROI cycle")
+        try:
+            logging.info("Starting ROI cycle")
+            while not self.main.stop.is_set():
+                try:
+                    await asyncio.sleep(0)
+                    y, p, _ = gps_angles(
+                        self.main.rxdata.gps.latitude,
+                        self.main.rxdata.gps.longitude,
+                        self.main.rxdata.gps.altitude,
+                        *self._roi
+                    )
+                    y = calc_dyaw(self.main.rxdata.att.yaw, math.radians(y))
+                    p = self.main.rxdata.att.pitch-math.radians(p)
+                    # print(f"slewing to {p}, {y}")
+                    quat = euler_to_quaternion(0.0, p, y)
+                    self._cam_conn.mav.gimbal_device_set_attitude_send(
+                        self._cam_id,
+                        m.MAV_COMP_ID_CAMERA,
+                        m.GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME,
+                        quat, # TODO: q values wxyz
+                        0.0, 0.0, 0.0 # angular velocities
+                    )
+                    await asyncio.sleep(1 / self._txfreq)
+                except asyncio.exceptions.CancelledError:
+                    break
+                except Exception as e:
+                    logging.error(f"Error in ROI cycle: {e}")
+        finally:
+            logging.info("Closing ROI cycle")
 
     @async_loop_decorator(close=False)
     async def _controller_heartbeat_loop(self) -> None:
@@ -1478,7 +1489,7 @@ class Main:
 
         logging.warning(f"Boot successful on #{self.systemid}")
 
-        for _ in range(2):
+        for _ in range(_DEBUG_SKIP):
             self.state.inc_mode()
 
         tasks = [
@@ -1508,6 +1519,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-g", "--graph", nargs='?', default=False, const='rxdata.att.rollspeed', help="Attribute to graph")
     parser.add_argument("-p", "--print", nargs='?', default=False, const='processor._throttles', help="Attribute to print")
+    parser.add_argument("-s", "--skip", nargs='?', default=False, const='2', help="Skip number of modes on startup")
     args = parser.parse_args()
 
     whitelisted = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._")
@@ -1515,6 +1527,8 @@ if __name__ == '__main__':
         assert all(char in whitelisted for char in args.graph) and '__' not in args.graph
     if args.print:
         assert all(char in whitelisted for char in args.print) and '__' not in args.print
+
+    _DEBUG_SKIP = int(args.skip)
 
     main = Main()
     asyncio.run(main.run(graph=args.graph, print_=args.print))

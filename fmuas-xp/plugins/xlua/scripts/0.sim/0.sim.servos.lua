@@ -158,7 +158,7 @@ end
 function SERVOS_flight_start()
 
     esc_pid_kp = 0.001
-    esc_pid_ti = 3.0
+    esc_pid_ti = 0.08
     esc_pid_td = 0.0
     esc_pid_integral = 0.0
     esc_pid_prev_error = 0.0

@@ -17787,7 +17787,7 @@ P _gear/count 10
 P _lite/count 0
 P _lite_equip/_land_lite_off_on_retract_EQ 0
 P _lite_equip/_taxi_lite_off_on_retract_EQ 0
-P _obja/0/_obj_flags 0
+P _obja/0/_obj_flags 56
 P _obja/0/_v10_att_body -1
 P _obja/0/_v10_att_file_stl body.obj
 P _obja/0/_v10_att_gear -1
@@ -33339,7 +33339,7 @@ P acf/_ground_pwr/2 0.000000000
 P acf/_ground_pwr/count 3
 P acf/_gyro_spooldown_time 60.000000000
 P acf/_gyro_spoolup_time 5.000000000
-P acf/_h_eqlbm 0.245390847
+P acf/_h_eqlbm 0.245390803
 P acf/_has_ADG 0
 P acf/_has_APU_bleed_air 0
 P acf/_has_APU_generator 0
@@ -33570,7 +33570,7 @@ P acf/_n1_power_curve1 2.000000000
 P acf/_n1_power_curve2 3.000000000
 P acf/_n1_rated_thrust 100.000000000
 P acf/_n2_power_curve 3.500000000
-P acf/_name FMUAS Prototype V2
+P acf/_name FMUAS Prototype
 P acf/_new_plot_XP3D_cock/0 0
 P acf/_new_plot_outer_acf/0 0
 P acf/_no_default_engine_fx 0
@@ -34090,7 +34090,7 @@ P acf/_tank_xyz_full/8,1 0.000000000
 P acf/_tank_xyz_full/8,2 0.000000000
 P acf/_tank_xyz_full/i_count 9
 P acf/_tank_xyz_full/j_count 3
-P acf/_the_eqlbm -2.569470644
+P acf/_the_eqlbm -2.569426060
 P acf/_thro_non_vect_props_at_sin_vect 0
 P acf/_thro_x_ctr 356.125000000
 P acf/_throt_max_fwd_emr 1.000000000
