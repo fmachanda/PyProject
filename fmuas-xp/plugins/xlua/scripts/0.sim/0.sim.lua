@@ -31,6 +31,8 @@ simDR_brake = find_dataref("sim/cockpit2/controls/parking_brake_ratio")
 simDR_fuels = find_dataref("sim/flightmodel/weight/m_fuel")
 simDR_station_weights = find_dataref("sim/flightmodel/weight/m_stations")
 
+simDR_WEIGHT_empty = find_dataref("sim/aircraft/weight/acf_m_empty")
+
 simSET_WEIGHT_avionics = create_dataref("fmuas/config/weight/avionics_weight", "number", writable)
 simSET_WEIGHT_batt = create_dataref("fmuas/config/weight/batt_weight", "number", writable)
 simSET_WEIGHT_dome = create_dataref("fmuas/config/weight/dome_weight", "number", writable)
@@ -47,6 +49,10 @@ simSET_throttle_axis = create_dataref("fmuas/config/joystick/throttle_axis_index
 simCMD_pause = find_command("sim/operation/pause_toggle")
 simCMD_screenshot = find_command("sim/operation/screenshot")
 simDR_pause = find_dataref("sim/time/paused")
+
+ROLL = find_dataref("sim/flightmodel/position/phi")
+HDG = find_dataref("sim/flightmodel/position/psi")
+
 
 function python_change()
 	simCMD_pause:once()
@@ -164,6 +170,8 @@ dofile('0.sim.servos.lua')
 ----------------------------------------------------------------
 
 function flight_start()
+
+	simDR_WEIGHT_empty = 0.907185
 
 	uasDR_python_running = 0
 	uasDR_flir_view_on = 0

@@ -8669,7 +8669,7 @@ P _body/0/_locked/9,9 0
 P _body/0/_locked/i_count 20
 P _body/0/_locked/j_count 18
 P _body/0/_part_area_rule 1.000000000
-P _body/0/_part_cd 0.000000000
+P _body/0/_part_cd 0.100000001
 P _body/0/_part_phi 0.000000000
 P _body/0/_part_psi 0.000000000
 P _body/0/_part_rad 0.159999996
@@ -17495,7 +17495,7 @@ P _body/2/_locked/9,9 0
 P _body/2/_locked/i_count 20
 P _body/2/_locked/j_count 18
 P _body/2/_part_area_rule 1.000000000
-P _body/2/_part_cd 0.000000000
+P _body/2/_part_cd 0.100000001
 P _body/2/_part_phi 0.000000000
 P _body/2/_part_psi 0.000000000
 P _body/2/_part_rad 0.159999996
@@ -17590,7 +17590,7 @@ P _engn/count 16
 P _gear/0/_axiE 0.000000000
 P _gear/0/_axiR 0.000000000
 P _gear/0/_cyc_time 0.100000001
-P _gear/0/_damp 1.389481544
+P _gear/0/_damp 5.000000000
 P _gear/0/_eagle_claw_deg 0.000000000
 P _gear/0/_gear_brakes 1
 P _gear/0/_gear_can_retract 1
@@ -17622,7 +17622,7 @@ P _gear/0/_tire_swidth 0.039999999
 P _gear/1/_axiE 0.000000000
 P _gear/1/_axiR 0.000000000
 P _gear/1/_cyc_time 0.100000001
-P _gear/1/_damp 1.242790222
+P _gear/1/_damp 5.000000000
 P _gear/1/_eagle_claw_deg 0.000000000
 P _gear/1/_gear_brakes 1
 P _gear/1/_gear_can_retract 1
@@ -17654,7 +17654,7 @@ P _gear/1/_tire_swidth 0.039999999
 P _gear/2/_axiE 0.000000000
 P _gear/2/_axiR 0.000000000
 P _gear/2/_cyc_time 0.100000001
-P _gear/2/_damp 1.389481544
+P _gear/2/_damp 5.000000000
 P _gear/2/_eagle_claw_deg 0.000000000
 P _gear/2/_gear_brakes 1
 P _gear/2/_gear_can_retract 1
@@ -33339,7 +33339,7 @@ P acf/_ground_pwr/2 0.000000000
 P acf/_ground_pwr/count 3
 P acf/_gyro_spooldown_time 60.000000000
 P acf/_gyro_spoolup_time 5.000000000
-P acf/_h_eqlbm -0.013436107
+P acf/_h_eqlbm -0.033451658
 P acf/_has_ADG 0
 P acf/_has_APU_bleed_air 0
 P acf/_has_APU_generator 0
@@ -33516,7 +33516,7 @@ P acf/_lock_n2 0.000000000
 P acf/_lock_with_elev_EQ 0
 P acf/_m_displaced 0.000000000
 P acf/_m_displaced_Y 0.000000000
-P acf/_m_empty 2.000000000
+P acf/_m_empty 22.000000000
 P acf/_m_fuel_max_tot 5.000000000
 P acf/_m_jett 0.000000000
 P acf/_m_max 25.000000000
@@ -34090,7 +34090,7 @@ P acf/_tank_xyz_full/8,1 0.000000000
 P acf/_tank_xyz_full/8,2 0.000000000
 P acf/_tank_xyz_full/i_count 9
 P acf/_tank_xyz_full/j_count 3
-P acf/_the_eqlbm -6.842458725
+P acf/_the_eqlbm -12.208814621
 P acf/_thro_non_vect_props_at_sin_vect 0
 P acf/_thro_x_ctr 356.125000000
 P acf/_throt_max_fwd_emr 1.000000000
@@ -34120,7 +34120,7 @@ P acf/_tvec_hdng 0.000000000
 P acf/_tvec_ptch 0.000000000
 P acf/_tvec_roll 0.000000000
 P acf/_unfeather_accum_EQ 0
-P acf/_use_cus_gear_damping 0
+P acf/_use_cus_gear_damping 1
 P acf/_use_cus_gear_defs 0
 P acf/_use_manual_prop_inc 0
 P acf/_user_can_fly 1

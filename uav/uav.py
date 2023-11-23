@@ -664,18 +664,18 @@ class Processor:
         self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
         self._pidv_xsp_rol = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
         self._pidv_rol_rls = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
-        self._pidv_rls_out = PID(kp=0.8, ti=0.5, td=1.9, integral_limit=None, minimum=-0.3, maximum=0.3)
+        self._pidv_rls_out = PID(kp=0.08, ti=0.1, td=0.05, integral_limit=None, minimum=-0.3, maximum=0.3)
 
         self._pidv_ydp_ysp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
         self._pidv_ysp_pit = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
         self._pidv_pit_pts = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
-        self._pidv_pts_out = PID(kp=0.8, ti=0.5, td=1.9, integral_limit=None, minimum=-0.3, maximum=0.5)
+        self._pidv_pts_out = PID(kp=0.09, ti=0.1, td=0.05, integral_limit=None, minimum=-0.3, maximum=0.5)
 
         self._pidv_alt_vsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-50.0, maximum=100.0)
         self._pidv_vsp_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=1.0)
 
         self._pidv_dyw_yws = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=-math.pi/6)
-        self._pidv_yws_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-0.3, maximum=0.3)
+        self._pidv_yws_out = PID(kp=0.02, ti=0.0, td=0.0, integral_limit=None, minimum=-0.3, maximum=0.3)
 
     async def boot(self) -> None:
         """Perform boot-related tasks."""
@@ -732,10 +732,12 @@ class Processor:
         if self.main.rxdata.ias.dt > 0.0:
             self._outf_throttle = self._pidf_ias_out.cycle(self.main.rxdata.ias.ias, self.spf_ias, self.main.rxdata.ias.dt)
             self.main.rxdata.ias.dt = 0.0
+        
+        _pad = 2000 if self.main.rxdata.alt.altitude < self.spf_altitude-5 else 0
 
         self._fthrottles.fill(self._outf_throttle)
 
-        return Processor.MAX_THROTTLE*self._fthrottles
+        return Processor.MAX_THROTTLE*self._fthrottles + _pad
 
     def _vtol_throttles(self) -> np.ndarray:
         """Calculate VTOL throttle commands from sensors."""
@@ -756,19 +758,19 @@ class Processor:
 
         if (att:=self.main.rxdata.att).dt > 0.0:
             # self._spv_rollspeed = self._pidv_rol_rls.cycle(att.roll, self._spv_roll, att.dt)
-            self._spv_pitchspeed = self._pidv_pit_pts.cycle(att.pitch, self._spv_pitch, att.dt)
+            # self._spv_pitchspeed = self._pidv_pit_pts.cycle(att.pitch, self._spv_pitch, att.dt)
             self._outv_roll = self._pidv_rls_out.cycle(att.rollspeed, self._spv_rollspeed, att.dt)
             self._outv_pitch = self._pidv_pts_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt)
 
             self._dyaw = calc_dyaw(att.yaw, self.spf_heading)
-            self._spv_yawspeed = self._pidv_dyw_yws.cycle(self._dyaw, 0.0, att.dt)
+            # self._spv_yawspeed = self._pidv_dyw_yws.cycle(self._dyaw, 0.0, att.dt)
             self._outv_yaw = self._pidv_yws_out.cycle(att.yawspeed, self._spv_yawspeed, att.dt)
             self.main.rxdata.att.dt = 0.0
 
-        t1 = self._outv_pitch + self._outv_roll + self._outv_yaw
-        t2 = self._outv_pitch - self._outv_roll - self._outv_yaw
-        t3 = -self._outv_pitch + self._outv_roll - self._outv_yaw
-        t4 = -self._outv_pitch - self._outv_roll + self._outv_yaw
+        t1 = self._outv_pitch + self._outv_roll - self._outv_yaw
+        t2 = self._outv_pitch - self._outv_roll + self._outv_yaw
+        t3 = -self._outv_pitch + self._outv_roll + self._outv_yaw
+        t4 = -self._outv_pitch - self._outv_roll - self._outv_yaw
         self._vthrottles = np.array([t1, t2, t3, t4], dtype=np.float16)
 
         return Processor.MAX_THROTTLE*self._vthrottles
@@ -807,6 +809,8 @@ class Processor:
         self._servos[:2] = np.clip(self._servos[:2], -math.pi/12, 7*math.pi/12)
         self._servos[2:] = np.clip(self._servos[2:], 0.0, math.pi/2)
         self._throttles = np.clip(self._throttles, -14000, 14000) # TODO: reset min to 0
+        self._servos = np.nan_to_num(self._servos)
+        self._throttles = np.nan_to_num(self._throttles)
 
         self.main.txdata.servo = actuator.ArrayCommand_1([
             actuator.Command_1(0, actuator.Command_1.COMMAND_TYPE_POSITION, self._servos[0]), # Elevon 1
@@ -1103,11 +1107,13 @@ class Controller:
                 # TODO TEMPORARY PID
                 case 0:
                     # PID TUNER GOTO
-                    if msg.param4 > 0.1:
-                        self.main.processor._pidv_rls_out.reset()
-                        self.main.processor._pidv_pts_out.reset()
-                    self.main.processor._pidv_rls_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
-                    self.main.processor._pidv_pts_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    self.main.processor._pidv_rol_rls.reset()
+                    self.main.processor._pidv_pit_pts.reset()
+                    self.main.processor._pidv_rls_out.reset()
+                    self.main.processor._pidv_pts_out.reset()
+                    # self.main.processor._pidv_rol_rls.set(kp=msg.param1, td=msg.param3, ti=msg.param4)
+                    self.main.processor._pidv_pit_pts.set(kp=msg.param2, td=msg.param2, ti=msg.param3)
+                    self.main.processor._spv_pitch = msg.param4
                     logging.info(f"New PID state: {msg.param1}, {msg.param2}, {msg.param3} @ {msg.param4}")
                 # TODO TEMPORARY SCREENSHOT
                 case 1:
@@ -1472,7 +1478,7 @@ class Main:
 
         logging.warning(f"Boot successful on #{self.systemid}")
 
-        for _ in range(5):
+        for _ in range(2):
             self.state.inc_mode()
 
         tasks = [
