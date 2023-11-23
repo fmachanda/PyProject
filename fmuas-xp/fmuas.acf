@@ -5,9 +5,9 @@ ACF
 PROPERTIES_BEGIN
 P _blad/0/_Croot 0.083333336
 P _blad/0/_Ctip 0.025000000
-P _blad/0/_afl_file_1 NACA 16 (good propeller).afl
-P _blad/0/_afl_file_2 NACA 16 (good propeller).afl
-P _blad/0/_afl_file_3 NACA 16 (good propeller).afl
+P _blad/0/_afl_file_1 Wortmann FX 60-126.afl
+P _blad/0/_afl_file_2 Wortmann FX 60-126.afl
+P _blad/0/_afl_file_3 Wortmann FX 60-126.afl
 P _blad/0/_ailn1/0 0
 P _blad/0/_ailn1/1 0
 P _blad/0/_ailn1/2 0
@@ -1808,9 +1808,9 @@ P _blad/0/_yawbr/count 10
 P _blad/0/_yawbr_hyd0123 0
 P _blad/1/_Croot 0.083333336
 P _blad/1/_Ctip 0.025000000
-P _blad/1/_afl_file_1 NACA 16 (good propeller).afl
-P _blad/1/_afl_file_2 NACA 16 (good propeller).afl
-P _blad/1/_afl_file_3 NACA 16 (good propeller).afl
+P _blad/1/_afl_file_1 Wortmann FX 60-126.afl
+P _blad/1/_afl_file_2 Wortmann FX 60-126.afl
+P _blad/1/_afl_file_3 Wortmann FX 60-126.afl
 P _blad/1/_ailn1/0 0
 P _blad/1/_ailn1/1 0
 P _blad/1/_ailn1/2 0
@@ -3611,9 +3611,9 @@ P _blad/1/_yawbr/count 10
 P _blad/1/_yawbr_hyd0123 0
 P _blad/2/_Croot 0.083333336
 P _blad/2/_Ctip 0.025000000
-P _blad/2/_afl_file_1 NACA 16 (good propeller).afl
-P _blad/2/_afl_file_2 NACA 16 (good propeller).afl
-P _blad/2/_afl_file_3 NACA 16 (good propeller).afl
+P _blad/2/_afl_file_1 Wortmann FX 60-126.afl
+P _blad/2/_afl_file_2 Wortmann FX 60-126.afl
+P _blad/2/_afl_file_3 Wortmann FX 60-126.afl
 P _blad/2/_ailn1/0 0
 P _blad/2/_ailn1/1 0
 P _blad/2/_ailn1/2 0
@@ -5414,9 +5414,9 @@ P _blad/2/_yawbr/count 10
 P _blad/2/_yawbr_hyd0123 0
 P _blad/3/_Croot 0.083333336
 P _blad/3/_Ctip 0.025000000
-P _blad/3/_afl_file_1 NACA 16 (good propeller).afl
-P _blad/3/_afl_file_2 NACA 16 (good propeller).afl
-P _blad/3/_afl_file_3 NACA 16 (good propeller).afl
+P _blad/3/_afl_file_1 Wortmann FX 60-126.afl
+P _blad/3/_afl_file_2 Wortmann FX 60-126.afl
+P _blad/3/_afl_file_3 Wortmann FX 60-126.afl
 P _blad/3/_ailn1/0 0
 P _blad/3/_ailn1/1 0
 P _blad/3/_ailn1/2 0
