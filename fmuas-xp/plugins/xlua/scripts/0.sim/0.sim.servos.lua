@@ -210,10 +210,10 @@ function SERVOS_after_physics()
         -- roll_deflection = (uasDR_AFCS_elevon1 - uasDR_AFCS_elevon2) / 120.0
         throttle_raw = 1 - simDR_axes_values_array[simSET_throttle_axis]
 
-        rpm_cmd1 = 14000*(throttle_raw + 0*roll_deflection_raw + 0*pitch_deflection_raw) + uasDR_AFCS_rpm1
-        rpm_cmd2 = 14000*(throttle_raw - 0*roll_deflection_raw + 0*pitch_deflection_raw) + uasDR_AFCS_rpm2
-        rpm_cmd3 = 14000*(throttle_raw + 0*roll_deflection_raw - 0*pitch_deflection_raw) + uasDR_AFCS_rpm3
-        rpm_cmd4 = 14000*(throttle_raw - 0*roll_deflection_raw - 0*pitch_deflection_raw) + uasDR_AFCS_rpm4
+        rpm_cmd1 = (14000*throttle_raw) + uasDR_AFCS_rpm1
+        rpm_cmd2 = (14000*throttle_raw) + uasDR_AFCS_rpm2
+        rpm_cmd3 = (14000*throttle_raw) + uasDR_AFCS_rpm3
+        rpm_cmd4 = (14000*throttle_raw) + uasDR_AFCS_rpm4
 
         simDR_wing_tilt = uasDR_AFCS_wing_tilt / 90.0
         simDR_wing_stow = uasDR_AFCS_wing_stow / 90.0

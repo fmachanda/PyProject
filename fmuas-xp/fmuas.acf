@@ -31686,7 +31686,7 @@ P acf/_batt_power_rat/7 0.986394465
 P acf/_batt_power_rat/8 0.993877470
 P acf/_batt_power_rat/9 0.995748222
 P acf/_batt_power_rat/count 11
-P acf/_battery_watt_hr_max 666.000000000
+P acf/_battery_watt_hr_max 710.000000000
 P acf/_beacon_EQ 0
 P acf/_beta_pitch 0.000000000
 P acf/_beta_prop_EQ 0
@@ -32760,9 +32760,9 @@ P acf/_dump_altitude 0.000000000
 P acf/_dump_press_below_1k 0
 P acf/_dump_press_wow 0
 P acf/_eagle_shock_to_tire_def_rat 0.000000000
-P acf/_elec_drive_eta 0.959999979
+P acf/_elec_drive_eta 0.769999981
 P acf/_elec_fuelP 30.000000000
-P acf/_elec_regen_eta 0.959999979
+P acf/_elec_regen_eta 0.050000001
 P acf/_elec_regen_rat 0.250000000
 P acf/_elev1_cratR 0.000000000
 P acf/_elev1_cratT 0.000000000
@@ -33101,13 +33101,13 @@ P acf/_fixed_name/3 Dome
 P acf/_fixed_name/count 9
 P acf/_fixed_ref/0,0 0.000000000
 P acf/_fixed_ref/0,1 0.000000000
-P acf/_fixed_ref/0,2 0.100000001
+P acf/_fixed_ref/0,2 1.250000000
 P acf/_fixed_ref/1,0 0.000000000
 P acf/_fixed_ref/1,1 0.000000000
-P acf/_fixed_ref/1,2 0.400000006
+P acf/_fixed_ref/1,2 0.439999998
 P acf/_fixed_ref/2,0 0.000000000
 P acf/_fixed_ref/2,1 0.000000000
-P acf/_fixed_ref/2,2 1.000000000
+P acf/_fixed_ref/2,2 0.819999993
 P acf/_fixed_ref/3,0 0.000000000
 P acf/_fixed_ref/3,1 0.000000000
 P acf/_fixed_ref/3,2 -0.200000003
@@ -33764,7 +33764,7 @@ P acf/_roll_co 0.025000000
 P acf/_roll_max_full_def_KIAS 999.000000000
 P acf/_roll_to_eng_spo1 0.000000000
 P acf/_roll_to_eng_spo2 0.000000000
-P acf/_rotor_mi_rat 0.150000006
+P acf/_rotor_mi_rat 0.444000006
 P acf/_rrpm_trim_rpm_fast 0.000000000
 P acf/_rrpm_trim_rpm_slow 0.000000000
 P acf/_rrpm_trim_time 0.000000000

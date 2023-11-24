@@ -172,19 +172,19 @@ dofile('0.sim.servos.lua')
 
 function flight_start()
 
-	simDR_WEIGHT_empty = 0.907185
+	simDR_WEIGHT_empty = 0.01
 
 	uasDR_python_running = 0
 	uasDR_flir_view_on = 0
 
-	simSET_WEIGHT_avionics = 0.03
-	simSET_WEIGHT_batt = 2
-	simSET_WEIGHT_dome = 0.75
+	simSET_WEIGHT_avionics = 0.12
+	simSET_WEIGHT_batt = 1.95
+	simSET_WEIGHT_dome = 0.56
 
-	simSET_WEIGHT_fwing = 0.20
-	simSET_WEIGHT_iwing = 0.24
-	simSET_WEIGHT_owing = 0.08
-	simSET_WEIGHT_stab = 0.14
+	simSET_WEIGHT_fwing = 0.24
+	simSET_WEIGHT_iwing = 0.3
+	simSET_WEIGHT_owing = 0.1
+	simSET_WEIGHT_stab = 0.123
 
 	simDR_station_weights[0] = simSET_WEIGHT_avionics
 	simDR_station_weights[1] = simSET_WEIGHT_batt

@@ -41,7 +41,8 @@ logging.warning("Generating UAVCAN files, please wait...")
 
 import pycyphal
 import pycyphal.application
-import uavcan
+import pycyphal.application.node_tracker
+import uavcan.time, uavcan.node
 from uavcan_archived.equipment import actuator, ahrs, air_data, esc, gnss, range_sensor
 from pymavlink import mavutil
 
@@ -404,6 +405,9 @@ class MainIO:
 
         self._node = pycyphal.application.make_node(node_info, self._registry)
 
+        self._tracker = pycyphal.application.node_tracker.NodeTracker(self._node)
+        self._tracker.add_update_handler(self._tracker_handler)
+
         self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.INITIALIZATION
         self._node.heartbeat_publisher.vendor_specific_status_code = os.getpid() % 100
         
@@ -430,6 +434,16 @@ class MainIO:
         self._node.start()
 
         logging.info("MainIO initialized")
+
+    def _tracker_handler(self, id: int, old: pycyphal.application.node_tracker.Entry | None, new: pycyphal.application.node_tracker.Entry | None) -> None:
+        if new is None:
+            logging.debug(f"Node {id} went offline")
+        elif new.info is not None:
+            logging.debug(f"Node {id} with info, name: {''.join(chr(number) for number in new.info.name)}")
+        elif old is None:
+            logging.debug(f"Node {id} discovered")
+        else:
+            logging.debug(f"Node {id} restarted")
 
     async def boot(self) -> None:
         """Perform boot-related tasks."""
@@ -667,19 +681,21 @@ class Processor:
 
         self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
         self._pidv_xsp_rol = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
-        self._pidv_rol_rls = PID(kp=2.0, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
-        self._pidv_rls_out = PID(kp=0.02, ti=0.15, td=0.08, integral_limit=None, minimum=-0.08, maximum=0.08)
+        self._pidv_rol_rls = PID(kp=1.5, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
+        # self._pidv_rls_out = PID(kp=0.02, ti=0.15, td=0.08, integral_limit=None, minimum=-0.08, maximum=0.08)
+        self._pidv_rls_out = PID(kp=0.018, ti=0.1, td=0.05, integral_limit=0.2, minimum=-0.08, maximum=0.08)
 
         self._pidv_ydp_ysp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
         self._pidv_ysp_pit = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
-        self._pidv_pit_pts = PID(kp=2.0, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
-        self._pidv_pts_out = PID(kp=0.033, ti=0.12, td=0.08, integral_limit=None, minimum=-0.1, maximum=0.1)
+        self._pidv_pit_pts = PID(kp=1.0, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
+        # self._pidv_pts_out = PID(kp=0.033, ti=0.12, td=0.08, integral_limit=None, minimum=-0.1, maximum=0.1)
+        self._pidv_pts_out = PID(kp=0.025, ti=0.04, td=0.065, integral_limit=1.0, minimum=-0.1, maximum=0.1)
 
         self._pidv_alt_vsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-50.0, maximum=100.0)
         self._pidv_vsp_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=1.0)
 
         self._pidv_dyw_yws = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=-math.pi/6)
-        self._pidv_yws_out = PID(kp=0.15, ti=0.0, td=0.0, integral_limit=None, minimum=-0.3, maximum=0.3)
+        self._pidv_yws_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-0.3, maximum=0.3)
 
     async def boot(self) -> None:
         """Perform boot-related tasks."""
@@ -1113,13 +1129,15 @@ class Controller:
                 # TODO TEMPORARY PID
                 case 0:
                     # PID TUNER GOTO
-                    # self.main.processor._pidv_rls_out.reset()
-                    # self.main.processor._pidv_pts_out.reset()
-                    # self.main.processor._pidv_rol_rls.reset()
-                    # self.main.processor._pidv_pit_pts.reset()
-                    # self.main.processor._pidf_vpa_thr.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
-                    # self.main.processor.spf_altitude=msg.param4
+                    self.main.processor._pidv_rls_out.reset()
+                    self.main.processor._pidv_pts_out.reset()
+                    self.main.processor._pidv_rol_rls.reset()
+                    self.main.processor._pidv_pit_pts.reset()
+                    # self.main.processor._pidv_pts_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    self.main.processor._pidv_pts_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
                     # self.main.processor._pidv_pit_pts.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    self.main.processor._pidv_pit_pts.set(kp=msg.param4)
+                    # self.main.processor._spv_pitchspeed=msg.param4
                     logging.info(f"New PID state: {msg.param1}, {msg.param2}, {msg.param3} @ {msg.param4}")
                 # TODO TEMPORARY SCREENSHOT
                 case 1:

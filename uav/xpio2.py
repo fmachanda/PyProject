@@ -14,7 +14,7 @@ from functools import wraps
 
 os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
 sys.path.append(os.getcwd())
-os.environ['CYPHAL_PATH']='./common/data_types/custom_data_types;./common/data_types/public_regulated_data_types'
+os.environ['CYPHAL_PATH']='./common/data_types/public_regulated_data_types'
 os.environ['PYCYPHAL_PATH']='./common/pycyphal_generated'
 os.environ['UAVCAN__DIAGNOSTIC__SEVERITY'] = '2'
 os.environ['MAVLINK20'] = '1'
@@ -30,10 +30,18 @@ logging.basicConfig(format='%(name)s %(levelname)s:%(message)s', level=logging.D
 logging.warning("Generating UAVCAN files, please wait...")
 
 import pycyphal
+import uavcan
+import reg
+
+
+import reg.udral.service.actuator.common
+import reg.udral.service.common
+import reg.udral.physics.electricity
+import reg.udral.physics.dynamics.rotation
+import uavcan.node
+import uavcan.si.unit.temperature
+
 import pycyphal.application
-import uavcan.node, uavcan.time
-import uavcan_archived
-from uavcan_archived.equipment import actuator, ahrs, air_data, esc, gnss, range_sensor
 from pymavlink import mavutil
 
 import common.find_xp as find_xp
@@ -85,19 +93,19 @@ rx_data = {
     b'fmuas/camera/roll_actual': 0.0,
 }
 
-tx_data = [
-    [b'fmuas/afcs/output/elevon1', 0.0],
-    [b'fmuas/afcs/output/elevon2', 0.0],
-    [b'fmuas/afcs/output/wing_tilt', 0.0],
-    [b'fmuas/afcs/output/wing_stow', 0.0],
-    [b'fmuas/afcs/output/rpm1', 0.0],
-    [b'fmuas/afcs/output/rpm2', 0.0],
-    [b'fmuas/afcs/output/rpm3', 0.0],
-    [b'fmuas/afcs/output/rpm4', 0.0],
-    [b'fmuas/camera/roll', 0.0],
-    [b'fmuas/camera/pitch', 180.0],
-    [b'fmuas/python_running', 1.0]
-]
+tx_data = {
+    b'fmuas/afcs/output/elevon1': 0.0,
+    b'fmuas/afcs/output/elevon2': 0.0,
+    b'fmuas/afcs/output/wing_tilt': 0.0,
+    b'fmuas/afcs/output/wing_stow': 0.0,
+    b'fmuas/afcs/output/rpm1': 0.0,
+    b'fmuas/afcs/output/rpm2': 0.0,
+    b'fmuas/afcs/output/rpm3': 0.0,
+    b'fmuas/afcs/output/rpm4': 0.0,
+    b'fmuas/camera/roll': 0.0,
+    b'fmuas/camera/pitch': 180.0,
+    b'fmuas/python_running': 1.0
+}
 
 XP_FIND_TIMEOUT = 1
 TX_DATA_FIRST_ESC = 4 # Index of first esc dref in tx_data
@@ -187,8 +195,8 @@ class XPConnect:
                         if index < len(rx_data):
                             rx_data[list(rx_data.keys())[index]] = value
 
-                for index, dref in enumerate(tx_data):
-                    msg = struct.pack('<4sxf500s', b'DREF', dref[1], dref[0])
+                for dref in tx_data.keys():
+                    msg = struct.pack('<4sxf500s', b'DREF', tx_data[dref], dref)
                     self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
 
                 await asyncio.sleep(1 / self._freq)
@@ -276,86 +284,69 @@ class TestXPConnect:
         logging.info("LUA suspended")
 
 #region nodes
-class ServoIO:
+class ServoSuite:
     def __init__(self, freq: int = FREQ) -> None:
         self._registry = pycyphal.application.make_registry(environment_variables={
             'UAVCAN__NODE__ID'              :config.get('node_ids', 'servoio'),
             'UAVCAN__UDP__IFACE'            :config.get('main', 'udp'),
 
-            'UAVCAN__SUB__SERVO__ID'        :config.get('subject_ids', 'servo'),
+            'UAVCAN__SUB__ELEVON1_SP__ID'        :config.get('subject_ids', 'servo'),
+            'UAVCAN__SUB__ELEVON1_READINESS__ID'        :config.get('subject_ids', 'servo'),
 
-            'UAVCAN__PUB__SERVO1_STATUS__ID':config.get('subject_ids', 'servo1_status'),
-            'UAVCAN__PUB__SERVO2_STATUS__ID':config.get('subject_ids', 'servo2_status'),
-            'UAVCAN__PUB__SERVO3_STATUS__ID':config.get('subject_ids', 'servo3_status'),
-            'UAVCAN__PUB__SERVO4_STATUS__ID':config.get('subject_ids', 'servo4_status'),
+            'UAVCAN__PUB__ELEVON1_FEEDBACK__ID':config.get('subject_ids', 'servo1_status'),
+            'UAVCAN__PUB__ELEVON1_STATUS__ID':config.get('subject_ids', 'servo2_status'),
+            'UAVCAN__PUB__ELEVON1_POWER__ID':config.get('subject_ids', 'servo3_status'),
+            'UAVCAN__PUB__ELEVON1_DYNAMICS__ID':config.get('subject_ids', 'servo4_status'),
         })
 
         self._freq = freq
         
         node_info = uavcan.node.GetInfo_1.Response(
             software_version=uavcan.node.Version_1(major=1, minor=0),
-            name='fmuas.xpinterface.servoio',
+            name='fmuas.servosuite',
         )
 
         self._node = pycyphal.application.make_node(node_info, self._registry)
 
         self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
         self._node.heartbeat_publisher.vendor_specific_status_code = os.getpid() % 100
+        self._sub_elevon1_sp = self._node.make_subscriber(reg.udral.physics.dynamics.rotation.Planar_0, 'elevon1_sp')
+        self._sub_elevon1_readiness = self._node.make_subscriber(reg.udral.service.common.Readiness_0, 'elevon1_readiness')
         
-        self._sub_servo = self._node.make_subscriber(actuator.ArrayCommand_1, 'servo')
-        
-        self._pub_servo1_status = self._node.make_publisher(actuator.Status_1, 'servo1_status')
-        self._pub_servo2_status = self._node.make_publisher(actuator.Status_1, 'servo2_status')
-        self._pub_servo3_status = self._node.make_publisher(actuator.Status_1, 'servo3_status')
-        self._pub_servo4_status = self._node.make_publisher(actuator.Status_1, 'servo4_status')
+        self._pub_elevon1_feedback = self._node.make_publisher(reg.udral.service.actuator.common.Feedback_0, 'elevon1_feedback')
+        self._pub_elevon1_status = self._node.make_publisher(reg.udral.service.actuator.common.Status_0, 'elevon1_status')
+        self._pub_elevon1_power = self._node.make_publisher(reg.udral.physics.electricity.PowerTs_0, 'elevon1_power')
+        self._pub_elevon1_dynamics = self._node.make_publisher(reg.udral.physics.dynamics.rotation.PlanarTs_0, 'elevon1_dynamics')
+
+        self._elevon1_readiness = reg.udral.service.common.Readiness_0.ENGAGED
 
         self._node.start()
 
     @async_loop_decorator()
-    async def _servoio_run_loop(self) -> None:
-        await self._pub_servo1_status.publish(actuator.Status_1(
-            0, # id
-            float('nan'), # position
-            float('nan'), # force
-            float('nan'), # speed
-            actuator.Status_1.POWER_RATING_PCT_UNKNOWN
+    async def _servosuite_run_loop(self) -> None:
+        await self._pub_elevon1_feedback.publish(reg.udral.service.actuator.common.Feedback_0(
+            reg.udral.service.common.Heartbeat_0(
+                reg.udral.service.common.Readiness_0(self._elevon1_readiness),
+                uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
+            )
         ))
-        
-        await self._pub_servo2_status.publish(actuator.Status_1(
-            1, # id
-            float('nan'), # position
-            float('nan'), # force
-            float('nan'), # speed
-            actuator.Status_1.POWER_RATING_PCT_UNKNOWN
-        ))
-
-        await self._pub_servo3_status.publish(actuator.Status_1(
-            2, # id
-            float('nan'), # position
-            float('nan'), # force
-            float('nan'), # speed
-            actuator.Status_1.POWER_RATING_PCT_UNKNOWN
-        ))
-
-        await self._pub_servo4_status.publish(actuator.Status_1(
-            3, # id
-            float('nan'), # position
-            float('nan'), # force
-            float('nan'), # speed
-            actuator.Status_1.POWER_RATING_PCT_UNKNOWN
-        ))
+        await self._pub_elevon1_status.publish(reg.udral.service.actuator.common.Status_0())
+        await self._pub_elevon1_power.publish(reg.udral.physics.electricity.PowerTs_0())
+        await self._pub_elevon1_dynamics.publish(reg.udral.physics.dynamics.rotation.PlanarTs_0())
 
         await asyncio.sleep(1 / self._freq)
 
     async def run(self) -> None:
         """docstring placeholder"""
-        def on_servo(msg: actuator.ArrayCommand_1, _: pycyphal.transport.TransferFrom) -> None:
-            for index, command in enumerate(msg.commands[:TX_DATA_FIRST_ESC]):
-                if command.command_type==actuator.Command_1.COMMAND_TYPE_POSITION:
-                    tx_data[index][1] = math.degrees(command.command_value)
-        self._sub_servo.receive_in_background(on_servo)
+        def on_elevon1_sp(msg: reg.udral.physics.dynamics.rotation.Planar_0, _: pycyphal.transport.TransferFrom) -> None:
+            tx_data[b'fmuas/afcs/output/elevon1'] = math.degrees(msg.kinematics.angular_position.radian)
+        self._sub_elevon1_sp.receive_in_background(on_elevon1_sp)
+        
+        def on_elevon1_readiness(msg: reg.udral.service.common.Readiness_0, _: pycyphal.transport.TransferFrom) -> None:
+            self._elevon1_readiness = msg.value
+        self._sub_elevon1_readiness.receive_in_background(on_elevon1_readiness)
 
-        await self._servoio_run_loop()
+        await self._servosuite_run_loop()
 
     async def close(self) -> None:
         logging.debug("Closing SRV")
