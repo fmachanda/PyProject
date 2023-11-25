@@ -54,9 +54,7 @@ python -m pip install -r requirements.txt --upgrade
         ├── gcs.py # Use this in a python terminal
         └── gui.py # Run this
     ├── common
-        ├──  data_types
-            ├── public_regulated_data_types # INIT THIS SUBMODULE!
-            └── ...
+        ├── public_regulated_data_types # INIT THIS SUBMODULE!
         ├── config.ini # Change this
         ├── key.py # Shared mavlink encryption key
         └── ...
@@ -77,7 +75,7 @@ python -m pip install -r requirements.txt --upgrade
 `common/key.py` contains the shared custom key used by MAVLINK connections
 > The `KEY = ...` line in `key.py` can be changed to any desired MAVLINK key (must be length 25). If using separate folders for GCS and UAV instances, ensure that this key is the same for both.  
 
-**Important:** `data_types/public_regulated_data_types/` is a git [submodule][prdt-link] that must be initialized for scripts to work
+**Important:** `common/public_regulated_data_types/` is a git [submodule][prdt-link] that must be initialized for scripts to work
 
 ## Usage with X-Plane 12
 
@@ -131,9 +129,7 @@ Refer to the `gcs.py` script for further documentation.
 ---
 ### Credits
 
-`common/data_types/public_regulated_data_types/` copied from [OpenCyphal/public_regulated_data_types][prdt-link]  
-
-`common/data_types/custom_data_types/uavcan_archived/` modified from [dronecan/DSDL](https://github.com/dronecan/DSDL)  
+`common/public_regulated_data_types/` cloned from [OpenCyphal/public_regulated_data_types][prdt-link]
 
 `common/find_xp.py` copied from the [XPPython3 Docs](https://xppython3.readthedocs.io/en/latest/_static/find_xp.py)  
 
