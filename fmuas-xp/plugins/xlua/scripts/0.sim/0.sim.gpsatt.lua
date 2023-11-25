@@ -47,10 +47,6 @@ uasDR_GPSATT_vn = create_dataref("fmuas/gps/vn", "number")
 uasDR_GPSATT_ve = create_dataref("fmuas/gps/ve", "number")
 uasDR_GPSATT_vd = create_dataref("fmuas/gps/vd", "number")
 
-uasDR_GPSATT_an = create_dataref("fmuas/att/an", "number")
-uasDR_GPSATT_ae = create_dataref("fmuas/att/ae", "number")
-uasDR_GPSATT_ad = create_dataref("fmuas/att/ad", "number")
-
 uasDR_GPSATT_latitude = create_dataref("fmuas/gps/latitude", "number")
 uasDR_GPSATT_longitude = create_dataref("fmuas/gps/longitude", "number")
 uasDR_GPSATT_altitude = create_dataref("fmuas/gps/altitude", "number")
@@ -72,10 +68,6 @@ simDR_yawrate = find_dataref("sim/flightmodel/position/Rrad")
 simDR_vn = find_dataref("sim/flightmodel/position/local_vz")
 simDR_ve = find_dataref("sim/flightmodel/position/local_vx")
 simDR_vd_neg = find_dataref("sim/flightmodel/position/local_vy")
-
-simDR_an = find_dataref("sim/flightmodel/position/local_az")
-simDR_ae = find_dataref("sim/flightmodel/position/local_ax")
-simDR_ad_neg = find_dataref("sim/flightmodel/position/local_ay")
 
 simDR_latitude = find_dataref("sim/flightmodel/position/latitude")
 simDR_longitude = find_dataref("sim/flightmodel/position/longitude")
@@ -121,28 +113,17 @@ local function gpsatt_noiser()
 	math.randomseed(os.clock() * 0.031)
 	uasDR_GPSATT_vd = -simDR_vd_neg + math.random()*uasSET_GPSATT_positional_noise_gain
 
-
-	math.randomseed(os.clock() * 0.501)
-	uasDR_GPSATT_an = simDR_an + math.random()*uasSET_GPSATT_positional_noise_gain
-
-	math.randomseed(os.clock() * 0.601)
-	uasDR_GPSATT_ae = simDR_ae + math.random()*uasSET_GPSATT_positional_noise_gain
-
-	math.randomseed(os.clock() * 0.901)
-	uasDR_GPSATT_ad = -simDR_ad_neg + math.random()*uasSET_GPSATT_positional_noise_gain
-
-
 	math.randomseed(os.clock() * 0.091)
 	local noised_lat = simDR_latitude + math.random()*uasSET_GPSATT_positional_noise_gain
-	uasDR_GPSATT_latitude = noised_lat * 1e8 -- To 1e8
+	uasDR_GPSATT_latitude = noised_lat * math.pi / 180 -- To rads
 
 	math.randomseed(os.clock() * 0.102)
 	local noised_long = simDR_longitude + math.random()*uasSET_GPSATT_positional_noise_gain
-	uasDR_GPSATT_longitude = noised_long * 1e8 -- To 1e8
+	uasDR_GPSATT_longitude = noised_long * math.pi / 180 -- To rads
 
 	math.randomseed(os.clock() * 0.006)
 	local noised_altitude = simDR_gpsaltitude + math.random()*uasSET_GPSATT_positional_noise_gain
-	uasDR_GPSATT_altitude = 1000 * noised_altitude -- To mm
+	uasDR_GPSATT_altitude = noised_altitude -- In m
 
 end
 

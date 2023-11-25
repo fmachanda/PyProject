@@ -9,7 +9,7 @@ def quaternion_to_euler(q: list[float, float, float, float]) -> tuple[float, flo
     Parameters
     ----------
     q : tuple[float, float, float, float]
-        The quaternion values x, y, z, w
+        The quaternion values w, x, y, z
     
     Returns
     -------
@@ -25,7 +25,7 @@ def quaternion_to_euler(q: list[float, float, float, float]) -> tuple[float, flo
     if len(q)!=4:
         raise ValueError("Quaternion input must be tuple with length 4")
 
-    x, y, z, w = q
+    w, x, y, z = q
 
     t0 = +2.0 * (w * x + y * z)
     t1 = +1.0 - 2.0 * (x * x + y * y)

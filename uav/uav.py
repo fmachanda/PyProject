@@ -16,7 +16,6 @@ import logging
 import math
 import os
 import sys
-import time
 from configparser import ConfigParser
 from functools import wraps
 
@@ -24,7 +23,7 @@ import numpy as np
 
 os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
 sys.path.append(os.getcwd())
-os.environ['CYPHAL_PATH'] = './common/data_types/custom_data_types;./common/data_types/public_regulated_data_types'
+os.environ['CYPHAL_PATH'] = './common/public_regulated_data_types'
 os.environ['PYCYPHAL_PATH'] = './common/pycyphal_generated'
 os.environ['UAVCAN__DIAGNOSTIC__SEVERITY'] = '2'
 os.environ['MAVLINK20'] = '1'
@@ -40,10 +39,21 @@ logging.basicConfig(format='%(name)s %(levelname)s:%(message)s', level=logging.D
 logging.warning("Generating UAVCAN files, please wait...")
 
 import pycyphal
+import reg.udral.service.actuator.common
+import reg.udral.service.common
+import reg.udral.physics.electricity
+import reg.udral.physics.dynamics.rotation
+import reg.udral.physics.kinematics.rotation
+import reg.udral.physics.kinematics.cartesian
+import reg.udral.physics.kinematics.translation
+import reg.udral.physics.kinematics.geodetic
+import uavcan.node
+import uavcan.time
+import uavcan.si.unit.angle
+import uavcan.si.unit.length
+import uavcan.si.unit.angular_velocity
 import pycyphal.application
 import pycyphal.application.node_tracker
-import uavcan.time, uavcan.node
-from uavcan_archived.equipment import actuator, ahrs, air_data, esc, gnss, range_sensor
 from pymavlink import mavutil
 
 import common.grapher as grapher
@@ -62,6 +72,8 @@ os.system('cls' if os.name == 'nt' else 'clear')
 
 DEFAULT_FREQ = 60
 HEARTBEAT_TIMEOUT = 2.0
+
+RPM_TO_RADS = math.pi/30
 
 _DEBUG_SKIP = 2 # TODO: remove this!!
 
@@ -83,7 +95,7 @@ def async_loop_decorator(close=True):
                         raise
                     except Exception as e:
                         logging.error(f"Error in {func.__name__}: {e}")
-                        # raise # TODO
+                        raise # TODO
             except KeyboardInterrupt:
                 self.main.stop.set()
                 raise
@@ -130,7 +142,7 @@ class GlobalRx:
             # self._last_yaw = 0.0
             # self._last_yawspeed = 0.0
 
-        def dump(self, msg: ahrs.Solution_1) -> None:
+        def dump(self, msg: reg.udral.physics.kinematics.cartesian.StateVarTs_0) -> None:
             """Store data from a message."""
             self._last_time = self.time
             # self._last_pitch = self.pitch
@@ -140,13 +152,14 @@ class GlobalRx:
             # self._last_yaw = self.yaw
             # self._last_yawspeed = self.yawspeed
 
-            self.time = msg.timestamp.usec
-            self.roll, self.pitch, self.yaw = quaternion_to_euler(msg.orientation_xyzw)
+            self.time = msg.timestamp.microsecond
+            self.roll, self.pitch, self.yaw = quaternion_to_euler(msg.value.pose.value.orientation.wxyz)
 
             if self.yaw < 0:
                 self.yaw += 2*math.pi
 
-            self.rollspeed, self.pitchspeed, self.yawspeed = msg.angular_velocity
+            self.rollspeed, self.pitchspeed, self.yawspeed = msg.value.twist.value.angular.radian_per_second
+            # TODO: *self.speeds = msg.value.twise.value.linear.meter_per_second
             self.dt = self.time - self._last_time
 
     class Alt:
@@ -161,14 +174,14 @@ class GlobalRx:
             self._last_altitude = 0.0
             self._last_vs = 0.0
 
-        def dump(self, msg: range_sensor.Measurement_1) -> None:
+        def dump(self, msg: uavcan.si.unit.length.WideScalar_1, time: 'GlobalRx.Time.time') -> None:
             """Store data from a message."""
             self._last_time = self.time
             self._last_altitude = self.altitude
             self._last_vs = self.vs
 
-            self.time = msg.timestamp.usec
-            self.altitude = msg.range_ # 'range' becomes 'range_'
+            self.time = time
+            self.altitude = msg.meter
 
             try:
                 self.vs = (self.altitude - self._last_altitude) / (self.time - self._last_time)
@@ -200,7 +213,7 @@ class GlobalRx:
             # self._last_espeed = 0.0
             # self._last_dspeed = 0.0
 
-        def dump(self, msg: gnss.Fix2_1, heading: 'GlobalRx.Att.yaw') -> None:
+        def dump(self, msg: reg.udral.physics.kinematics.geodetic.PointStateVarTs_0, heading: 'GlobalRx.Att.yaw') -> None:
             """Store data from a message."""
             self._last_time = self.time
             # self._last_latitude = self.latitude
@@ -210,11 +223,11 @@ class GlobalRx:
             # self._last_espeed = self.espeed
             # self._last_dspeed = self.dspeed
 
-            self.time = msg.timestamp.usec
-            self.latitude = msg.latitude_deg_1e8 / 1e8
-            self.longitude = msg.longitude_deg_1e8 / 1e8
-            self.altitude = msg.height_msl_mm / 1e3
-            self.nspeed, self.espeed, self.dspeed = msg.ned_velocity
+            self.time = msg.timestamp.microsecond
+            self.latitude = math.degrees(msg.value.position.value.latitude)
+            self.longitude = math.degrees(msg.value.position.value.longitude)
+            self.altitude = msg.value.position.value.altitude
+            self.nspeed, self.espeed, self.dspeed = msg.value.velocity.value.meter_per_second
 
             self.yspeed = self.nspeed*math.cos(heading) + self.espeed*math.sin(heading)
             self.xspeed = self.nspeed*math.sin(heading) + self.espeed*math.cos(heading)
@@ -231,13 +244,13 @@ class GlobalRx:
             self.dt = 0.0
             # self._last_ias = 0.0
 
-        def dump(self, msg: air_data.IndicatedAirspeed_1, time: 'GlobalRx.Time.time') -> None:
+        def dump(self, msg: reg.udral.physics.kinematics.translation.LinearTs_0) -> None:
             """Store data from a message."""
             self._last_time = self.time
             # self._last_ias = self.ias
             
-            self.time = time
-            self.ias = msg.indicated_airspeed
+            self.time = msg.timestamp.microsecond
+            self.ias = msg.value.velocity.meter_per_second
 
             self.dt = self.time - self._last_time
 
@@ -251,13 +264,13 @@ class GlobalRx:
             self.dt = 0.0
             # self._last_aoa = 0.0
 
-        def dump(self, msg: air_data.AngleOfAttack_1, time: 'GlobalRx.Time.time') -> None:
+        def dump(self, msg: uavcan.si.unit.angle.Scalar_1, time: 'GlobalRx.Time.time') -> None:
             """Store data from a message."""
             self._last_time = self.time
             # self._last_aoa = self.aoa
             
             self.time = time
-            self.aoa = msg.aoa
+            self.aoa = msg.radian
 
             self.dt = self.time - self._last_time
 
@@ -297,19 +310,204 @@ class GlobalRx:
 class GlobalTx:
     """Store control data before publishing."""
     def __init__(self) -> None:
-        self.servo = actuator.ArrayCommand_1([
-            actuator.Command_1(0, actuator.Command_1.COMMAND_TYPE_POSITION, 0.0), # Elevon 1
-            actuator.Command_1(1, actuator.Command_1.COMMAND_TYPE_POSITION, 0.0), # Elevon 2
-            actuator.Command_1(2, actuator.Command_1.COMMAND_TYPE_POSITION, 0.0), # Wing-tilt
-            actuator.Command_1(3, actuator.Command_1.COMMAND_TYPE_POSITION, 0.0)  # Wing-stow
-        ])
+        self._servo_readiness = reg.udral.service.common.Readiness_0(
+            reg.udral.service.common.Readiness_0.ENGAGED
+        )
+
+        self._esc_readiness = reg.udral.service.common.Readiness_0(
+            reg.udral.service.common.Readiness_0.ENGAGED
+        )
+
+        self._elevon1 = reg.udral.physics.dynamics.rotation.Planar_0(
+            reg.udral.physics.kinematics.rotation.Planar_0(
+                uavcan.si.unit.angle.Scalar_1(0.0)
+            ),
+            # torque
+        )
+
+        self._elevon2 = reg.udral.physics.dynamics.rotation.Planar_0(
+            reg.udral.physics.kinematics.rotation.Planar_0(
+                uavcan.si.unit.angle.Scalar_1(0.0)
+            ),
+            # torque
+        )
         
-        self.esc = esc.RPMCommand_1([
-            0, # Throttle 1
-            0, # Throttle 2
-            0, # Throttle 3
-            0  # Throttle 4
-        ])
+        self._tilt = reg.udral.physics.dynamics.rotation.Planar_0(
+            reg.udral.physics.kinematics.rotation.Planar_0(
+                uavcan.si.unit.angle.Scalar_1(0.0)
+            ),
+            # torque
+        )
+        
+        self._stow = reg.udral.physics.dynamics.rotation.Planar_0(
+            reg.udral.physics.kinematics.rotation.Planar_0(
+                uavcan.si.unit.angle.Scalar_1(0.0)
+            ),
+            # torque
+        )
+        
+        self._esc1 = reg.udral.physics.dynamics.rotation.Planar_0(
+            reg.udral.physics.kinematics.rotation.Planar_0(
+                angular_velocity=uavcan.si.unit.angular_velocity.Scalar_1(0.0)
+            ),
+            # torque
+        )
+        
+        self._esc2 = reg.udral.physics.dynamics.rotation.Planar_0(
+            reg.udral.physics.kinematics.rotation.Planar_0(
+                angular_velocity=uavcan.si.unit.angular_velocity.Scalar_1(0.0)
+            ),
+            # torque
+        )
+        
+        self._esc3 = reg.udral.physics.dynamics.rotation.Planar_0(
+            reg.udral.physics.kinematics.rotation.Planar_0(
+                angular_velocity=uavcan.si.unit.angular_velocity.Scalar_1(0.0)
+            ),
+            # torque
+        )
+        
+        self._esc4 = reg.udral.physics.dynamics.rotation.Planar_0(
+            reg.udral.physics.kinematics.rotation.Planar_0(
+                angular_velocity=uavcan.si.unit.angular_velocity.Scalar_1(0.0)
+            ),
+            # torque
+        )
+
+    # Properties to prevent having to construct CYPHAL message each time
+    @property
+    def servo_readiness(self) -> reg.udral.service.common.Readiness_0:
+        return self._servo_readiness
+    
+    @property
+    def esc_readiness(self) -> reg.udral.service.common.Readiness_0:
+        return self._servo_readiness
+    
+    @property
+    def elevon1(self) -> reg.udral.physics.dynamics.rotation.Planar_0:
+        return self._elevon1
+    
+    @property
+    def elevon2(self) -> reg.udral.physics.dynamics.rotation.Planar_0:
+        return self._elevon2
+    
+    @property
+    def tilt(self) -> reg.udral.physics.dynamics.rotation.Planar_0:
+        return self._tilt
+    
+    @property
+    def stow(self) -> reg.udral.physics.dynamics.rotation.Planar_0:
+        return self._stow
+    
+    @property
+    def esc1(self) -> reg.udral.physics.dynamics.rotation.Planar_0:
+        return self._esc1
+    
+    @property
+    def esc2(self) -> reg.udral.physics.dynamics.rotation.Planar_0:
+        return self._esc2
+    
+    @property
+    def esc3(self) -> reg.udral.physics.dynamics.rotation.Planar_0:
+        return self._esc3
+    
+    @property
+    def esc4(self) -> reg.udral.physics.dynamics.rotation.Planar_0:
+        return self._esc4
+
+    @servo_readiness.setter
+    def servo_readiness(self, value: int) -> None:
+        assert value in [
+            reg.udral.service.common.Readiness_0.ENGAGED,
+            reg.udral.service.common.Readiness_0.STANDBY,
+            reg.udral.service.common.Readiness_0.SLEEP
+        ]
+        self._servo_readiness = reg.udral.service.common.Readiness_0(value)
+    
+    @esc_readiness.setter
+    def esc_readiness(self, value: int) -> None:
+        assert value in [
+            reg.udral.service.common.Readiness_0.ENGAGED,
+            reg.udral.service.common.Readiness_0.STANDBY,
+            reg.udral.service.common.Readiness_0.SLEEP
+        ]
+        self._esc_readiness = reg.udral.service.common.Readiness_0(value)
+
+    @elevon1.setter
+    def elevon1(self, value: float) -> None:
+        self._elevon1 = reg.udral.physics.dynamics.rotation.Planar_0(
+            reg.udral.physics.kinematics.rotation.Planar_0(
+                uavcan.si.unit.angle.Scalar_1(value)
+            )
+        )
+
+    @elevon2.setter
+    def elevon2(self, value: float) -> None:
+        self._elevon2 = reg.udral.physics.dynamics.rotation.Planar_0(
+            reg.udral.physics.kinematics.rotation.Planar_0(
+                uavcan.si.unit.angle.Scalar_1(value)
+            )
+        )
+
+    @tilt.setter
+    def tilt(self, value: float) -> None:
+        self._tilt = reg.udral.physics.dynamics.rotation.Planar_0(
+            reg.udral.physics.kinematics.rotation.Planar_0(
+                uavcan.si.unit.angle.Scalar_1(value)
+            )
+        )
+
+    @stow.setter
+    def stow(self, value: float) -> None:
+        self._stow = reg.udral.physics.dynamics.rotation.Planar_0(
+            reg.udral.physics.kinematics.rotation.Planar_0(
+                uavcan.si.unit.angle.Scalar_1(value)
+            )
+        )
+
+    @esc1.setter
+    def esc1(self, value: float) -> None:
+        """Set ESC setpoint in RPM."""
+        self._esc1 = reg.udral.physics.dynamics.rotation.Planar_0(
+            reg.udral.physics.kinematics.rotation.Planar_0(
+                angular_velocity=uavcan.si.unit.angular_velocity.Scalar_1(
+                    value * RPM_TO_RADS
+                )
+            )
+        )
+
+    @esc2.setter
+    def esc2(self, value: float) -> None:
+        """Set ESC setpoint in RPM."""
+        self._esc2 = reg.udral.physics.dynamics.rotation.Planar_0(
+            reg.udral.physics.kinematics.rotation.Planar_0(
+                angular_velocity=uavcan.si.unit.angular_velocity.Scalar_1(
+                    value * RPM_TO_RADS
+                )
+            )
+        )
+
+    @esc3.setter
+    def esc3(self, value: float) -> None:
+        """Set ESC setpoint in RPM."""
+        self._esc3 = reg.udral.physics.dynamics.rotation.Planar_0(
+            reg.udral.physics.kinematics.rotation.Planar_0(
+                angular_velocity=uavcan.si.unit.angular_velocity.Scalar_1(
+                    value * RPM_TO_RADS
+                )
+            )
+        )
+
+    @esc4.setter
+    def esc4(self, value: float) -> None:
+        """Set ESC setpoint in RPM."""
+        self._esc4 = reg.udral.physics.dynamics.rotation.Planar_0(
+            reg.udral.physics.kinematics.rotation.Planar_0(
+                angular_velocity=uavcan.si.unit.angular_velocity.Scalar_1(
+                    value * RPM_TO_RADS
+                )
+            )
+        )
 
 
 class Waypoint:
@@ -377,26 +575,68 @@ class MainIO:
             'UAVCAN__NODE__ID'                      :self.main.config.get('node_ids', 'mainio'),
             'UAVCAN__UDP__IFACE'                    :self.main.config.get('main', 'udp'),
 
-            'UAVCAN__SUB__ATTITUDE__ID'             :self.main.config.get('subject_ids', 'attitude'),
-            'UAVCAN__SUB__ALTITUDE__ID'             :self.main.config.get('subject_ids', 'altitude'),
-            'UAVCAN__SUB__GPS__ID'                  :self.main.config.get('subject_ids', 'gps'),
+            'UAVCAN__PUB__SERVO_READINESS__ID'      :self.main.config.get('subject_ids', 'servo_readiness'),
+            'UAVCAN__PUB__ESC_READINESS__ID'        :self.main.config.get('subject_ids', 'esc_readiness'),
 
+            'UAVCAN__PUB__ELEVON1_SP__ID'           :self.main.config.get('subject_ids', 'elevon1_sp'),
+            'UAVCAN__SUB__ELEVON1_FEEDBACK__ID'     :self.main.config.get('subject_ids', 'elevon1_feedback'),
+            'UAVCAN__SUB__ELEVON1_STATUS__ID'       :self.main.config.get('subject_ids', 'elevon1_status'),
+            'UAVCAN__SUB__ELEVON1_POWER__ID'        :self.main.config.get('subject_ids', 'elevon1_power'),
+            'UAVCAN__SUB__ELEVON1_DYNAMICS__ID'     :self.main.config.get('subject_ids', 'elevon1_dynamics'),
+
+            'UAVCAN__PUB__ELEVON2_SP__ID'           :self.main.config.get('subject_ids', 'elevon2_sp'),
+            'UAVCAN__SUB__ELEVON2_FEEDBACK__ID'     :self.main.config.get('subject_ids', 'elevon2_feedback'),
+            'UAVCAN__SUB__ELEVON2_STATUS__ID'       :self.main.config.get('subject_ids', 'elevon2_status'),
+            'UAVCAN__SUB__ELEVON2_POWER__ID'        :self.main.config.get('subject_ids', 'elevon2_power'),
+            'UAVCAN__SUB__ELEVON2_DYNAMICS__ID'     :self.main.config.get('subject_ids', 'elevon2_dynamics'),
+
+            'UAVCAN__PUB__TILT_SP__ID'              :self.main.config.get('subject_ids', 'tilt_sp'),
+            'UAVCAN__SUB__TILT_FEEDBACK__ID'        :self.main.config.get('subject_ids', 'tilt_feedback'),
+            'UAVCAN__SUB__TILT_STATUS__ID'          :self.main.config.get('subject_ids', 'tilt_status'),
+            'UAVCAN__SUB__TILT_POWER__ID'           :self.main.config.get('subject_ids', 'tilt_power'),
+            'UAVCAN__SUB__TILT_DYNAMICS__ID'        :self.main.config.get('subject_ids', 'tilt_dynamics'),
+
+            'UAVCAN__PUB__STOW_SP__ID'              :self.main.config.get('subject_ids', 'stow_sp'),
+            'UAVCAN__SUB__STOW_FEEDBACK__ID'        :self.main.config.get('subject_ids', 'stow_feedback'),
+            'UAVCAN__SUB__STOW_STATUS__ID'          :self.main.config.get('subject_ids', 'stow_status'),
+            'UAVCAN__SUB__STOW_POWER__ID'           :self.main.config.get('subject_ids', 'stow_power'),
+            'UAVCAN__SUB__STOW_DYNAMICS__ID'        :self.main.config.get('subject_ids', 'stow_dynamics'),
+
+            'UAVCAN__PUB__ESC1_SP__ID'              :self.main.config.get('subject_ids', 'esc1_sp'),
+            'UAVCAN__SUB__ESC1_FEEDBACK__ID'        :self.main.config.get('subject_ids', 'esc1_feedback'),
+            'UAVCAN__SUB__ESC1_STATUS__ID'          :self.main.config.get('subject_ids', 'esc1_status'),
+            'UAVCAN__SUB__ESC1_POWER__ID'           :self.main.config.get('subject_ids', 'esc1_power'),
+            'UAVCAN__SUB__ESC1_DYNAMICS__ID'        :self.main.config.get('subject_ids', 'esc1_dynamics'),
+
+            'UAVCAN__PUB__ESC2_SP__ID'              :self.main.config.get('subject_ids', 'esc2_sp'),
+            'UAVCAN__SUB__ESC2_FEEDBACK__ID'        :self.main.config.get('subject_ids', 'esc2_feedback'),
+            'UAVCAN__SUB__ESC2_STATUS__ID'          :self.main.config.get('subject_ids', 'esc2_status'),
+            'UAVCAN__SUB__ESC2_POWER__ID'           :self.main.config.get('subject_ids', 'esc2_power'),
+            'UAVCAN__SUB__ESC2_DYNAMICS__ID'        :self.main.config.get('subject_ids', 'esc2_dynamics'),
+
+            'UAVCAN__PUB__ESC3_SP__ID'              :self.main.config.get('subject_ids', 'esc3_sp'),
+            'UAVCAN__SUB__ESC3_FEEDBACK__ID'        :self.main.config.get('subject_ids', 'esc3_feedback'),
+            'UAVCAN__SUB__ESC3_STATUS__ID'          :self.main.config.get('subject_ids', 'esc3_status'),
+            'UAVCAN__SUB__ESC3_POWER__ID'           :self.main.config.get('subject_ids', 'esc3_power'),
+            'UAVCAN__SUB__ESC3_DYNAMICS__ID'        :self.main.config.get('subject_ids', 'esc3_dynamics'),
+
+            'UAVCAN__PUB__ESC4_SP__ID'              :self.main.config.get('subject_ids', 'esc4_sp'),
+            'UAVCAN__SUB__ESC4_FEEDBACK__ID'        :self.main.config.get('subject_ids', 'esc4_feedback'),
+            'UAVCAN__SUB__ESC4_STATUS__ID'          :self.main.config.get('subject_ids', 'esc4_status'),
+            'UAVCAN__SUB__ESC4_POWER__ID'           :self.main.config.get('subject_ids', 'esc4_power'),
+            'UAVCAN__SUB__ESC4_DYNAMICS__ID'        :self.main.config.get('subject_ids', 'esc4_dynamics'),
+
+            'UAVCAN__SUB__INERTIAL__ID'             :self.main.config.get('subject_ids', 'inertial'),
+            'UAVCAN__SUB__ALTITUDE__ID'             :self.main.config.get('subject_ids', 'altitude'),
             'UAVCAN__SUB__IAS__ID'                  :self.main.config.get('subject_ids', 'ias'),
             'UAVCAN__SUB__AOA__ID'                  :self.main.config.get('subject_ids', 'aoa'),
-            'UAVCAN__SUB__SLIP__ID'                 :self.main.config.get('subject_ids', 'slip'),
-
-            'UAVCAN__PUB__SERVOS__ID'               :self.main.config.get('subject_ids', 'servo'),
-            'UAVCAN__PUB__ESCS__ID'                 :self.main.config.get('subject_ids', 'esc'),
+            'UAVCAN__SUB__GPS__ID'                  :self.main.config.get('subject_ids', 'gps'),
 
             'UAVCAN__SUB__CLOCK_SYNC_TIME__ID'      :self.main.config.get('subject_ids', 'clock_sync_time'),
-            # 'UAVCAN__SUB__CLOCK_SYNC_TIME_LAST__ID' :self.main.config.get('subject_ids', 'clock_sync_time_last'),
-
-            # 'UAVCAN__SUB__GPS_SYNC_TIME__ID'        :self.main.config.get('subject_ids', 'gps_sync_time'),
-            # 'UAVCAN__SUB__GPS_SYNC_TIME_LAST__ID'   :self.main.config.get('subject_ids', 'gps_sync_time_last'),
-
-            # 'UAVCAN__CLN__CLOCK_SYNC_INFO__ID'      :self.main.config.get('service_ids', 'clock_sync_info'),
-            # 'UAVCAN__CLN__GPS_SYNC_INFO__ID'        :self.main.config.get('service_ids', 'gps_sync_info'),
+            'UAVCAN__SUB__GPS_SYNC_TIME__ID'        :self.main.config.get('subject_ids', 'gps_sync_time'),
         })
+
+        self._use_gps_time = False
         
         node_info = uavcan.node.GetInfo_1.Response(
             software_version=uavcan.node.Version_1(major=1, minor=0),
@@ -411,25 +651,71 @@ class MainIO:
         self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.INITIALIZATION
         self._node.heartbeat_publisher.vendor_specific_status_code = os.getpid() % 100
         
-        self._sub_att = self._node.make_subscriber(ahrs.Solution_1, 'attitude')
-        self._sub_alt = self._node.make_subscriber(range_sensor.Measurement_1, 'altitude')
-        self._sub_gps = self._node.make_subscriber(gnss.Fix2_1, 'gps')
+        self._sub_ins = self._node.make_subscriber(reg.udral.physics.kinematics.cartesian.StateVarTs_0, 'inertial')
+        self._sub_alt = self._node.make_subscriber(uavcan.si.unit.length.WideScalar_1, 'altitude')
+        self._sub_ias = self._node.make_subscriber(reg.udral.physics.kinematics.translation.LinearTs_0, 'ias')
+        self._sub_aoa = self._node.make_subscriber(uavcan.si.unit.angle.Scalar_1, 'aoa')
+        self._sub_gps = self._node.make_subscriber(reg.udral.physics.kinematics.geodetic.PointStateVarTs_0, 'gps')
 
-        self._sub_ias = self._node.make_subscriber(air_data.IndicatedAirspeed_1, 'ias')
-        self._sub_aoa = self._node.make_subscriber(air_data.AngleOfAttack_1, 'aoa')
-        self._sub_slip = self._node.make_subscriber(air_data.Sideslip_1, 'slip')
+        self._pub_servo_readiness = self._node.make_publisher(reg.udral.service.common.Readiness_0, 'servo_readiness')
+        self._pub_esc_readiness = self._node.make_publisher(reg.udral.service.common.Readiness_0, 'esc_readiness')
 
-        self._pub_servos = self._node.make_publisher(actuator.ArrayCommand_1, 'servos')
-        self._pub_escs = self._node.make_publisher(esc.RPMCommand_1, 'escs')
+        self._pub_elevon1_sp = self._node.make_publisher(reg.udral.physics.dynamics.rotation.Planar_0, 'elevon1_sp')
+        self._sub_elevon1_feedback = self._node.make_subscriber(reg.udral.service.actuator.common.Feedback_0, 'elevon1_feedback')
+        self._sub_elevon1_status = self._node.make_subscriber(reg.udral.service.actuator.common.Status_0, 'elevon1_status')
+        self._sub_elevon1_power = self._node.make_subscriber(reg.udral.physics.electricity.PowerTs_0, 'elevon1_power')
+        self._sub_elevon1_dynamics = self._node.make_subscriber(reg.udral.physics.dynamics.rotation.PlanarTs_0, 'elevon1_dynamics')
+
+        self._pub_elevon2_sp = self._node.make_publisher(reg.udral.physics.dynamics.rotation.Planar_0, 'elevon2_sp')
+        self._sub_elevon2_feedback = self._node.make_subscriber(reg.udral.service.actuator.common.Feedback_0, 'elevon2_feedback')
+        self._sub_elevon2_status = self._node.make_subscriber(reg.udral.service.actuator.common.Status_0, 'elevon2_status')
+        self._sub_elevon2_power = self._node.make_subscriber(reg.udral.physics.electricity.PowerTs_0, 'elevon2_power')
+        self._sub_elevon2_dynamics = self._node.make_subscriber(reg.udral.physics.dynamics.rotation.PlanarTs_0, 'elevon2_dynamics')
+
+        self._pub_tilt_sp = self._node.make_publisher(reg.udral.physics.dynamics.rotation.Planar_0, 'tilt_sp')
+        self._sub_tilt_feedback = self._node.make_subscriber(reg.udral.service.actuator.common.Feedback_0, 'tilt_feedback')
+        self._sub_tilt_status = self._node.make_subscriber(reg.udral.service.actuator.common.Status_0, 'tilt_status')
+        self._sub_tilt_power = self._node.make_subscriber(reg.udral.physics.electricity.PowerTs_0, 'tilt_power')
+        self._sub_tilt_dynamics = self._node.make_subscriber(reg.udral.physics.dynamics.rotation.PlanarTs_0, 'tilt_dynamics')
+
+        self._pub_stow_sp = self._node.make_publisher(reg.udral.physics.dynamics.rotation.Planar_0, 'stow_sp')
+        self._sub_stow_feedback = self._node.make_subscriber(reg.udral.service.actuator.common.Feedback_0, 'stow_feedback')
+        self._sub_stow_status = self._node.make_subscriber(reg.udral.service.actuator.common.Status_0, 'stow_status')
+        self._sub_stow_power = self._node.make_subscriber(reg.udral.physics.electricity.PowerTs_0, 'stow_power')
+        self._sub_stow_dynamics = self._node.make_subscriber(reg.udral.physics.dynamics.rotation.PlanarTs_0, 'stow_dynamics')
+
+        self._pub_esc1_sp = self._node.make_publisher(reg.udral.physics.dynamics.rotation.Planar_0, 'esc1_sp')
+        self._sub_esc1_feedback = self._node.make_subscriber(reg.udral.service.actuator.common.Feedback_0, 'esc1_feedback')
+        self._sub_esc1_status = self._node.make_subscriber(reg.udral.service.actuator.common.Status_0, 'esc1_status')
+        self._sub_esc1_power = self._node.make_subscriber(reg.udral.physics.electricity.PowerTs_0, 'esc1_power')
+        self._sub_esc1_dynamics = self._node.make_subscriber(reg.udral.physics.dynamics.rotation.PlanarTs_0, 'esc1_dynamics')
+
+        self._pub_esc2_sp = self._node.make_publisher(reg.udral.physics.dynamics.rotation.Planar_0, 'esc2_sp')
+        self._sub_esc2_feedback = self._node.make_subscriber(reg.udral.service.actuator.common.Feedback_0, 'esc2_feedback')
+        self._sub_esc2_status = self._node.make_subscriber(reg.udral.service.actuator.common.Status_0, 'esc2_status')
+        self._sub_esc2_power = self._node.make_subscriber(reg.udral.physics.electricity.PowerTs_0, 'esc2_power')
+        self._sub_esc2_dynamics = self._node.make_subscriber(reg.udral.physics.dynamics.rotation.PlanarTs_0, 'esc2_dynamics')
+
+        self._pub_esc3_sp = self._node.make_publisher(reg.udral.physics.dynamics.rotation.Planar_0, 'esc3_sp')
+        self._sub_esc3_feedback = self._node.make_subscriber(reg.udral.service.actuator.common.Feedback_0, 'esc3_feedback')
+        self._sub_esc3_status = self._node.make_subscriber(reg.udral.service.actuator.common.Status_0, 'esc3_status')
+        self._sub_esc3_power = self._node.make_subscriber(reg.udral.physics.electricity.PowerTs_0, 'esc3_power')
+        self._sub_esc3_dynamics = self._node.make_subscriber(reg.udral.physics.dynamics.rotation.PlanarTs_0, 'esc3_dynamics')
+
+        self._pub_esc4_sp = self._node.make_publisher(reg.udral.physics.dynamics.rotation.Planar_0, 'esc4_sp')
+        self._sub_esc4_feedback = self._node.make_subscriber(reg.udral.service.actuator.common.Feedback_0, 'esc4_feedback')
+        self._sub_esc4_status = self._node.make_subscriber(reg.udral.service.actuator.common.Status_0, 'esc4_status')
+        self._sub_esc4_power = self._node.make_subscriber(reg.udral.physics.electricity.PowerTs_0, 'esc4_power')
+        self._sub_esc4_dynamics = self._node.make_subscriber(reg.udral.physics.dynamics.rotation.PlanarTs_0, 'esc4_dynamics')
 
         self._sub_clock_sync_time = self._node.make_subscriber(uavcan.time.SynchronizedTimestamp_1, 'clock_sync_time')
-        # self._sub_clock_sync_time_last = self._node.make_subscriber(uavcan.time.Synchronization_1, 'clock_sync_time_last')
+        self._sub_clock_sync_time_last = self._node.make_subscriber(uavcan.time.Synchronization_1)
 
-        # self._sub_gps_sync_time = self._node.make_subscriber(uavcan.time.SynchronizedTimestamp_1, 'gps_sync_time')
-        # self._sub_gps_sync_time_last = self._node.make_subscriber(uavcan.time.Synchronization_1, 'gps_sync_time_last')
+        self._sub_gps_sync_time = self._node.make_subscriber(uavcan.time.SynchronizedTimestamp_1, 'gps_sync_time')
+        self._sub_gps_sync_time_last = self._node.make_subscriber(uavcan.time.Synchronization_1)
 
-        # self._cln_clock_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, self.main.config.getint('service_ids', 'clock_sync_info'), 'clock_sync_info')
-        # self._cln_gps_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, self.main.config.getint('service_ids', 'gps_sync_info'), 'gps_sync_info')
+        self._cln_clock_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, self.main.config.getint('node_ids', 'clock'))
+        self._cln_gps_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, self.main.config.getint('node_ids', 'gps'))
 
         self._node.start()
 
@@ -452,8 +738,19 @@ class MainIO:
 
     @async_loop_decorator()
     async def _mainio_run_loop(self) -> None:
-        await self._pub_servos.publish(self.main.txdata.servo)
-        await self._pub_escs.publish(self.main.txdata.esc)
+        await self._pub_servo_readiness.publish(self.main.txdata.servo_readiness)
+        await self._pub_esc_readiness.publish(self.main.txdata.esc_readiness)
+
+        await self._pub_elevon1_sp.publish(self.main.txdata.elevon1)
+        await self._pub_elevon2_sp.publish(self.main.txdata.elevon2)
+        await self._pub_tilt_sp.publish(self.main.txdata.tilt)
+        await self._pub_stow_sp.publish(self.main.txdata.stow)
+
+        await self._pub_esc1_sp.publish(self.main.txdata.esc1)
+        await self._pub_esc2_sp.publish(self.main.txdata.esc2)
+        await self._pub_esc3_sp.publish(self.main.txdata.esc3)
+        await self._pub_esc4_sp.publish(self.main.txdata.esc4)
+
         await asyncio.sleep(1 / self._freq)
 
     async def run(self) -> None:
@@ -463,32 +760,35 @@ class MainIO:
             self.main.rxdata.time.dump(msg)
         self._sub_clock_sync_time.receive_in_background(on_time)
 
-        def on_att(msg: ahrs.Solution_1, _: pycyphal.transport.TransferFrom) -> None:
+        # TODO: gps time transition
+        def on_gps_time(msg: uavcan.time.SynchronizedTimestamp_1, _: pycyphal.transport.TransferFrom) -> None:
+            if self._use_gps_time:
+                self.main.rxdata.time.dump(msg)
+        self._sub_gps_sync_time.receive_in_background(on_gps_time)
+        
+        def on_att(msg: reg.udral.physics.kinematics.cartesian.StateVarTs_0, _: pycyphal.transport.TransferFrom) -> None:
             self.main.rxdata.att.dump(msg)
-        self._sub_att.receive_in_background(on_att)
+        self._sub_ins.receive_in_background(on_att)
 
-        def on_alt(msg: range_sensor.Measurement_1, _: pycyphal.transport.TransferFrom) -> None:
-            self.main.rxdata.alt.dump(msg)
+        def on_alt(msg: uavcan.si.unit.length.WideScalar_1, _: pycyphal.transport.TransferFrom) -> None:
+            t = self.main.rxdata.time.time
+            self.main.rxdata.alt.dump(msg, t)
         self._sub_alt.receive_in_background(on_alt)
 
-        def on_gps(msg: gnss.Fix2_1, _: pycyphal.transport.TransferFrom) -> None:
+        def on_gps(msg: reg.udral.physics.kinematics.geodetic.PointStateVarTs_0, _: pycyphal.transport.TransferFrom) -> None:
             self.main.rxdata.gps.dump(msg, self.main.rxdata.att.yaw)
         self._sub_gps.receive_in_background(on_gps)
 
-        def on_ias(msg: air_data.IndicatedAirspeed_1, _: pycyphal.transport.TransferFrom) -> None:
-            t = self.main.rxdata.time.time
-            self.main.rxdata.ias.dump(msg, t)
+        def on_ias(msg: reg.udral.physics.kinematics.translation.LinearTs_0, _: pycyphal.transport.TransferFrom) -> None:
+            self.main.rxdata.ias.dump(msg)
         self._sub_ias.receive_in_background(on_ias)
 
-        def on_aoa(msg: air_data.AngleOfAttack_1, _: pycyphal.transport.TransferFrom) -> None:
+        def on_aoa(msg: uavcan.si.unit.angle.Scalar_1, _: pycyphal.transport.TransferFrom) -> None:
             t = self.main.rxdata.time.time
             self.main.rxdata.aoa.dump(msg, t)
         self._sub_aoa.receive_in_background(on_aoa)
-
-        def on_slip(msg: air_data.Sideslip_1, _: pycyphal.transport.TransferFrom) -> None:
-            t = self.main.rxdata.time.time
-            self.main.rxdata.slip.dump(msg, t)
-        self._sub_slip.receive_in_background(on_slip)
+        
+        # TODO: motor diagnostic subscribers
         #endregion
         
         self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
@@ -826,7 +1126,7 @@ class Processor:
             case _:
                 # Safed
                 self._servos = np.array([0.0, 0.0, math.pi/2, math.pi/2], dtype=np.float16)
-                self._throttles = np.zeros(4, dtype=np.float16).fill(0.0)
+                self._throttles = np.zeros(4, dtype=np.float16)
 
         self._servos[:2] = np.clip(self._servos[:2], -math.pi/12, 7*math.pi/12)
         self._servos[2:] = np.clip(self._servos[2:], 0.0, math.pi/2)
@@ -834,19 +1134,15 @@ class Processor:
         self._servos = np.nan_to_num(self._servos)
         self._throttles = np.nan_to_num(self._throttles)
 
-        self.main.txdata.servo = actuator.ArrayCommand_1([
-            actuator.Command_1(0, actuator.Command_1.COMMAND_TYPE_POSITION, self._servos[0]), # Elevon 1
-            actuator.Command_1(1, actuator.Command_1.COMMAND_TYPE_POSITION, self._servos[1]), # Elevon 2
-            actuator.Command_1(2, actuator.Command_1.COMMAND_TYPE_POSITION, self._servos[2]), # Rudder
-            actuator.Command_1(3, actuator.Command_1.COMMAND_TYPE_POSITION, self._servos[3])  # Wing-tilt
-        ])
+        self.main.txdata.elevon1 = self._servos[0]
+        self.main.txdata.elevon2 = self._servos[1]
+        self.main.txdata.tilt = self._servos[2]
+        self.main.txdata.stow = self._servos[3]
         
-        self.main.txdata.esc = esc.RPMCommand_1([
-            int(self._throttles[0]), # Throttle 1
-            int(self._throttles[1]), # Throttle 2
-            int(self._throttles[2]), # Throttle 3
-            int(self._throttles[3])  # Throttle 4
-        ])
+        self.main.txdata.esc1 = self._throttles[0]
+        self.main.txdata.esc2 = self._throttles[1]
+        self.main.txdata.esc3 = self._throttles[2]
+        self.main.txdata.esc4 = self._throttles[3]
 
         await asyncio.sleep(0)
 
@@ -1240,10 +1536,10 @@ class Controller:
         if msg is not None:
             if msg.get_type() == 'HEARTBEAT' and msg.get_srcSystem()==target:
                 logging.debug(f"Heartbeat message from camera #{msg.get_srcSystem()}")
-                self._last_cam_beat = time.time()
+                self._last_cam_beat = self.main.rxdata.time.time
 
         if self._last_cam_beat:
-            if time.time()-self._last_cam_beat > HEARTBEAT_TIMEOUT:
+            if self.main.rxdata.time.time-self._last_cam_beat > HEARTBEAT_TIMEOUT*1e6: # TODO: remove time module dependency
                 logging.warning(f"Heartbeat timeout from camera #{target}, closing...")
                 self._last_cam_beat = False
                 self._cam_conn.close()
