@@ -235,18 +235,19 @@ class XPConnect:
     async def run(self) -> None:
         logging.warning("Data streaming...\n----- Ctrl-C to exit -----")
         await self._xpconnect_run_loop()
-        
-    async def close(self) -> None:
-        logging.debug("Closing XPL")
 
-        tx_data[b'fmuas/python_running'] = 0.0
-
+    async def _halt(self) -> None:
         for index, dref in enumerate(rx_data.keys()):
-            await asyncio.sleep(0)
             msg = struct.pack('<4sxii400s', b'RREF', 0, index, dref)
             self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
         logging.info("Stopped listening for drefs")
-        await asyncio.sleep(1)
+        
+    async def close(self) -> None:
+        logging.info("Closing XPL")
+
+        await self._halt()
+
+        tx_data[b'fmuas/python_running'] = 0.0
 
         # line1 = "PYTHON CONNECTION LOST"
         # line2 = ""
