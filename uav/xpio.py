@@ -371,7 +371,7 @@ class MotorHub:
 
         self._node = pycyphal.application.make_node(node_info, self._registry)
 
-        self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
+        self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.INITIALIZATION
         self._node.heartbeat_publisher.vendor_specific_status_code = os.getpid() % 100
 
         self._sub_servo_readiness = self._node.make_subscriber(reg.udral.service.common.Readiness_0, 'servo_readiness')
@@ -425,6 +425,9 @@ class MotorHub:
         self._pub_esc4_power = self._node.make_publisher(reg.udral.physics.electricity.PowerTs_0, 'esc4_power')
         self._pub_esc4_dynamics = self._node.make_publisher(reg.udral.physics.dynamics.rotation.PlanarTs_0, 'esc4_dynamics')
 
+        self._srv_exec_cmd = self._node.get_server(uavcan.node.ExecuteCommand_1)
+        self._srv_exec_cmd.serve_in_background(self._serve_exec_cmd)
+
         self._servo_readiness = reg.udral.service.common.Readiness_0.ENGAGED
         self._esc_readiness = reg.udral.service.common.Readiness_0.ENGAGED
 
@@ -440,6 +443,41 @@ class MotorHub:
         self._status_publish_time = now
 
         self._node.start()
+
+    async def _serve_exec_cmd(
+            self,
+            request: uavcan.node.ExecuteCommand_1.Request, 
+            metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.node.ExecuteCommand_1.Response:
+        logging.info("Execute command request %s from node %d", request, metadata.client_node_id)
+        match request.command:
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_RESTART:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_EMERGENCY_STOP:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_FACTORY_RESET:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_STORE_PERSISTENT_STATES:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_BEGIN_SOFTWARE_UPDATE:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case _:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_BAD_COMMAND
+                )
 
     @async_loop_decorator()
     async def _motorhub_run_loop(self) -> None:
@@ -558,108 +596,141 @@ class MotorHub:
 
         def on_elevon1_sp(msg: reg.udral.physics.dynamics.rotation.Planar_0, _: pycyphal.transport.TransferFrom) -> None:
             tx_data[b'fmuas/afcs/output/elevon1'] = math.degrees(msg.kinematics.angular_position.radian)
-            self._pub_elevon1_feedback.publish_soon(reg.udral.service.actuator.common.Feedback_0(
-                reg.udral.service.common.Heartbeat_0(
-                    reg.udral.service.common.Readiness_0(self._servo_readiness),
-                    uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
-                )
-            ))
-            self._pub_elevon1_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
-            self._pub_elevon1_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
-            self._elevon1_publish_time = time.monotonic()
+            try:
+                self._pub_elevon1_feedback.publish_soon(reg.udral.service.actuator.common.Feedback_0(
+                    reg.udral.service.common.Heartbeat_0(
+                        reg.udral.service.common.Readiness_0(self._servo_readiness),
+                        uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
+                    )
+                ))
+                self._pub_elevon1_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
+                self._pub_elevon1_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
+            except pycyphal.presentation._port._error.PortClosedError:
+                pass
+            else:
+                self._elevon1_publish_time = time.monotonic()
         self._sub_elevon1_sp.receive_in_background(on_elevon1_sp)
 
         def on_elevon2_sp(msg: reg.udral.physics.dynamics.rotation.Planar_0, _: pycyphal.transport.TransferFrom) -> None:
             tx_data[b'fmuas/afcs/output/elevon2'] = math.degrees(msg.kinematics.angular_position.radian)
-            self._pub_elevon2_feedback.publish_soon(reg.udral.service.actuator.common.Feedback_0(
-                reg.udral.service.common.Heartbeat_0(
-                    reg.udral.service.common.Readiness_0(self._servo_readiness),
-                    uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
-                )
-            ))
-            self._pub_elevon2_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
-            self._pub_elevon2_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
-            self._elevon2_publish_time = time.monotonic()
+            try:
+                self._pub_elevon2_feedback.publish_soon(reg.udral.service.actuator.common.Feedback_0(
+                    reg.udral.service.common.Heartbeat_0(
+                        reg.udral.service.common.Readiness_0(self._servo_readiness),
+                        uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
+                    )
+                ))
+                self._pub_elevon2_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
+                self._pub_elevon2_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
+            except pycyphal.presentation._port._error.PortClosedError:
+                pass
+            else:
+                self._elevon2_publish_time = time.monotonic()
         self._sub_elevon2_sp.receive_in_background(on_elevon2_sp)
 
         def on_tilt_sp(msg: reg.udral.physics.dynamics.rotation.Planar_0, _: pycyphal.transport.TransferFrom) -> None:
             tx_data[b'fmuas/afcs/output/wing_tilt'] = math.degrees(msg.kinematics.angular_position.radian)
-            self._pub_tilt_feedback.publish_soon(reg.udral.service.actuator.common.Feedback_0(
-                reg.udral.service.common.Heartbeat_0(
-                    reg.udral.service.common.Readiness_0(self._servo_readiness),
-                    uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
-                )
-            ))
-            self._pub_tilt_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
-            self._pub_tilt_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
-            self._tilt_publish_time = time.monotonic()
+            try:
+                self._pub_tilt_feedback.publish_soon(reg.udral.service.actuator.common.Feedback_0(
+                    reg.udral.service.common.Heartbeat_0(
+                        reg.udral.service.common.Readiness_0(self._servo_readiness),
+                        uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
+                    )
+                ))
+                self._pub_tilt_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
+                self._pub_tilt_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
+            except pycyphal.presentation._port._error.PortClosedError:
+                pass
+            else:
+                self._tilt_publish_time = time.monotonic()
         self._sub_tilt_sp.receive_in_background(on_tilt_sp)
 
         def on_stow_sp(msg: reg.udral.physics.dynamics.rotation.Planar_0, _: pycyphal.transport.TransferFrom) -> None:
             tx_data[b'fmuas/afcs/output/wing_stow'] = math.degrees(msg.kinematics.angular_position.radian)
-            self._pub_stow_feedback.publish_soon(reg.udral.service.actuator.common.Feedback_0(
-                reg.udral.service.common.Heartbeat_0(
-                    reg.udral.service.common.Readiness_0(self._servo_readiness),
-                    uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
-                )
-            ))
-            self._pub_stow_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
-            self._pub_stow_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
-            self._stow_publish_time = time.monotonic()
+            try:
+                self._pub_stow_feedback.publish_soon(reg.udral.service.actuator.common.Feedback_0(
+                    reg.udral.service.common.Heartbeat_0(
+                        reg.udral.service.common.Readiness_0(self._servo_readiness),
+                        uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
+                    )
+                ))
+                self._pub_stow_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
+                self._pub_stow_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
+            except pycyphal.presentation._port._error.PortClosedError:
+                pass
+            else:
+                self._stow_publish_time = time.monotonic()
         self._sub_stow_sp.receive_in_background(on_stow_sp)
 
         def on_esc1_sp(msg: reg.udral.physics.dynamics.rotation.Planar_0, _: pycyphal.transport.TransferFrom) -> None:
             tx_data[b'fmuas/afcs/output/rpm1'] = msg.kinematics.angular_velocity.radian_per_second * (30/math.pi)
-            self._pub_esc1_feedback.publish_soon(reg.udral.service.actuator.common.Feedback_0(
-                reg.udral.service.common.Heartbeat_0(
-                    reg.udral.service.common.Readiness_0(self._esc_readiness),
-                    uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
-                )
-            ))
-            self._pub_esc1_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
-            self._pub_esc1_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
-            self._esc1_publish_time = time.monotonic()
+            try:
+                self._pub_esc1_feedback.publish_soon(reg.udral.service.actuator.common.Feedback_0(
+                    reg.udral.service.common.Heartbeat_0(
+                        reg.udral.service.common.Readiness_0(self._esc_readiness),
+                        uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
+                    )
+                ))
+                self._pub_esc1_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
+                self._pub_esc1_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
+            except pycyphal.presentation._port._error.PortClosedError:
+                pass
+            else:
+                self._esc1_publish_time = time.monotonic()
         self._sub_esc1_sp.receive_in_background(on_esc1_sp)
 
         def on_esc2_sp(msg: reg.udral.physics.dynamics.rotation.Planar_0, _: pycyphal.transport.TransferFrom) -> None:
             tx_data[b'fmuas/afcs/output/rpm2'] = msg.kinematics.angular_velocity.radian_per_second * (30/math.pi)
-            self._pub_esc2_feedback.publish_soon(reg.udral.service.actuator.common.Feedback_0(
-                reg.udral.service.common.Heartbeat_0(
-                    reg.udral.service.common.Readiness_0(self._esc_readiness),
-                    uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
-                )
-            ))
-            self._pub_esc2_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
-            self._pub_esc2_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
-            self._esc2_publish_time = time.monotonic()
+            try:
+                self._pub_esc2_feedback.publish_soon(reg.udral.service.actuator.common.Feedback_0(
+                    reg.udral.service.common.Heartbeat_0(
+                        reg.udral.service.common.Readiness_0(self._esc_readiness),
+                        uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
+                    )
+                ))
+                self._pub_esc2_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
+                self._pub_esc2_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
+            except pycyphal.presentation._port._error.PortClosedError:
+                pass
+            else:
+                self._esc2_publish_time = time.monotonic()
         self._sub_esc2_sp.receive_in_background(on_esc2_sp)
 
         def on_esc3_sp(msg: reg.udral.physics.dynamics.rotation.Planar_0, _: pycyphal.transport.TransferFrom) -> None:
             tx_data[b'fmuas/afcs/output/rpm3'] = msg.kinematics.angular_velocity.radian_per_second * (30/math.pi)
-            self._pub_esc3_feedback.publish_soon(reg.udral.service.actuator.common.Feedback_0(
-                reg.udral.service.common.Heartbeat_0(
-                    reg.udral.service.common.Readiness_0(self._esc_readiness),
-                    uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
-                )
-            ))
-            self._pub_esc3_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
-            self._pub_esc3_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
-            self._esc3_publish_time = time.monotonic()
+            try:
+                self._pub_esc3_feedback.publish_soon(reg.udral.service.actuator.common.Feedback_0(
+                    reg.udral.service.common.Heartbeat_0(
+                        reg.udral.service.common.Readiness_0(self._esc_readiness),
+                        uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
+                    )
+                ))
+                self._pub_esc3_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
+                self._pub_esc3_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
+            except pycyphal.presentation._port._error.PortClosedError:
+                pass
+            else:
+                self._esc3_publish_time = time.monotonic()
         self._sub_esc3_sp.receive_in_background(on_esc3_sp)
 
         def on_esc4_sp(msg: reg.udral.physics.dynamics.rotation.Planar_0, _: pycyphal.transport.TransferFrom) -> None:
             tx_data[b'fmuas/afcs/output/rpm4'] = msg.kinematics.angular_velocity.radian_per_second * (30/math.pi)
-            self._pub_esc4_feedback.publish_soon(reg.udral.service.actuator.common.Feedback_0(
-                reg.udral.service.common.Heartbeat_0(
-                    reg.udral.service.common.Readiness_0(self._esc_readiness),
-                    uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
-                )
-            ))
-            self._pub_esc4_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
-            self._pub_esc4_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
-            self._esc4_publish_time = time.monotonic()
+            try:
+                self._pub_esc4_feedback.publish_soon(reg.udral.service.actuator.common.Feedback_0(
+                    reg.udral.service.common.Heartbeat_0(
+                        reg.udral.service.common.Readiness_0(self._esc_readiness),
+                        uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
+                    )
+                ))
+                self._pub_esc4_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
+                self._pub_esc4_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
+            except pycyphal.presentation._port._error.PortClosedError:
+                pass
+            else:
+                self._esc4_publish_time = time.monotonic()
         self._sub_esc4_sp.receive_in_background(on_esc4_sp)
         
+        self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
         await self._motorhub_run_loop()
 
     async def close(self) -> None:
@@ -693,7 +764,7 @@ class SensorHub:
 
         self._node = pycyphal.application.make_node(node_info, self._registry)
 
-        self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
+        self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.INITIALIZATION
         self._node.heartbeat_publisher.vendor_specific_status_code = os.getpid() % 100
         
         self._pub_ins = self._node.make_publisher(reg.udral.physics.kinematics.cartesian.StateVarTs_0, 'inertial')
@@ -710,7 +781,45 @@ class SensorHub:
         self._cln_clock_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, config.getint('node_ids', 'clock'))
         self._cln_gps_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, config.getint('node_ids', 'gps'))
 
+        self._srv_exec_cmd = self._node.get_server(uavcan.node.ExecuteCommand_1)
+        self._srv_exec_cmd.serve_in_background(self._serve_exec_cmd)
+
         self._node.start()
+
+    async def _serve_exec_cmd(
+            self,
+            request: uavcan.node.ExecuteCommand_1.Request, 
+            metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.node.ExecuteCommand_1.Response:
+        logging.info("Execute command request %s from node %d", request, metadata.client_node_id)
+        match request.command:
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_RESTART:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_EMERGENCY_STOP:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_FACTORY_RESET:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_STORE_PERSISTENT_STATES:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_BEGIN_SOFTWARE_UPDATE:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case _:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_BAD_COMMAND
+                )
 
     @async_loop_decorator()
     async def _sensorhub_run_loop(self) -> None:
@@ -782,6 +891,7 @@ class SensorHub:
             pass # TODO
         self._sub_gps_sync_time_last.receive_in_background(on_gps_time_last)
 
+        self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
         await self._sensorhub_run_loop()
 
     async def close(self) -> None:
@@ -812,7 +922,7 @@ class GPS:
 
         self._node = pycyphal.application.make_node(node_info, self._registry)
 
-        self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
+        self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.INITIALIZATION
         self._node.heartbeat_publisher.vendor_specific_status_code = os.getpid() % 100
         
         self._pub_gps = self._node.make_publisher(reg.udral.physics.kinematics.geodetic.PointStateVarTs_0, 'gps')
@@ -828,7 +938,45 @@ class GPS:
 
         self._cln_clock_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, config.getint('node_ids', 'clock'))
 
+        self._srv_exec_cmd = self._node.get_server(uavcan.node.ExecuteCommand_1)
+        self._srv_exec_cmd.serve_in_background(self._serve_exec_cmd)
+
         self._node.start()
+
+    async def _serve_exec_cmd(
+            self,
+            request: uavcan.node.ExecuteCommand_1.Request, 
+            metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.node.ExecuteCommand_1.Response:
+        logging.info("Execute command request %s from node %d", request, metadata.client_node_id)
+        match request.command:
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_RESTART:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_EMERGENCY_STOP:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_FACTORY_RESET:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_STORE_PERSISTENT_STATES:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_BEGIN_SOFTWARE_UPDATE:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case _:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_BAD_COMMAND
+                )
 
     @staticmethod
     async def _serve_sync_master_info(
@@ -885,6 +1033,7 @@ class GPS:
             pass
         self._sub_clock_sync_time_last.receive_in_background(on_time_last)
 
+        self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
         await self._gps_run_loop()
 
     async def close(self) -> None:
@@ -910,7 +1059,7 @@ class Clock:
 
         self._node = pycyphal.application.make_node(node_info, self._registry)
 
-        self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
+        self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.INITIALIZATION
         self._node.heartbeat_publisher.vendor_specific_status_code = os.getpid() % 100
         
         self._srv_sync_info = self._node.get_server(uavcan.time.GetSynchronizationMasterInfo_0)
@@ -919,12 +1068,50 @@ class Clock:
         self._pub_sync_time = self._node.make_publisher(uavcan.time.SynchronizedTimestamp_1, 'clock_sync_time')
         self._pub_sync_time_last = self._node.make_publisher(uavcan.time.Synchronization_1)
 
+        self._srv_exec_cmd = self._node.get_server(uavcan.node.ExecuteCommand_1)
+        self._srv_exec_cmd.serve_in_background(self._serve_exec_cmd)
+
         self._node.start()
+
+    async def _serve_exec_cmd(
+            self,
+            request: uavcan.node.ExecuteCommand_1.Request, 
+            metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.node.ExecuteCommand_1.Response:
+        logging.info("Execute command request %s from node %d", request, metadata.client_node_id)
+        match request.command:
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_RESTART:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_EMERGENCY_STOP:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_FACTORY_RESET:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_STORE_PERSISTENT_STATES:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_BEGIN_SOFTWARE_UPDATE:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case _:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_BAD_COMMAND
+                )
 
     @staticmethod
     async def _serve_sync_master_info(
             request: uavcan.time.GetSynchronizationMasterInfo_0.Request, 
-            metadata: pycyphal.presentation.ServiceRequestMetadata,)-> uavcan.time.GetSynchronizationMasterInfo_0.Response:
+            metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.time.GetSynchronizationMasterInfo_0.Response:
         logging.info("Execute command request %s from node %d", request, metadata.client_node_id)
         return uavcan.time.GetSynchronizationMasterInfo_0.Response(
             0.0, # error_variance
@@ -942,6 +1129,7 @@ class Clock:
         await asyncio.sleep(0)
 
     async def run(self) -> None:
+        self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
         await self._clock_run_loop()
 
     async def close(self) -> None:

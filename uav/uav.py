@@ -551,6 +551,95 @@ class MainIO:
         Close the MainIO node and release resources.
     """
 
+    class NodeManager:
+        """Find node ids corresponding with critical components."""
+        class Node:
+            defaults = (0, pycyphal.application.node_tracker.Entry(uavcan.node.Heartbeat_1(), None).heartbeat)
+            def __init__(self) -> None:
+                self.id: int
+                self.heartbeat: uavcan.node.Heartbeat_1
+                self.id, self.heartbeat = MainIO.NodeManager.Node.defaults
+        
+        def __init__(self, node: pycyphal.application.Node, config: ConfigParser | None = None) -> None:
+            # If a config is passed, fixed node ids will be used.
+            self.clock = MainIO.NodeManager.Node()
+            self.sensorhub = MainIO.NodeManager.Node()
+            self.motorhub = MainIO.NodeManager.Node()
+            self.gps = MainIO.NodeManager.Node()
+            
+            if config:
+                self.clock.id = config.getint('node_ids', 'clock')
+                self.sensorhub.id = config.getint('node_ids', 'sensorhub')
+                self.motorhub.id = config.getint('node_ids', 'motorhub')
+                self.gps.id = config.getint('node_ids', 'gps')
+            
+            self._node = node
+
+            self._sub_heartbeat = self._node.make_subscriber(uavcan.node.Heartbeat_1)
+
+            self.cln_clock_exec_cmd = self._node.make_client(uavcan.node.ExecuteCommand_1, self.clock.id)
+            self.cln_sensorhub_exec_cmd = self._node.make_client(uavcan.node.ExecuteCommand_1, self.sensorhub.id)
+            self.cln_motorhub_exec_cmd = self._node.make_client(uavcan.node.ExecuteCommand_1, self.motorhub.id)
+            self.cln_gps_exec_cmd = self._node.make_client(uavcan.node.ExecuteCommand_1, self.gps.id)
+
+            def update_heartbeat(msg: uavcan.node.Heartbeat_1, info: pycyphal.transport.TransferFrom) -> None:
+                if info.source_node_id == self.clock.id:
+                    self.clock.heartbeat = msg
+                elif info.source_node_id == self.sensorhub.id:
+                    self.sensorhub.heartbeat = msg
+                elif info.source_node_id == self.motorhub.id:
+                    self.motorhub.heartbeat = msg
+                elif info.source_node_id == self.gps.id:
+                    self.gps.heartbeat = msg
+            self._sub_heartbeat.receive_in_background(update_heartbeat)
+
+        def update(self, id: int, old: pycyphal.application.node_tracker.Entry | None, new: pycyphal.application.node_tracker.Entry | None) -> None:
+            if new is None: # node offline
+                self._destroy_values(id)
+            elif new.info is not None: # node has info
+                self._update_values(id, new)
+
+        def _update_values(self, id: int, entry: pycyphal.application.node_tracker.Entry) -> None:
+            name = ''.join(chr(c) for c in entry.info.name)
+            if id==self.clock.id or name=='fmuas.clock':
+                self.clock.id = id
+                self.cln_clock_exec_cmd.close()
+                self.cln_clock_exec_cmd = self._node.make_client(uavcan.node.ExecuteCommand_1, self.clock.id)
+                self.clock.heartbeat = entry.heartbeat
+            elif id==self.sensorhub.id or name=='fmuas.sensorhub':
+                self.sensorhub.id = id
+                self.cln_sensorhub_exec_cmd.close()
+                self.cln_sensorhub_exec_cmd = self._node.make_client(uavcan.node.ExecuteCommand_1, self.sensorhub.id)
+                self.sensorhub.heartbeat = entry.heartbeat
+            elif id==self.motorhub.id or name=='fmuas.motorhub':
+                self.motorhub.id = id
+                self.cln_motorhub_exec_cmd.close()
+                self.cln_motorhub_exec_cmd = self._node.make_client(uavcan.node.ExecuteCommand_1, self.motorhub.id)
+                self.motorhub.heartbeat = entry.heartbeat
+            elif id==self.gps.id or name=='fmuas.gps':
+                self.gps.id = id
+                self.cln_gps_exec_cmd.close()
+                self.cln_gps_exec_cmd = self._node.make_client(uavcan.node.ExecuteCommand_1, self.gps.id)
+                self.gps.heartbeat = entry.heartbeat
+        
+        def _destroy_values(self, id: int) -> None:
+            if id==self.clock.id:
+                self.clock.id, self.clock.heartbeat = MainIO.NodeManager.Node.defaults
+                self.cln_clock_exec_cmd.close()
+                self.cln_clock_exec_cmd = self._node.make_client(uavcan.node.ExecuteCommand_1, self.clock.id)
+            elif id==self.sensorhub.id:
+                self.sensorhub.id, self.sensorhub.heartbeat = MainIO.NodeManager.Node.defaults
+                self.cln_sensorhub_exec_cmd.close()
+                self.cln_sensorhub_exec_cmd = self._node.make_client(uavcan.node.ExecuteCommand_1, self.sensorhub.id)
+            elif id==self.motorhub.id:
+                self.motorhub.id, self.motorhub.heartbeat = MainIO.NodeManager.Node.defaults
+                self.cln_motorhub_exec_cmd.close()
+                self.cln_motorhub_exec_cmd = self._node.make_client(uavcan.node.ExecuteCommand_1, self.motorhub.id)
+            elif id==self.gps.id:
+                self.gps.id, self.gps.heartbeat = MainIO.NodeManager.Node.defaults
+                self.cln_gps_exec_cmd.close()
+                self.cln_gps_exec_cmd = self._node.make_client(uavcan.node.ExecuteCommand_1, self.gps.id)
+
     def __init__(self, main: 'Main', freq: int = DEFAULT_FREQ) -> None:
         """Initialize the MainIO class.
 
@@ -645,8 +734,9 @@ class MainIO:
 
         self._node = pycyphal.application.make_node(node_info, self._registry)
 
+        self.node_manager = MainIO.NodeManager(self._node, config=self.main.config) # remove config for nonfixed node ids
         self._tracker = pycyphal.application.node_tracker.NodeTracker(self._node)
-        self._tracker.add_update_handler(self._tracker_handler)
+        self._tracker.add_update_handler(self.node_manager.update)
 
         self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.INITIALIZATION
         self._node.heartbeat_publisher.vendor_specific_status_code = os.getpid() % 100
@@ -717,19 +807,47 @@ class MainIO:
         self._cln_clock_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, self.main.config.getint('node_ids', 'clock'))
         self._cln_gps_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, self.main.config.getint('node_ids', 'gps'))
 
+        self._srv_exec_cmd = self._node.get_server(uavcan.node.ExecuteCommand_1)
+        self._srv_exec_cmd.serve_in_background(self._serve_exec_cmd)
+
         self._node.start()
 
         logging.info("MainIO initialized")
 
-    def _tracker_handler(self, id: int, old: pycyphal.application.node_tracker.Entry | None, new: pycyphal.application.node_tracker.Entry | None) -> None:
-        if new is None:
-            logging.debug(f"Node {id} went offline")
-        elif new.info is not None:
-            logging.debug(f"Node {id} with info, name: {''.join(chr(number) for number in new.info.name)}")
-        elif old is None:
-            logging.debug(f"Node {id} discovered")
-        else:
-            logging.debug(f"Node {id} restarted")
+    async def _serve_exec_cmd(
+            self,
+            request: uavcan.node.ExecuteCommand_1.Request, 
+            metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.node.ExecuteCommand_1.Response:
+        logging.info("Execute command request %s from node %d", request, metadata.client_node_id)
+        match request.command:
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_RESTART:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_EMERGENCY_STOP:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_FACTORY_RESET:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_STORE_PERSISTENT_STATES:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_BEGIN_SOFTWARE_UPDATE:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                )
+            case _:
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_BAD_COMMAND
+                )
 
     async def boot(self) -> None:
         """Perform boot-related tasks."""
