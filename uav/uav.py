@@ -662,7 +662,7 @@ class MainIO:
 
         self._registry = pycyphal.application.make_registry(environment_variables={
             'UAVCAN__NODE__ID'                      :self.main.config.get('node_ids', 'mainio'),
-            'UAVCAN__CAN__IFACE'                    :self.main.config.get('main', 'can'),
+            'UAVCAN__UDP__IFACE'                    :self.main.config.get('main', 'udp'),
 
             'UAVCAN__PUB__SERVO_READINESS__ID'      :self.main.config.get('subject_ids', 'servo_readiness'),
             'UAVCAN__PUB__ESC_READINESS__ID'        :self.main.config.get('subject_ids', 'esc_readiness'),
