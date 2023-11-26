@@ -75,7 +75,7 @@ HEARTBEAT_TIMEOUT = 2.5
 
 RPM_TO_RADS = math.pi/30
 
-_DEBUG_SKIP = 2 # TODO: remove this!!
+_DEBUG_SKIP = -1 # TODO: remove this!!
 
 system_ids = []
 
@@ -906,7 +906,43 @@ class MainIO:
             self.main.rxdata.aoa.dump(msg, t)
         self._sub_aoa.receive_in_background(on_aoa)
         
-        # TODO: motor diagnostic subscribers
+        # TODO: other subscribers
+        def void_handler(msg, _: pycyphal.transport.TransferFrom) -> None:
+            pass
+        self._sub_elevon1_feedback.receive_in_background(void_handler)
+        self._sub_elevon1_status.receive_in_background(void_handler)
+        self._sub_elevon1_power.receive_in_background(void_handler)
+        self._sub_elevon1_dynamics.receive_in_background(void_handler)
+        self._sub_elevon2_feedback.receive_in_background(void_handler)
+        self._sub_elevon2_status.receive_in_background(void_handler)
+        self._sub_elevon2_power.receive_in_background(void_handler)
+        self._sub_elevon2_dynamics.receive_in_background(void_handler)
+        self._sub_tilt_feedback.receive_in_background(void_handler)
+        self._sub_tilt_status.receive_in_background(void_handler)
+        self._sub_tilt_power.receive_in_background(void_handler)
+        self._sub_tilt_dynamics.receive_in_background(void_handler)
+        self._sub_stow_feedback.receive_in_background(void_handler)
+        self._sub_stow_status.receive_in_background(void_handler)
+        self._sub_stow_power.receive_in_background(void_handler)
+        self._sub_stow_dynamics.receive_in_background(void_handler)
+        self._sub_esc1_feedback.receive_in_background(void_handler)
+        self._sub_esc1_status.receive_in_background(void_handler)
+        self._sub_esc1_power.receive_in_background(void_handler)
+        self._sub_esc1_dynamics.receive_in_background(void_handler)
+        self._sub_esc2_feedback.receive_in_background(void_handler)
+        self._sub_esc2_status.receive_in_background(void_handler)
+        self._sub_esc2_power.receive_in_background(void_handler)
+        self._sub_esc2_dynamics.receive_in_background(void_handler)
+        self._sub_esc3_feedback.receive_in_background(void_handler)
+        self._sub_esc3_status.receive_in_background(void_handler)
+        self._sub_esc3_power.receive_in_background(void_handler)
+        self._sub_esc3_dynamics.receive_in_background(void_handler)
+        self._sub_esc4_feedback.receive_in_background(void_handler)
+        self._sub_esc4_status.receive_in_background(void_handler)
+        self._sub_esc4_power.receive_in_background(void_handler)
+        self._sub_esc4_dynamics.receive_in_background(void_handler)
+        self._sub_clock_sync_time_last.receive_in_background(void_handler)
+        self._sub_gps_sync_time_last.receive_in_background(void_handler)
         #endregion
         
         self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
@@ -1858,6 +1894,7 @@ class Main:
                 while not self.stop.is_set():
                     try:
                         print(eval('self.' + name))
+                        import psutil; print(psutil.Process(os.getpid()).memory_info().rss / (1024*1024))
 
                         try:
                             await asyncio.sleep(1 / freq)
@@ -1893,8 +1930,9 @@ class Main:
         logging.warning(f"Creating instance #{self.systemid}, waiting for boot command from GCS")
 
         try:
-            self.boot.set()
-            self.state.inc_mode()
+            if _DEBUG_SKIP>-1:
+                self.boot.set()
+                self.state.inc_mode()
             await self.boot.wait()
         except asyncio.exceptions.CancelledError:
             controller_manager.cancel()
@@ -1950,7 +1988,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-g", "--graph", nargs='?', default=False, const='rxdata.att.rollspeed', help="Attribute to graph")
     parser.add_argument("-p", "--print", nargs='?', default=False, const='processor._throttles', help="Attribute to print")
-    parser.add_argument("-s", "--skip", nargs='?', default=False, const='2', help="Skip number of modes on startup")
+    parser.add_argument("-s", "--skip", nargs='?', default='-1', const='0', help="Skip number of modes on startup")
     args = parser.parse_args()
 
     whitelisted = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._")
