@@ -57,7 +57,7 @@ def flush_buffer() -> None:
                 break
             elif i >= MAX_FLUSH_BUFFER-1:
                 logging.error(f"Messages still in buffer after {MAX_FLUSH_BUFFER} flush cycles")     
-    except ConnectionError:
+    except (ConnectionError, OSError):
         logging.debug("No connection to flush.")
 
 
@@ -355,12 +355,10 @@ class Connect:
         
         try:
             msg = mav_conn.recv_msg()
-        except ConnectionError:
+        except (ConnectionError, OSError):
             logging.debug("No connection to listen to.")
             return
-        except OSError:
-            logging.debug("No connection to listen to.")
-            return
+        
         if msg is not None:
             if msg.get_type() == 'HEARTBEAT':
                 logging.debug(f"Heartbeat message from link #{msg.get_srcSystem()}")

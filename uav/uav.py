@@ -71,7 +71,7 @@ filehandler.setLevel(logging.DEBUG)
 os.system('cls' if os.name == 'nt' else 'clear')
 
 DEFAULT_FREQ = 60
-HEARTBEAT_TIMEOUT = 2.5
+HEARTBEAT_TIMEOUT = 2.0
 
 RPM_TO_RADS = math.pi/30
 
@@ -808,6 +808,51 @@ class MainIO:
         self._cln_gps_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, self.main.config.getint('node_ids', 'gps'))
 
         self._srv_exec_cmd = self._node.get_server(uavcan.node.ExecuteCommand_1)
+
+        # TODO: Only DECLARE (DECLARING SEPERATELY CAUSES MEM LEAK!!!) and start subs at boot
+        self._sub_clock_sync_time.receive_in_background(self._on_time)
+        self._sub_gps_sync_time.receive_in_background(self._on_gps_time)
+        self._sub_ins.receive_in_background(self._on_att)
+        self._sub_alt.receive_in_background(self._on_alt)
+        self._sub_gps.receive_in_background(self._on_gps)
+        self._sub_ias.receive_in_background(self._on_ias)
+        self._sub_aoa.receive_in_background(self._on_aoa)
+        
+        self._sub_elevon1_feedback.receive_in_background(self._void_handler)
+        self._sub_elevon1_status.receive_in_background(self._void_handler)
+        self._sub_elevon1_power.receive_in_background(self._void_handler)
+        self._sub_elevon1_dynamics.receive_in_background(self._void_handler)
+        self._sub_elevon2_feedback.receive_in_background(self._void_handler)
+        self._sub_elevon2_status.receive_in_background(self._void_handler)
+        self._sub_elevon2_power.receive_in_background(self._void_handler)
+        self._sub_elevon2_dynamics.receive_in_background(self._void_handler)
+        self._sub_tilt_feedback.receive_in_background(self._void_handler)
+        self._sub_tilt_status.receive_in_background(self._void_handler)
+        self._sub_tilt_power.receive_in_background(self._void_handler)
+        self._sub_tilt_dynamics.receive_in_background(self._void_handler)
+        self._sub_stow_feedback.receive_in_background(self._void_handler)
+        self._sub_stow_status.receive_in_background(self._void_handler)
+        self._sub_stow_power.receive_in_background(self._void_handler)
+        self._sub_stow_dynamics.receive_in_background(self._void_handler)
+        self._sub_esc1_feedback.receive_in_background(self._void_handler)
+        self._sub_esc1_status.receive_in_background(self._void_handler)
+        self._sub_esc1_power.receive_in_background(self._void_handler)
+        self._sub_esc1_dynamics.receive_in_background(self._void_handler)
+        self._sub_esc2_feedback.receive_in_background(self._void_handler)
+        self._sub_esc2_status.receive_in_background(self._void_handler)
+        self._sub_esc2_power.receive_in_background(self._void_handler)
+        self._sub_esc2_dynamics.receive_in_background(self._void_handler)
+        self._sub_esc3_feedback.receive_in_background(self._void_handler)
+        self._sub_esc3_status.receive_in_background(self._void_handler)
+        self._sub_esc3_power.receive_in_background(self._void_handler)
+        self._sub_esc3_dynamics.receive_in_background(self._void_handler)
+        self._sub_esc4_feedback.receive_in_background(self._void_handler)
+        self._sub_esc4_status.receive_in_background(self._void_handler)
+        self._sub_esc4_power.receive_in_background(self._void_handler)
+        self._sub_esc4_dynamics.receive_in_background(self._void_handler)
+        self._sub_clock_sync_time_last.receive_in_background(self._void_handler)
+        self._sub_gps_sync_time_last.receive_in_background(self._void_handler)
+
         self._srv_exec_cmd.serve_in_background(self._serve_exec_cmd)
 
         self._node.start()
@@ -871,80 +916,39 @@ class MainIO:
 
         await asyncio.sleep(1 / self._freq)
 
-    async def run(self) -> None:
-        """Recieve subscripted data and write to publishers."""
-        #region Subscriptions
-        def on_time(msg: uavcan.time.SynchronizedTimestamp_1, _: pycyphal.transport.TransferFrom) -> None:
-            self.main.rxdata.time.dump(msg)
-        self._sub_clock_sync_time.receive_in_background(on_time)
+    #region Subscriptions
+    def _on_time(self, msg: uavcan.time.SynchronizedTimestamp_1, _: pycyphal.transport.TransferFrom) -> None:
+        self.main.rxdata.time.dump(msg)
 
+    def _on_gps_time(self, msg: uavcan.time.SynchronizedTimestamp_1, _: pycyphal.transport.TransferFrom) -> None:
         # TODO: gps time transition
-        def on_gps_time(msg: uavcan.time.SynchronizedTimestamp_1, _: pycyphal.transport.TransferFrom) -> None:
-            if self._use_gps_time:
-                self.main.rxdata.time.dump(msg)
-        self._sub_gps_sync_time.receive_in_background(on_gps_time)
+        if self._use_gps_time:
+            self.main.rxdata.time.dump(msg)
+    
+    def _on_att(self, msg: reg.udral.physics.kinematics.cartesian.StateVarTs_0, _: pycyphal.transport.TransferFrom) -> None:
+        self.main.rxdata.att.dump(msg)
+
+    def _on_alt(self, msg: uavcan.si.unit.length.WideScalar_1, _: pycyphal.transport.TransferFrom) -> None:
+        t = self.main.rxdata.time.time
+        self.main.rxdata.alt.dump(msg, t)
+
+    def _on_gps(self, msg: reg.udral.physics.kinematics.geodetic.PointStateVarTs_0, _: pycyphal.transport.TransferFrom) -> None:
+        self.main.rxdata.gps.dump(msg, self.main.rxdata.att.yaw)
+
+    def _on_ias(self, msg: reg.udral.physics.kinematics.translation.LinearTs_0, _: pycyphal.transport.TransferFrom) -> None:
+        self.main.rxdata.ias.dump(msg)
+
+    def _on_aoa(self, msg: uavcan.si.unit.angle.Scalar_1, _: pycyphal.transport.TransferFrom) -> None:
+        t = self.main.rxdata.time.time
+        self.main.rxdata.aoa.dump(msg, t)
+    
+    # TODO: other subscribers
+    def _void_handler(self, msg, _: pycyphal.transport.TransferFrom) -> None:
+        pass
+    #endregion
         
-        def on_att(msg: reg.udral.physics.kinematics.cartesian.StateVarTs_0, _: pycyphal.transport.TransferFrom) -> None:
-            self.main.rxdata.att.dump(msg)
-        self._sub_ins.receive_in_background(on_att)
-
-        def on_alt(msg: uavcan.si.unit.length.WideScalar_1, _: pycyphal.transport.TransferFrom) -> None:
-            t = self.main.rxdata.time.time
-            self.main.rxdata.alt.dump(msg, t)
-        self._sub_alt.receive_in_background(on_alt)
-
-        def on_gps(msg: reg.udral.physics.kinematics.geodetic.PointStateVarTs_0, _: pycyphal.transport.TransferFrom) -> None:
-            self.main.rxdata.gps.dump(msg, self.main.rxdata.att.yaw)
-        self._sub_gps.receive_in_background(on_gps)
-
-        def on_ias(msg: reg.udral.physics.kinematics.translation.LinearTs_0, _: pycyphal.transport.TransferFrom) -> None:
-            self.main.rxdata.ias.dump(msg)
-        self._sub_ias.receive_in_background(on_ias)
-
-        def on_aoa(msg: uavcan.si.unit.angle.Scalar_1, _: pycyphal.transport.TransferFrom) -> None:
-            t = self.main.rxdata.time.time
-            self.main.rxdata.aoa.dump(msg, t)
-        self._sub_aoa.receive_in_background(on_aoa)
-        
-        # TODO: other subscribers
-        def void_handler(msg, _: pycyphal.transport.TransferFrom) -> None:
-            pass
-        self._sub_elevon1_feedback.receive_in_background(void_handler)
-        self._sub_elevon1_status.receive_in_background(void_handler)
-        self._sub_elevon1_power.receive_in_background(void_handler)
-        self._sub_elevon1_dynamics.receive_in_background(void_handler)
-        self._sub_elevon2_feedback.receive_in_background(void_handler)
-        self._sub_elevon2_status.receive_in_background(void_handler)
-        self._sub_elevon2_power.receive_in_background(void_handler)
-        self._sub_elevon2_dynamics.receive_in_background(void_handler)
-        self._sub_tilt_feedback.receive_in_background(void_handler)
-        self._sub_tilt_status.receive_in_background(void_handler)
-        self._sub_tilt_power.receive_in_background(void_handler)
-        self._sub_tilt_dynamics.receive_in_background(void_handler)
-        self._sub_stow_feedback.receive_in_background(void_handler)
-        self._sub_stow_status.receive_in_background(void_handler)
-        self._sub_stow_power.receive_in_background(void_handler)
-        self._sub_stow_dynamics.receive_in_background(void_handler)
-        self._sub_esc1_feedback.receive_in_background(void_handler)
-        self._sub_esc1_status.receive_in_background(void_handler)
-        self._sub_esc1_power.receive_in_background(void_handler)
-        self._sub_esc1_dynamics.receive_in_background(void_handler)
-        self._sub_esc2_feedback.receive_in_background(void_handler)
-        self._sub_esc2_status.receive_in_background(void_handler)
-        self._sub_esc2_power.receive_in_background(void_handler)
-        self._sub_esc2_dynamics.receive_in_background(void_handler)
-        self._sub_esc3_feedback.receive_in_background(void_handler)
-        self._sub_esc3_status.receive_in_background(void_handler)
-        self._sub_esc3_power.receive_in_background(void_handler)
-        self._sub_esc3_dynamics.receive_in_background(void_handler)
-        self._sub_esc4_feedback.receive_in_background(void_handler)
-        self._sub_esc4_status.receive_in_background(void_handler)
-        self._sub_esc4_power.receive_in_background(void_handler)
-        self._sub_esc4_dynamics.receive_in_background(void_handler)
-        self._sub_clock_sync_time_last.receive_in_background(void_handler)
-        self._sub_gps_sync_time_last.receive_in_background(void_handler)
-        #endregion
-        
+    async def run(self) -> None:
+        """Write to publishers."""
         self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
         logging.warning("UAVCAN Node Running...\n----- Ctrl-C to exit -----") # TODO: no verification
 
@@ -1434,7 +1438,7 @@ class Controller:
                     break
                 elif i >= Controller.MAX_FLUSH_BUFFER-1:
                     logging.error(f"Messages still in buffer after {Controller.MAX_FLUSH_BUFFER} flush cycles")     
-        except ConnectionError:
+        except (ConnectionError, OSError):
             logging.debug("No connection to flush.")
 
     async def _establish_cam(self, key: bytes, timeout_cycles: int = 5):
@@ -1653,7 +1657,7 @@ class Controller:
         """Recieve messages from GCS over mavlink."""
         try:
             msg = self._mav_conn_gcs.recv_msg()
-        except ConnectionError:
+        except (ConnectionError, OSError):
             try:
                 logging.debug("Controller (rx) connection refused")
                 await asyncio.sleep(0)
@@ -1678,10 +1682,7 @@ class Controller:
         """Recieve messages from GCS over mavlink."""
         try:
             msg = self._cam_conn.recv_msg()
-        except ConnectionError:
-            logging.debug("No connection to listen to.")
-            return
-        except OSError:
+        except (ConnectionError, OSError):
             logging.debug("No connection to listen to.")
             return
 
@@ -1894,7 +1895,6 @@ class Main:
                 while not self.stop.is_set():
                     try:
                         print(eval('self.' + name))
-                        import psutil; print(psutil.Process(os.getpid()).memory_info().rss / (1024*1024))
 
                         try:
                             await asyncio.sleep(1 / freq)

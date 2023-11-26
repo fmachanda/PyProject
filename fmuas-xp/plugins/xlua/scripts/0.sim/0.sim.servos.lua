@@ -73,11 +73,12 @@ uasDR_AFCS_wing_stow = 0.0
 ----------------------------------------------------------------
 
 simDR_joystick_override = find_dataref("sim/operation/override/override_joystick")
+simDR_throttle_override = find_dataref("sim/operation/override/override_throttles")
 
-simDR_throttle1 = find_dataref("sim/cockpit2/engine/actuators/throttle_ratio[0]")
-simDR_throttle2 = find_dataref("sim/cockpit2/engine/actuators/throttle_ratio[1]")
-simDR_throttle3 = find_dataref("sim/cockpit2/engine/actuators/throttle_ratio[2]")
-simDR_throttle4 = find_dataref("sim/cockpit2/engine/actuators/throttle_ratio[3]")
+simDR_throttle1 = find_dataref("sim/flightmodel/engine/ENGN_thro_use[0]")
+simDR_throttle2 = find_dataref("sim/flightmodel/engine/ENGN_thro_use[1]")
+simDR_throttle3 = find_dataref("sim/flightmodel/engine/ENGN_thro_use[2]")
+simDR_throttle4 = find_dataref("sim/flightmodel/engine/ENGN_thro_use[3]")
 
 simDR_cant1 = find_dataref("sim/aircraft/prop/acf_vertcant[0]")
 simDR_cant2 = find_dataref("sim/aircraft/prop/acf_vertcant[1]")
@@ -148,6 +149,9 @@ function esc_pid(actual, setpoint)
     local p = esc_pid_kp*error
 
     local out = p + esc_pid_integral + d
+
+    out = math.min(math.max(out, 0.0), 1.0)
+
     return out
 end
 
@@ -158,7 +162,7 @@ end
 function SERVOS_flight_start()
 
     esc_pid_kp = 0.001
-    esc_pid_ti = 0.08
+    esc_pid_ti = 3.0
     esc_pid_td = 0.0
     esc_pid_integral = 0.0
     esc_pid_prev_error = 0.0
@@ -168,6 +172,7 @@ function SERVOS_flight_start()
 
     uasDR_SERVOS_direct_mode = 1 --TODO
     simDR_joystick_override = 1
+    simDR_throttle_override = 1
 
     uasSET_SERVOS_rate_limiter = 0.5
 

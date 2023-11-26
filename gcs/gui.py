@@ -195,6 +195,7 @@ class GCSUI:
 
     def log(self, message):
         self.log_text.insert(tk.END, message + '\n')
+        self.log_text.see(tk.END)
 
 
 def heartbeat(app: GCSUI) -> None:
