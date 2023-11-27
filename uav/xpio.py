@@ -14,6 +14,9 @@ from functools import wraps
 
 os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
 sys.path.append(os.getcwd())
+for var in os.environ:
+    if var.startswith('UAVCAN_'):
+        os.environ.pop(var)
 os.environ['CYPHAL_PATH']='./common/public_regulated_data_types'
 os.environ['PYCYPHAL_PATH']='./common/pycyphal_generated'
 os.environ['UAVCAN__DIAGNOSTIC__SEVERITY'] = '2'
@@ -57,7 +60,10 @@ for name in ['pymavlink', 'pycyphal', 'pydsdl', 'nunavut']:
 filehandler.setLevel(logging.DEBUG)
 
 config = ConfigParser()
-config.read('./common/CONFIG.ini')
+config.read('./common/config.ini')
+
+db_config = ConfigParser()
+db_config.read('./common/_db_config.ini')
 
 os.system('cls' if os.name == 'nt' else 'clear')
 
@@ -215,8 +221,8 @@ class XPConnect:
                         if index < len(rx_data):
                             rx_data[list(rx_data.keys())[index]] = value
 
-                for dref in tx_data.keys():
-                    msg = struct.pack('<4sxf500s', b'DREF', tx_data[dref], dref)
+                for dref, value in tx_data.items():
+                    msg = struct.pack('<4sxf500s', b'DREF', value, dref)
                     self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
 
                 await asyncio.sleep(1 / self._freq)
@@ -307,61 +313,73 @@ class TestXPConnect:
 
 class MotorHub:
     def __init__(self, freq: int = FREQ) -> None:
-        self._registry = pycyphal.application.make_registry(environment_variables={
-            'UAVCAN__NODE__ID'                      :config.get('node_ids', 'motorhub'),
-            'UAVCAN__UDP__IFACE'                    :config.get('main', 'udp'),
+        if os.path.exists(f:='./'+config.get('db_files', 'motorhub')):
+            os.remove(f)
+            logging.debug(f"Removing preexisting {f}")
+        logging.info(f"Compiling {f}")
 
-            'UAVCAN__SUB__SERVO_READINESS__ID'      :config.get('subject_ids', 'servo_readiness'),
-            'UAVCAN__SUB__ESC_READINESS__ID'        :config.get('subject_ids', 'esc_readiness'),
+        _registry = pycyphal.application.make_registry(environment_variables={
+            'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'motorhub'),
+            'UAVCAN__UDP__IFACE'                    :db_config.get('main', 'udp'),
 
-            'UAVCAN__SUB__ELEVON1_SP__ID'           :config.get('subject_ids', 'elevon1_sp'),
-            'UAVCAN__PUB__ELEVON1_FEEDBACK__ID'     :config.get('subject_ids', 'elevon1_feedback'),
-            'UAVCAN__PUB__ELEVON1_STATUS__ID'       :config.get('subject_ids', 'elevon1_status'),
-            'UAVCAN__PUB__ELEVON1_POWER__ID'        :config.get('subject_ids', 'elevon1_power'),
-            'UAVCAN__PUB__ELEVON1_DYNAMICS__ID'     :config.get('subject_ids', 'elevon1_dynamics'),
+            'UAVCAN__SUB__SERVO_READINESS__ID'      :db_config.get('subject_ids', 'servo_readiness'),
+            'UAVCAN__SUB__ESC_READINESS__ID'        :db_config.get('subject_ids', 'esc_readiness'),
 
-            'UAVCAN__SUB__ELEVON2_SP__ID'           :config.get('subject_ids', 'elevon2_sp'),
-            'UAVCAN__PUB__ELEVON2_FEEDBACK__ID'     :config.get('subject_ids', 'elevon2_feedback'),
-            'UAVCAN__PUB__ELEVON2_STATUS__ID'       :config.get('subject_ids', 'elevon2_status'),
-            'UAVCAN__PUB__ELEVON2_POWER__ID'        :config.get('subject_ids', 'elevon2_power'),
-            'UAVCAN__PUB__ELEVON2_DYNAMICS__ID'     :config.get('subject_ids', 'elevon2_dynamics'),
+            'UAVCAN__SUB__ELEVON1_SP__ID'           :db_config.get('subject_ids', 'elevon1_sp'),
+            'UAVCAN__PUB__ELEVON1_FEEDBACK__ID'     :db_config.get('subject_ids', 'elevon1_feedback'),
+            'UAVCAN__PUB__ELEVON1_STATUS__ID'       :db_config.get('subject_ids', 'elevon1_status'),
+            'UAVCAN__PUB__ELEVON1_POWER__ID'        :db_config.get('subject_ids', 'elevon1_power'),
+            'UAVCAN__PUB__ELEVON1_DYNAMICS__ID'     :db_config.get('subject_ids', 'elevon1_dynamics'),
 
-            'UAVCAN__SUB__TILT_SP__ID'              :config.get('subject_ids', 'tilt_sp'),
-            'UAVCAN__PUB__TILT_FEEDBACK__ID'        :config.get('subject_ids', 'tilt_feedback'),
-            'UAVCAN__PUB__TILT_STATUS__ID'          :config.get('subject_ids', 'tilt_status'),
-            'UAVCAN__PUB__TILT_POWER__ID'           :config.get('subject_ids', 'tilt_power'),
-            'UAVCAN__PUB__TILT_DYNAMICS__ID'        :config.get('subject_ids', 'tilt_dynamics'),
+            'UAVCAN__SUB__ELEVON2_SP__ID'           :db_config.get('subject_ids', 'elevon2_sp'),
+            'UAVCAN__PUB__ELEVON2_FEEDBACK__ID'     :db_config.get('subject_ids', 'elevon2_feedback'),
+            'UAVCAN__PUB__ELEVON2_STATUS__ID'       :db_config.get('subject_ids', 'elevon2_status'),
+            'UAVCAN__PUB__ELEVON2_POWER__ID'        :db_config.get('subject_ids', 'elevon2_power'),
+            'UAVCAN__PUB__ELEVON2_DYNAMICS__ID'     :db_config.get('subject_ids', 'elevon2_dynamics'),
 
-            'UAVCAN__SUB__STOW_SP__ID'              :config.get('subject_ids', 'stow_sp'),
-            'UAVCAN__PUB__STOW_FEEDBACK__ID'        :config.get('subject_ids', 'stow_feedback'),
-            'UAVCAN__PUB__STOW_STATUS__ID'          :config.get('subject_ids', 'stow_status'),
-            'UAVCAN__PUB__STOW_POWER__ID'           :config.get('subject_ids', 'stow_power'),
-            'UAVCAN__PUB__STOW_DYNAMICS__ID'        :config.get('subject_ids', 'stow_dynamics'),
+            'UAVCAN__SUB__TILT_SP__ID'              :db_config.get('subject_ids', 'tilt_sp'),
+            'UAVCAN__PUB__TILT_FEEDBACK__ID'        :db_config.get('subject_ids', 'tilt_feedback'),
+            'UAVCAN__PUB__TILT_STATUS__ID'          :db_config.get('subject_ids', 'tilt_status'),
+            'UAVCAN__PUB__TILT_POWER__ID'           :db_config.get('subject_ids', 'tilt_power'),
+            'UAVCAN__PUB__TILT_DYNAMICS__ID'        :db_config.get('subject_ids', 'tilt_dynamics'),
 
-            'UAVCAN__SUB__ESC1_SP__ID'              :config.get('subject_ids', 'esc1_sp'),
-            'UAVCAN__PUB__ESC1_FEEDBACK__ID'        :config.get('subject_ids', 'esc1_feedback'),
-            'UAVCAN__PUB__ESC1_STATUS__ID'          :config.get('subject_ids', 'esc1_status'),
-            'UAVCAN__PUB__ESC1_POWER__ID'           :config.get('subject_ids', 'esc1_power'),
-            'UAVCAN__PUB__ESC1_DYNAMICS__ID'        :config.get('subject_ids', 'esc1_dynamics'),
+            'UAVCAN__SUB__STOW_SP__ID'              :db_config.get('subject_ids', 'stow_sp'),
+            'UAVCAN__PUB__STOW_FEEDBACK__ID'        :db_config.get('subject_ids', 'stow_feedback'),
+            'UAVCAN__PUB__STOW_STATUS__ID'          :db_config.get('subject_ids', 'stow_status'),
+            'UAVCAN__PUB__STOW_POWER__ID'           :db_config.get('subject_ids', 'stow_power'),
+            'UAVCAN__PUB__STOW_DYNAMICS__ID'        :db_config.get('subject_ids', 'stow_dynamics'),
 
-            'UAVCAN__SUB__ESC2_SP__ID'              :config.get('subject_ids', 'esc2_sp'),
-            'UAVCAN__PUB__ESC2_FEEDBACK__ID'        :config.get('subject_ids', 'esc2_feedback'),
-            'UAVCAN__PUB__ESC2_STATUS__ID'          :config.get('subject_ids', 'esc2_status'),
-            'UAVCAN__PUB__ESC2_POWER__ID'           :config.get('subject_ids', 'esc2_power'),
-            'UAVCAN__PUB__ESC2_DYNAMICS__ID'        :config.get('subject_ids', 'esc2_dynamics'),
+            'UAVCAN__SUB__ESC1_SP__ID'              :db_config.get('subject_ids', 'esc1_sp'),
+            'UAVCAN__PUB__ESC1_FEEDBACK__ID'        :db_config.get('subject_ids', 'esc1_feedback'),
+            'UAVCAN__PUB__ESC1_STATUS__ID'          :db_config.get('subject_ids', 'esc1_status'),
+            'UAVCAN__PUB__ESC1_POWER__ID'           :db_config.get('subject_ids', 'esc1_power'),
+            'UAVCAN__PUB__ESC1_DYNAMICS__ID'        :db_config.get('subject_ids', 'esc1_dynamics'),
 
-            'UAVCAN__SUB__ESC3_SP__ID'              :config.get('subject_ids', 'esc3_sp'),
-            'UAVCAN__PUB__ESC3_FEEDBACK__ID'        :config.get('subject_ids', 'esc3_feedback'),
-            'UAVCAN__PUB__ESC3_STATUS__ID'          :config.get('subject_ids', 'esc3_status'),
-            'UAVCAN__PUB__ESC3_POWER__ID'           :config.get('subject_ids', 'esc3_power'),
-            'UAVCAN__PUB__ESC3_DYNAMICS__ID'        :config.get('subject_ids', 'esc3_dynamics'),
+            'UAVCAN__SUB__ESC2_SP__ID'              :db_config.get('subject_ids', 'esc2_sp'),
+            'UAVCAN__PUB__ESC2_FEEDBACK__ID'        :db_config.get('subject_ids', 'esc2_feedback'),
+            'UAVCAN__PUB__ESC2_STATUS__ID'          :db_config.get('subject_ids', 'esc2_status'),
+            'UAVCAN__PUB__ESC2_POWER__ID'           :db_config.get('subject_ids', 'esc2_power'),
+            'UAVCAN__PUB__ESC2_DYNAMICS__ID'        :db_config.get('subject_ids', 'esc2_dynamics'),
 
-            'UAVCAN__SUB__ESC4_SP__ID'              :config.get('subject_ids', 'esc4_sp'),
-            'UAVCAN__PUB__ESC4_FEEDBACK__ID'        :config.get('subject_ids', 'esc4_feedback'),
-            'UAVCAN__PUB__ESC4_STATUS__ID'          :config.get('subject_ids', 'esc4_status'),
-            'UAVCAN__PUB__ESC4_POWER__ID'           :config.get('subject_ids', 'esc4_power'),
-            'UAVCAN__PUB__ESC4_DYNAMICS__ID'        :config.get('subject_ids', 'esc4_dynamics'),
+            'UAVCAN__SUB__ESC3_SP__ID'              :db_config.get('subject_ids', 'esc3_sp'),
+            'UAVCAN__PUB__ESC3_FEEDBACK__ID'        :db_config.get('subject_ids', 'esc3_feedback'),
+            'UAVCAN__PUB__ESC3_STATUS__ID'          :db_config.get('subject_ids', 'esc3_status'),
+            'UAVCAN__PUB__ESC3_POWER__ID'           :db_config.get('subject_ids', 'esc3_power'),
+            'UAVCAN__PUB__ESC3_DYNAMICS__ID'        :db_config.get('subject_ids', 'esc3_dynamics'),
+
+            'UAVCAN__SUB__ESC4_SP__ID'              :db_config.get('subject_ids', 'esc4_sp'),
+            'UAVCAN__PUB__ESC4_FEEDBACK__ID'        :db_config.get('subject_ids', 'esc4_feedback'),
+            'UAVCAN__PUB__ESC4_STATUS__ID'          :db_config.get('subject_ids', 'esc4_status'),
+            'UAVCAN__PUB__ESC4_POWER__ID'           :db_config.get('subject_ids', 'esc4_power'),
+            'UAVCAN__PUB__ESC4_DYNAMICS__ID'        :db_config.get('subject_ids', 'esc4_dynamics'),
         })
+
+        for var in os.environ:
+            if var.startswith('UAVCAN_'):
+                os.environ.pop(var, None)
+        for var, value in _registry.environment_variables.items():
+            assert isinstance(value, bytes)
+            os.environ[var] = value.decode('utf-8')
 
         self._freq = freq
         
@@ -370,6 +388,7 @@ class MotorHub:
             name='fmuas.motorhub',
         )
 
+        self._registry = pycyphal.application.make_registry(config.get('db_files', 'motorhub'))
         self._node = pycyphal.application.make_node(node_info, self._registry)
 
         self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.INITIALIZATION
@@ -745,19 +764,31 @@ class MotorHub:
 
 class SensorHub:
     def __init__(self, freq: int = FREQ) -> None:
-        self._registry = pycyphal.application.make_registry(environment_variables={
-            'UAVCAN__NODE__ID'                      :config.get('node_ids', 'sensorhub'),
-            'UAVCAN__UDP__IFACE'                    :config.get('main', 'udp'),
+        if os.path.exists(f:='./'+config.get('db_files', 'sensorhub')):
+            os.remove(f)
+            logging.debug(f"Removing preexisting {f}")
+        logging.info(f"Compiling {f}")
 
-            'UAVCAN__PUB__INERTIAL__ID'             :config.get('subject_ids', 'inertial'),
-            'UAVCAN__PUB__ALTITUDE__ID'             :config.get('subject_ids', 'altitude'),
-            'UAVCAN__PUB__IAS__ID'                  :config.get('subject_ids', 'ias'),
-            'UAVCAN__PUB__AOA__ID'                  :config.get('subject_ids', 'aoa'),
+        _registry = pycyphal.application.make_registry(environment_variables={
+            'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'sensorhub'),
+            'UAVCAN__UDP__IFACE'                    :db_config.get('main', 'udp'),
 
-            'UAVCAN__SUB__CLOCK_SYNC_TIME__ID'      :config.get('subject_ids', 'clock_sync_time'),
-            'UAVCAN__SUB__GPS_SYNC_TIME__ID'        :config.get('subject_ids', 'gps_sync_time')
+            'UAVCAN__PUB__INERTIAL__ID'             :db_config.get('subject_ids', 'inertial'),
+            'UAVCAN__PUB__ALTITUDE__ID'             :db_config.get('subject_ids', 'altitude'),
+            'UAVCAN__PUB__IAS__ID'                  :db_config.get('subject_ids', 'ias'),
+            'UAVCAN__PUB__AOA__ID'                  :db_config.get('subject_ids', 'aoa'),
+
+            'UAVCAN__SUB__CLOCK_SYNC_TIME__ID'      :db_config.get('subject_ids', 'clock_sync_time'),
+            'UAVCAN__SUB__GPS_SYNC_TIME__ID'        :db_config.get('subject_ids', 'gps_sync_time')
         })
         
+        for var in os.environ:
+            if var.startswith('UAVCAN_'):
+                os.environ.pop(var, None)
+        for var, value in _registry.environment_variables.items():
+            assert isinstance(value, bytes)
+            os.environ[var] = value.decode('utf-8')
+
         self._freq = freq
         self._time = 0.0
         self._use_gps_time = False
@@ -767,6 +798,7 @@ class SensorHub:
             name='fmuas.sensorhub',
         )
 
+        self._registry = pycyphal.application.make_registry(config.get('db_files', 'sensorhub'))
         self._node = pycyphal.application.make_node(node_info, self._registry)
 
         self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.INITIALIZATION
@@ -783,8 +815,9 @@ class SensorHub:
         self._sub_gps_sync_time = self._node.make_subscriber(uavcan.time.SynchronizedTimestamp_1, 'gps_sync_time')
         self._sub_gps_sync_time_last = self._node.make_subscriber(uavcan.time.Synchronization_1)
 
-        self._cln_clock_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, config.getint('node_ids', 'clock'))
-        self._cln_gps_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, config.getint('node_ids', 'gps'))
+        # TODO: remove db_config dependency
+        self._cln_clock_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, db_config.getint('node_ids', 'clock'))
+        self._cln_gps_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, db_config.getint('node_ids', 'gps'))
 
         self._srv_exec_cmd = self._node.get_server(uavcan.node.ExecuteCommand_1)
 
@@ -908,15 +941,27 @@ class SensorHub:
 
 class GPS:
     def __init__(self, freq: int = FREQ) -> None:
-        self._registry = pycyphal.application.make_registry(environment_variables={
-            'UAVCAN__NODE__ID'                      :config.get('node_ids', 'gps'),
-            'UAVCAN__UDP__IFACE'                    :config.get('main', 'udp'),
+        if os.path.exists(f:='./'+config.get('db_files', 'gps')):
+            os.remove(f)
+            logging.debug(f"Removing preexisting {f}")
+        logging.info(f"Compiling {f}")
+        
+        _registry = pycyphal.application.make_registry(environment_variables={
+            'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'gps'),
+            'UAVCAN__UDP__IFACE'                    :db_config.get('main', 'udp'),
 
-            'UAVCAN__PUB__GPS__ID'                  :config.get('subject_ids', 'gps'),
-            'UAVCAN__PUB__GPS_SYNC_TIME__ID'        :config.get('subject_ids', 'gps_sync_time'),
+            'UAVCAN__PUB__GPS__ID'                  :db_config.get('subject_ids', 'gps'),
+            'UAVCAN__PUB__GPS_SYNC_TIME__ID'        :db_config.get('subject_ids', 'gps_sync_time'),
 
-            'UAVCAN__SUB__CLOCK_SYNC_TIME__ID'      :config.get('subject_ids', 'clock_sync_time'),
+            'UAVCAN__SUB__CLOCK_SYNC_TIME__ID'      :db_config.get('subject_ids', 'clock_sync_time'),
         })
+        
+        for var in os.environ:
+            if var.startswith('UAVCAN_'):
+                os.environ.pop(var, None)
+        for var, value in _registry.environment_variables.items():
+            assert isinstance(value, bytes)
+            os.environ[var] = value.decode('utf-8')
 
         self._freq = freq
         self._time = 0.0
@@ -927,6 +972,7 @@ class GPS:
             name='fmuas.gps',
         )
 
+        self._registry = pycyphal.application.make_registry(config.get('db_files', 'gps'))
         self._node = pycyphal.application.make_node(node_info, self._registry)
 
         self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.INITIALIZATION
@@ -943,7 +989,8 @@ class GPS:
         self._sub_clock_sync_time = self._node.make_subscriber(uavcan.time.SynchronizedTimestamp_1, 'clock_sync_time')
         self._sub_clock_sync_time_last = self._node.make_subscriber(uavcan.time.Synchronization_1)
 
-        self._cln_clock_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, config.getint('node_ids', 'clock'))
+        # TODO: remove db_config dependency
+        self._cln_clock_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, db_config.getint('node_ids', 'clock'))
 
         self._srv_exec_cmd = self._node.get_server(uavcan.node.ExecuteCommand_1)
 
@@ -1052,13 +1099,25 @@ class GPS:
 
 class Clock:
     def __init__(self) -> None:
-        self._registry = pycyphal.application.make_registry(environment_variables={
-            'UAVCAN__NODE__ID'                      :config.get('node_ids', 'clock'),
-            'UAVCAN__UDP__IFACE'                    :config.get('main', 'udp'),
+        if os.path.exists(f:='./'+config.get('db_files', 'clock')):
+            os.remove(f)
+            logging.debug(f"Removing preexisting {f}")
+        logging.info(f"Compiling {f}")
+        
+        _registry = pycyphal.application.make_registry(environment_variables={
+            'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'clock'),
+            'UAVCAN__UDP__IFACE'                    :db_config.get('main', 'udp'),
 
-            'UAVCAN__PUB__CLOCK_SYNC_TIME__ID'      :config.get('subject_ids', 'clock_sync_time'),
+            'UAVCAN__PUB__CLOCK_SYNC_TIME__ID'      :db_config.get('subject_ids', 'clock_sync_time'),
         })
-
+        
+        for var in os.environ:
+            if var.startswith('UAVCAN_'):
+                os.environ.pop(var, None)
+        for var, value in _registry.environment_variables.items():
+            assert isinstance(value, bytes)
+            os.environ[var] = value.decode('utf-8')
+            
         self._sync_time = 0.0
         
         node_info = uavcan.node.GetInfo_1.Response(
@@ -1066,6 +1125,7 @@ class Clock:
             name='fmuas.clock',
         )
 
+        self._registry = pycyphal.application.make_registry(config.get('db_files', 'clock'))
         self._node = pycyphal.application.make_node(node_info, self._registry)
 
         self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.INITIALIZATION

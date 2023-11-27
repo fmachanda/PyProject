@@ -15,3 +15,8 @@ aptnav
 test
 test.py
 test.acf
+uav/clock.db
+uav/gps.db
+uav/sensorhub.db
+uav/uavmain.db
+uav/motorhub.db
