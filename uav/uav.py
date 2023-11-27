@@ -32,12 +32,15 @@ os.environ['UAVCAN__DIAGNOSTIC__SEVERITY'] = '2'
 os.environ['MAVLINK20'] = '1'
 os.environ['MAVLINK_DIALECT'] = 'common'
 
-filehandler = logging.FileHandler('uav/uav.log', mode='w')
+filehandler = logging.FileHandler('uav/uav.log', mode='a')
 filehandler.setLevel(logging.INFO)
-filehandler.setFormatter(logging.Formatter('(%(asctime)s %(name)s) %(levelname)s:%(message)s'))
+filehandler.setFormatter(logging.Formatter(str(os.getpid()) + ' (%(asctime)s %(name)s) %(levelname)s:%(message)s'))
 streamhandler = logging.StreamHandler()
 streamhandler.setLevel(logging.INFO)
 logging.basicConfig(format='%(name)s %(levelname)s:%(message)s', level=logging.DEBUG, handlers=[filehandler, streamhandler])
+
+MAVLOG_TX = logging.DEBUG + 1
+MAVLOG_RX = logging.DEBUG + 2
 
 logging.warning("Generating UAVCAN files, please wait...")
 
@@ -1444,11 +1447,19 @@ class Controller:
         self._roi = [0.0, 0.0, 0.0] # TODO: make waypoint
         self._roi_task = None
 
-        self._mavlogger = logging.getLogger(f'UAV{self.main.systemid} to GCS')
-        _filehandler = logging.FileHandler('mavlog.log')
-        _filehandler.setLevel(logging.INFO)
-        _filehandler.setFormatter(logging.Formatter('(%(asctime)s %(name)s) %(message)s'))
+        logging.addLevelName(MAVLOG_TX, 'TX')
+        logging.addLevelName(MAVLOG_RX, 'RX')
+
+        _formatter = logging.Formatter(str(os.getpid()) + ' (%(asctime)s - %(name)s - %(levelname)s) %(message)s')
+        _filehandler = logging.FileHandler('mavlog.log', mode='a')
+        _filehandler.setFormatter(_formatter)
+
+        self._mavlogger = logging.getLogger(f'UAV{self.main.systemid}')
         self._mavlogger.addHandler(_filehandler)
+        self._mavlogger.setLevel(logging.DEBUG)
+
+        self._mavlogger.log(MAVLOG_TX, "test tx")
+        self._mavlogger.log(MAVLOG_RX, "test rx")
 
         self._gcs_id = None
         self._mav_conn_gcs: mavutil.mavfile = mavutil.mavlink_connection(self.main.config.get('mavlink', 'uav_gcs_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1, input=False, autoreconnect=True)
@@ -1486,7 +1497,7 @@ class Controller:
 
             Controller.flush_buffer(self._cam_conn)
 
-            self._mavlogger.info(f"Connecting to camera #{self._cam_id}...")
+            self._mavlogger.log(MAVLOG_TX, f"Connecting to camera #{self._cam_id}...")
 
             self._cam_conn.mav.change_operator_control_send(self._cam_id, 0, 0, key)
             await asyncio.sleep(1)
@@ -1500,13 +1511,13 @@ class Controller:
                 if msg is not None and msg.get_type()=='CHANGE_OPERATOR_CONTROL_ACK':# and msg.get_srcSystem()==target and msg.gcs_system_id==self.main.systemid:
                     match msg.ack:
                         case 0:
-                            logging.info(f"Connected to camera #{self._cam_id}")
+                            self._mavlogger.log(MAVLOG_RX, f"Connected to camera #{self._cam_id}")
                             break
                         case 1 | 2:
-                            logging.info(f"Bad connection key for camera #{self._cam_id}")
+                            self._mavlogger.log(MAVLOG_RX, f"Bad connection key for camera #{self._cam_id}")
                             break
                         case 3:
-                            logging.info(f"Camera #{self._cam_id} is connected to another UAV")
+                            self._mavlogger.log(MAVLOG_RX, f"Camera #{self._cam_id} is connected to another UAV")
                             break
 
                 self._cam_conn.mav.change_operator_control_send(self._cam_id, 0, 0, key)
@@ -1517,7 +1528,7 @@ class Controller:
     #region Handlers
     def _handle_heartbeat(self, msg) -> None:
         """Handle HEARTBEAT messages."""
-        logging.debug(f"Heartbeat message from link #{msg.get_srcSystem()}")
+        self._mavlogger.log(MAVLOG_RX, f"Heartbeat message from link #{msg.get_srcSystem()}")
 
     def _handle_bad_data(self, msg) -> None:
         """Handle BAD_DATA messages."""
@@ -1531,21 +1542,21 @@ class Controller:
                 if self._gcs_id is None or self._gcs_id==msg.get_srcSystem():
                     # Accepted
                     if self._gcs_id!=msg.get_srcSystem():
-                        logging.info(f"Accepting control request from GCS ({msg.get_srcSystem()})")
+                        self._mavlogger.log(MAVLOG_RX, f"Accepting control request from GCS ({msg.get_srcSystem()})")
                     self._gcs_id = msg.get_srcSystem()
                     self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
                 else:
                     # Already controlled
-                    logging.info(f"Rejecting second control request from {msg.get_srcSystem()}")
+                    self._mavlogger.log(MAVLOG_RX, f"Rejecting second control request from {msg.get_srcSystem()}")
                     self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 3)
             elif msg.control_request == 1 and msg.passkey==key.KEY:# and self._gcs_id is not None:
                 # Accepted (released)
-                logging.info(f"Releasing from GCS ({self._gcs_id})")
+                self._mavlogger.log(MAVLOG_RX, f"Releasing from GCS ({self._gcs_id})")
                 self._gcs_id = None
                 self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
             else:
                 # Bad key
-                logging.info(f"Bad key in GCS control request")
+                self._mavlogger.log(MAVLOG_RX, f"Bad key in GCS control request")
                 self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 1)
 
     def _handle_command_long(self, msg) -> None:
@@ -1554,7 +1565,7 @@ class Controller:
             match msg.command:
                 # DO_SET_MODE
                 case m.MAV_CMD_DO_SET_MODE:
-                    logging.info("Mode change requested")
+                    self._mavlogger.log(MAVLOG_RX, "Mode change requested")
                         
                     if self.main.state.set_mode(msg.param1, msg.param2, msg.param3): # TODO: Add safety check to verify message like below
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_SET_MODE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
@@ -1565,7 +1576,7 @@ class Controller:
                     pass # TODO
                     try:
                         self.main.processor.spf_altitude = msg.param1 # TODO add checks!
-                        logging.info(f"GCS commanded altitude setpoint to {msg.param1}")
+                        self._mavlogger.log(MAVLOG_RX, f"GCS commanded altitude setpoint to {msg.param1}")
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
                     except AttributeError:
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_RESULT_TEMPORARILY_REJECTED, 255, 0, 0, 0)
@@ -1574,13 +1585,13 @@ class Controller:
                     pass # TODO
                     try:
                         self.main.processor.spf_ias = msg.param2 # TODO add checks!
-                        logging.info(f"GCS commanded speed setpoint to {msg.param2}")
+                        self._mavlogger.log(MAVLOG_RX, f"GCS commanded speed setpoint to {msg.param2}")
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_SPEED, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
                     except AttributeError:
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_SPEED, m.MAV_RESULT_TEMPORARILY_REJECTED, 255, 0, 0, 0)
                 # DO_GIMBAL_MANAGER_PITCHYAW
                 case m.MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW:
-                    logging.info(f"GCS commanding camera to pitch:{msg.param1}, yaw: {msg.param2}")
+                    self._mavlogger.log(MAVLOG_RX, f"GCS commanding camera to pitch:{msg.param1}, yaw: {msg.param2}")
                     self._cam_conn.mav.gimbal_device_set_attitude_send(
                         self._cam_id,
                         m.MAV_COMP_ID_CAMERA,
@@ -1591,7 +1602,7 @@ class Controller:
                     self._cam_conn.mav.command_ack_send(m.MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
                 # DO_GIMBAL_SET_ROI_NONE
                 case m.MAV_CMD_DO_SET_ROI_NONE:
-                    logging.info(f"GCS commanding camera to reset ROI")
+                    self._mavlogger.log(MAVLOG_RX, f"GCS commanding camera to reset ROI")
                     if self._roi_task is not None:
                         self._roi_task.cancel()
                         self._roi_task = None
@@ -1617,7 +1628,7 @@ class Controller:
                         Waypoint(msg.x / 1e7, msg.y / 1e7, msg.z) if msg.z > 0.1 else Waypoint(msg.x / 1e7, msg.y / 1e7)
                     )
 
-                    logging.info(f"Directing to {self.main.navigator._waypoint_list[1].latitude}, {self.main.navigator._waypoint_list[1].longitude}")
+                    self._mavlogger.log(logging.INFO, f"Directing to {self.main.navigator._waypoint_list[1].latitude}, {self.main.navigator._waypoint_list[1].longitude}")
                 # TODO TEMPORARY PID
                 case 0:
                     # PID TUNER GOTO
@@ -1631,7 +1642,7 @@ class Controller:
                     # self.main.processor._pidv_pit_pts.set(kp=msg.param3, td=msg.param4)
                     # self.main.processor._pidv_pit_pts.set(kp=msg.param4)
                     self.main.processor._spv_rollspeed=msg.param4
-                    logging.info(f"New PID state: {msg.param1}, {msg.param2}, {msg.param3} @ {msg.param4}")
+                    self._mavlogger.log(logging.WARNING, f"New PID state: {msg.param1}, {msg.param2}, {msg.param3} @ {msg.param4}")
                 # TODO TEMPORARY SCREENSHOT
                 case 1:
                     logging.info("Commanding camera...")
@@ -1665,7 +1676,7 @@ class Controller:
                     lat = msg.x / 1e7
                     lon = msg.y / 1e7
                     alt = msg.z
-                    logging.info(f"GCS commanding camera to lat:{lat}, lon: {lon}, alt: {alt}")
+                    self._mavlogger.log(MAVLOG_RX, f"GCS commanding camera to lat:{lat}, lon: {lon}, alt: {alt}")
                     self._roi = [lat, lon, alt]
                     if self._roi_task is None:
                         self._roi_task = asyncio.create_task(self._roi_calc())
@@ -1697,7 +1708,7 @@ class Controller:
             msg = self._mav_conn_gcs.recv_msg()
         except (ConnectionError, OSError):
             try:
-                logging.debug("Controller (rx) connection refused")
+                self._mavlogger.log(MAVLOG_RX, "Controller (rx) connection refused")
                 await asyncio.sleep(0)
             except asyncio.exceptions.CancelledError:
                 self.main.stop.set()
@@ -1711,7 +1722,7 @@ class Controller:
                 handler = getattr(self, Controller.type_handlers[type_])
                 handler(msg)
             else:
-                logging.info(f"Unknown message type: {type_}")
+                self._mavlogger.log(MAVLOG_RX, f"Unknown message type: {type_}")
 
         await asyncio.sleep(0)
 
@@ -1721,19 +1732,19 @@ class Controller:
         try:
             msg = self._cam_conn.recv_msg()
         except (ConnectionError, OSError):
-            logging.debug("No connection to listen to.")
+            self._mavlogger.log(MAVLOG_RX, "No connection to listen to.")
             return
 
         target = self.main.config.getint('main', 'cam_id')
 
         if msg is not None:
             if msg.get_type() == 'HEARTBEAT' and msg.get_srcSystem()==target:
-                logging.debug(f"Heartbeat message from camera #{msg.get_srcSystem()}")
+                self._mavlogger.log(MAVLOG_RX, f"Heartbeat message from camera #{msg.get_srcSystem()}")
                 self._last_cam_beat = self.main.rxdata.time.time
 
         if self._last_cam_beat:
             if self.main.rxdata.time.time-self._last_cam_beat > HEARTBEAT_TIMEOUT*1e6: # TODO: remove time module dependency
-                logging.warning(f"Heartbeat timeout from camera #{target}, closing...")
+                self._mavlogger.log(logging.WARNING, f"Heartbeat timeout from camera #{target}, closing...")
                 self._last_cam_beat = False
                 self._cam_conn.close()
                 import common.key as key
@@ -1804,7 +1815,7 @@ class Controller:
         self._mav_conn_gcs.mav.heartbeat_send(*msg)
         self._cam_conn.mav.heartbeat_send(*msg)
         
-        logging.debug("TX Heartbeat")
+        self._mavlogger.log(MAVLOG_TX, "TX Heartbeat")
         await asyncio.sleep(1 / self._heartbeatfreq)
 
     async def _heartbeat(self) -> None:

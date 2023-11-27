@@ -8,6 +8,7 @@ pycyphal_generated
 gcs.log
 uav.log
 xpio.log
+mavlog.log
 _old
 stored_images
 backups

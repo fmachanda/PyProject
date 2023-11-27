@@ -11,9 +11,9 @@ sys.path.append(os.getcwd())
 os.environ['MAVLINK20'] = '1'
 os.environ['MAVLINK_DIALECT'] = 'common'
 
-filehandler = logging.FileHandler('gcs/gcs.log', mode='w')
+filehandler = logging.FileHandler('gcs/gcs.log', mode='a')
 filehandler.setLevel(logging.INFO)
-filehandler.setFormatter(logging.Formatter('(%(asctime)s %(name)s) %(levelname)s:%(message)s'))
+filehandler.setFormatter(logging.Formatter(str(os.getpid()) + ' (%(asctime)s %(name)s) %(levelname)s:%(message)s'))
 streamhandler = logging.StreamHandler()
 streamhandler.setLevel(logging.INFO)
 logging.basicConfig(format='%(name)s %(levelname)s:%(message)s', level=logging.DEBUG, handlers=[filehandler, streamhandler])
