@@ -15,7 +15,7 @@ from functools import wraps
 os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
 sys.path.append(os.getcwd())
 for var in os.environ:
-    if var.startswith('UAVCAN_'):
+    if var.startswith('UAVCAN__'):
         os.environ.pop(var)
 os.environ['CYPHAL_PATH']='./common/public_regulated_data_types'
 os.environ['PYCYPHAL_PATH']='./common/pycyphal_generated'
@@ -316,7 +316,7 @@ class MotorHub:
         if os.path.exists(f:='./'+config.get('db_files', 'motorhub')):
             os.remove(f)
             logging.debug(f"Removing preexisting {f}")
-        logging.info(f"Compiling {f}")
+        logging.debug(f"Compiling {f}")
 
         _registry = pycyphal.application.make_registry(environment_variables={
             'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'motorhub'),
@@ -375,7 +375,7 @@ class MotorHub:
         })
 
         for var in os.environ:
-            if var.startswith('UAVCAN_'):
+            if var.startswith('UAVCAN__'):
                 os.environ.pop(var, None)
         for var, value in _registry.environment_variables.items():
             assert isinstance(value, bytes)
@@ -767,7 +767,7 @@ class SensorHub:
         if os.path.exists(f:='./'+config.get('db_files', 'sensorhub')):
             os.remove(f)
             logging.debug(f"Removing preexisting {f}")
-        logging.info(f"Compiling {f}")
+        logging.debug(f"Compiling {f}")
 
         _registry = pycyphal.application.make_registry(environment_variables={
             'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'sensorhub'),
@@ -783,7 +783,7 @@ class SensorHub:
         })
         
         for var in os.environ:
-            if var.startswith('UAVCAN_'):
+            if var.startswith('UAVCAN__'):
                 os.environ.pop(var, None)
         for var, value in _registry.environment_variables.items():
             assert isinstance(value, bytes)
@@ -944,7 +944,7 @@ class GPS:
         if os.path.exists(f:='./'+config.get('db_files', 'gps')):
             os.remove(f)
             logging.debug(f"Removing preexisting {f}")
-        logging.info(f"Compiling {f}")
+        logging.debug(f"Compiling {f}")
         
         _registry = pycyphal.application.make_registry(environment_variables={
             'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'gps'),
@@ -957,7 +957,7 @@ class GPS:
         })
         
         for var in os.environ:
-            if var.startswith('UAVCAN_'):
+            if var.startswith('UAVCAN__'):
                 os.environ.pop(var, None)
         for var, value in _registry.environment_variables.items():
             assert isinstance(value, bytes)
@@ -1102,7 +1102,7 @@ class Clock:
         if os.path.exists(f:='./'+config.get('db_files', 'clock')):
             os.remove(f)
             logging.debug(f"Removing preexisting {f}")
-        logging.info(f"Compiling {f}")
+        logging.debug(f"Compiling {f}")
         
         _registry = pycyphal.application.make_registry(environment_variables={
             'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'clock'),
@@ -1112,7 +1112,7 @@ class Clock:
         })
         
         for var in os.environ:
-            if var.startswith('UAVCAN_'):
+            if var.startswith('UAVCAN__'):
                 os.environ.pop(var, None)
         for var, value in _registry.environment_variables.items():
             assert isinstance(value, bytes)

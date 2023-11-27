@@ -24,7 +24,7 @@ import numpy as np
 os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
 sys.path.append(os.getcwd())
 for var in os.environ:
-    if var.startswith('UAVCAN_'):
+    if var.startswith('UAVCAN__'):
         os.environ.pop(var, None)
 os.environ['CYPHAL_PATH'] = './common/public_regulated_data_types'
 os.environ['PYCYPHAL_PATH'] = './common/pycyphal_generated'
@@ -681,7 +681,7 @@ class MainIO:
         if os.path.exists(f:='./'+self.main.config.get('db_files', 'uavmain')):
             os.remove(f)
             logging.debug(f"Removing preexisting {f}")
-        logging.info(f"Compiling {f}")
+        logging.debug(f"Compiling {f}")
 
         _registry = pycyphal.application.make_registry(environment_variables={
             'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'uavmain'),
@@ -749,7 +749,7 @@ class MainIO:
         })
         
         for var in os.environ:
-            if var.startswith('UAVCAN_'):
+            if var.startswith('UAVCAN__'):
                 os.environ.pop(var, None)
         for var, value in _registry.environment_variables.items():
             assert isinstance(value, bytes)
@@ -1444,6 +1444,12 @@ class Controller:
         self._roi = [0.0, 0.0, 0.0] # TODO: make waypoint
         self._roi_task = None
 
+        self._mavlogger = logging.getLogger(f'UAV{self.main.systemid} to GCS')
+        _filehandler = logging.FileHandler('mavlog.log')
+        _filehandler.setLevel(logging.INFO)
+        _filehandler.setFormatter(logging.Formatter('(%(asctime)s %(name)s) %(message)s'))
+        self._mavlogger.addHandler(_filehandler)
+
         self._gcs_id = None
         self._mav_conn_gcs: mavutil.mavfile = mavutil.mavlink_connection(self.main.config.get('mavlink', 'uav_gcs_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1, input=False, autoreconnect=True)
         import common.key as key
@@ -1480,7 +1486,7 @@ class Controller:
 
             Controller.flush_buffer(self._cam_conn)
 
-            logging.info(f"Connecting to camera #{self._cam_id}...")
+            self._mavlogger.info(f"Connecting to camera #{self._cam_id}...")
 
             self._cam_conn.mav.change_operator_control_send(self._cam_id, 0, 0, key)
             await asyncio.sleep(1)
