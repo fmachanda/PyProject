@@ -18,6 +18,11 @@ streamhandler = logging.StreamHandler()
 streamhandler.setLevel(logging.INFO)
 logging.basicConfig(format='%(name)s %(levelname)s:%(message)s', level=logging.DEBUG, handlers=[filehandler, streamhandler])
 
+MAVLOG_DEBUG = logging.DEBUG - 3
+MAVLOG_TX = logging.DEBUG - 2
+MAVLOG_RX = logging.DEBUG - 1
+MAVLOG_LOG = logging.INFO + 1
+
 from pymavlink import mavutil
 
 import common.key as key
@@ -36,6 +41,22 @@ mav_conn_open = False
 MAX_FLUSH_BUFFER = int(1e6)
 FT_TO_M = 0.3048
 KT_TO_MS = 0.514444
+
+logging.addLevelName(MAVLOG_DEBUG, 'MAVdebug')
+logging.addLevelName(MAVLOG_TX, 'TX')
+logging.addLevelName(MAVLOG_RX, 'RX')
+logging.addLevelName(MAVLOG_LOG, 'LOG')
+
+_formatter = logging.Formatter(str(os.getpid()) + ' (%(asctime)s - %(name)s - %(levelname)s) %(message)s')
+_filehandler = logging.FileHandler('mavlog.log', mode='a')
+_filehandler.setFormatter(_formatter)
+
+mavlogger = logging.getLogger(f'GCS{systemid}')
+mavlogger.addHandler(_filehandler)
+mavlogger.setLevel(MAVLOG_TX)
+mavlogger.log(MAVLOG_TX, "test tx")
+mavlogger.log(MAVLOG_RX, "test rx")
+mavlogger.log(MAVLOG_LOG, "test log")
 
 
 class PreExistingConnection(Exception):
@@ -65,7 +86,7 @@ def check_mav_conn() -> None:
     """Checks if the global MAVLINK connection is open."""
     global mav_conn, mav_conn_open
     if not mav_conn_open:
-        logging.info("Opening mav_conn")
+        mavlogger.log(MAVLOG_TX, "Opening mav_conn")
         mav_conn = mavutil.mavlink_connection(config.get('mavlink', 'gcs_uav_conn'), source_system=systemid, input=True)
         mav_conn.setup_signing(key.KEY.encode('utf-8'))
         mav_conn_open = True
@@ -87,7 +108,7 @@ class Connect:
         try:
             flush_buffer()
             
-            logging.warning(f"Connecting to #{target}...")
+            mavlogger.log(MAVLOG_TX, f"Connecting to #{target}...")
 
             mav_conn.mav.change_operator_control_send(target, 0, 0, key.KEY.encode('utf-8'))
             time.sleep(1)
@@ -104,20 +125,20 @@ class Connect:
                             self.target = target        
                             if target not in ids:
                                 ids.append(self.target)
-                            logging.info(f"Connected to #{self.target}")
+                            mavlogger.log(MAVLOG_RX, f"Connected to #{self.target}")
                             break
                         case 1 | 2:
-                            logging.info(f"Bad connection key for #{target}")
+                            mavlogger.log(MAVLOG_RX, f"Bad connection key for #{target}")
                             break
                         case 3:
-                            logging.info(f"#{target} is connected to another GCS")
+                            mavlogger.log(MAVLOG_RX, f"#{target} is connected to another GCS")
                             break
 
                 mav_conn.mav.change_operator_control_send(target, 0, 0, key.KEY.encode('utf-8'))
                 time.sleep(1)
 
                 if i >= timeout_cycles-1:
-                    logging.warning("Connection failed (timeout)")
+                    mavlogger.log(MAVLOG_TX, "Connection failed (timeout)")
 
         except KeyboardInterrupt:
             self.close()
@@ -130,8 +151,8 @@ class Connect:
         try:
             flush_buffer()
             
-            logging.warning(f"{name} sent to #{self.target}...")
-            logging.debug(f"    {name} params: {params}")
+            mavlogger.log(MAVLOG_TX, f"{name} sent to #{self.target}...")
+            mavlogger.log(MAVLOG_TX, f"    {name} params: {params}")
 
             mav_conn.mav.command_long_send(
                 self.target,
@@ -157,15 +178,12 @@ class Connect:
                     if msg is not None and msg.get_type()=='COMMAND_ACK' and msg.get_srcSystem()==self.target and msg.target_system==systemid and msg.command==command:
                         match msg.result:
                             case m.MAV_RESULT_ACCEPTED | m.MAV_RESULT_IN_PROGRESS:
-                                logging.info(f"{name} #{self.target}")
+                                mavlogger.log(MAVLOG_RX, f"{name} #{self.target}")
                                 break
                             case m.MAV_RESULT_TEMPORARILY_REJECTED:
                                 pass
-                            # case m.MAV_RESULT_COMMAND_INT_ONLY:
-                            #     self._command_int(name, *params)
-                            #     break
                             case _:
-                                logging.info(f"{name} failed on #{self.target}")
+                                mavlogger.log(MAVLOG_RX, f"{name} failed on #{self.target}")
                                 break
 
                     mav_conn.mav.command_long_send(
@@ -185,7 +203,7 @@ class Connect:
                     await asyncio.sleep(period)
 
                     if i >= timeout_cycles-1:
-                        logging.warning(f"{name} on #{self.target} failed (timeout)")
+                        mavlogger.log(MAVLOG_TX, f"{name} on #{self.target} failed (timeout)")
                 self._heart_inhibit = False
         except KeyboardInterrupt:
             self.close()
@@ -204,8 +222,8 @@ class Connect:
         try:
             flush_buffer()
             
-            logging.warning(f"{name} sent to #{self.target}...")
-            logging.debug(f"    {name} params: {params}")
+            mavlogger.log(MAVLOG_TX, f"{name} sent to #{self.target}...")
+            mavlogger.log(MAVLOG_TX, f"    {name} params: {params}")
 
             mav_conn.mav.command_int_send(
                 self.target,
@@ -231,15 +249,12 @@ class Connect:
                     if msg is not None and msg.get_type()=='COMMAND_ACK' and msg.get_srcSystem()==self.target and msg.target_system==systemid and msg.command==command:
                         match msg.result:
                             case m.MAV_RESULT_ACCEPTED | m.MAV_RESULT_IN_PROGRESS:
-                                logging.info(f"{name} #{self.target}")
+                                mavlogger.log(MAVLOG_RX, f"{name} #{self.target}")
                                 break
                             case m.MAV_RESULT_TEMPORARILY_REJECTED:
                                 pass
-                            case m.MAV_RESULT_COMMAND_INT_ONLY:
-                                self._command(name, *params)
-                                break
                             case _:
-                                logging.info(f"{name} failed on #{self.target}")
+                                mavlogger.log(MAVLOG_RX, f"{name} failed on #{self.target}")
                                 break
 
                     mav_conn.mav.command_int_send(
@@ -260,7 +275,7 @@ class Connect:
                     await asyncio.sleep(period)
 
                     if i >= timeout_cycles-1:
-                        logging.warning(f"{name} on #{self.target} failed (timeout)")
+                        mavlogger.log(MAVLOG_TX, f"{name} on #{self.target} failed (timeout)")
                 self._heart_inhibit = False
         except KeyboardInterrupt:
             self.close()
@@ -356,12 +371,12 @@ class Connect:
         try:
             msg = mav_conn.recv_msg()
         except (ConnectionError, OSError):
-            logging.debug("No connection to listen to.")
+            mavlogger.log(MAVLOG_RX, "No connection to listen to.")
             return
         
         if msg is not None:
             if msg.get_type() == 'HEARTBEAT':
-                logging.debug(f"Heartbeat message from link #{msg.get_srcSystem()}")
+                mavlogger.log(MAVLOG_DEBUG, f"Heartbeat message from link #{msg.get_srcSystem()}")
             return msg.get_type()
         return False
 
@@ -375,15 +390,15 @@ class Connect:
             ids.remove(self.target)
             mav_conn.mav.change_operator_control_send(self.target, 1, 0, key.KEY.encode('utf-8'))
             if because_heartbeat:
-                logging.warning("Heartbeat timeout")
-            logging.warning("Closing GCS")
+                mavlogger.log(MAVLOG_LOG, "Heartbeat timeout")
+            mavlogger.log(MAVLOG_LOG, "Closing GCS")
 
             if not ids:
-                logging.info("Closing mav_conn")
+                mavlogger.log(MAVLOG_LOG, "Closing mav_conn")
                 mav_conn.close()
                 mav_conn_open = False
         except ValueError:
-            logging.error("Connection not open")
+            mavlogger.log(MAVLOG_RX, "Connection not open")
 
 
 if __name__=='__main__':

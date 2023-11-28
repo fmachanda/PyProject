@@ -30,6 +30,11 @@ streamhandler = logging.StreamHandler()
 streamhandler.setLevel(logging.INFO)
 logging.basicConfig(format='%(name)s %(levelname)s:%(message)s', level=logging.DEBUG, handlers=[filehandler, streamhandler])
 
+MAVLOG_DEBUG = logging.DEBUG - 3
+MAVLOG_TX = logging.DEBUG - 2
+MAVLOG_RX = logging.DEBUG - 1
+MAVLOG_LOG = logging.INFO + 1
+
 logging.warning("Generating UAVCAN files, please wait...")
 
 import pycyphal
@@ -1222,6 +1227,23 @@ class Camera:
         self.destination_dir = './stored_images'
         if not os.path.exists(self.destination_dir):
            os.makedirs(self.destination_dir)
+           
+        logging.addLevelName(MAVLOG_DEBUG, 'MAVdebug')
+        logging.addLevelName(MAVLOG_TX, 'TX')
+        logging.addLevelName(MAVLOG_RX, 'RX')
+        logging.addLevelName(MAVLOG_LOG, 'LOG')
+
+        _formatter = logging.Formatter(str(os.getpid()) + ' (%(asctime)s - %(name)s - %(levelname)s) %(message)s')
+        _filehandler = logging.FileHandler('mavlog.log', mode='a')
+        _filehandler.setFormatter(_formatter)
+
+        self._mavlogger = logging.getLogger(f'CAMERA{self._cam_id}')
+        self._mavlogger.addHandler(_filehandler)
+        self._mavlogger.setLevel(MAVLOG_TX)
+
+        self._mavlogger.log(MAVLOG_TX, "test tx")
+        self._mavlogger.log(MAVLOG_RX, "test rx")
+        self._mavlogger.log(MAVLOG_LOG, "test log")
         
         self._camera_mav_conn: mavutil.mavfile = mavutil.mavlink_connection(config.get('mavlink', 'camera_uav_conn'), source_system=self._cam_id, source_component=m.MAV_COMP_ID_CAMERA, input=False, autoreconnect=True)
         import common.key as key
@@ -1235,7 +1257,7 @@ class Camera:
             msg = self._camera_mav_conn.recv_msg()
         except (ConnectionError, OSError):
             try:
-                logging.debug("Controller connection refused")
+                self._mavlogger.log(MAVLOG_DEBUG, "Controller connection refused")
                 await asyncio.sleep(0)
             except asyncio.exceptions.CancelledError:
                 stop.set()
@@ -1249,25 +1271,25 @@ class Camera:
                 if self._uav_id is None or self._uav_id==msg.get_srcSystem():
                     # Accepted
                     if self._uav_id!=msg.get_srcSystem():
-                        logging.info(f"Camera accepting control request from UAV ({msg.get_srcSystem()})")
+                        self._mavlogger.log(MAVLOG_RX, f"Camera accepting control request from UAV ({msg.get_srcSystem()})")
                     self._uav_id = msg.get_srcSystem()
                     self._camera_mav_conn.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
                 else:
                     # Already controlled
-                    logging.info(f"Camera rejecting second control request from {msg.get_srcSystem()}")
+                    self._mavlogger.log(MAVLOG_RX, f"Camera rejecting second control request from {msg.get_srcSystem()}")
                     self._camera_mav_conn.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 3)
             elif msg.control_request == 1 and msg.passkey==key.CAMKEY:
                 # Accepted (released)
-                logging.info(f"Releasing from UAV ({self._uav_id})")
+                self._mavlogger.log(MAVLOG_RX, f"Releasing from UAV ({self._uav_id})")
                 self._uav_id = None
                 self._camera_mav_conn.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
             else:
                 # Bad key
-                logging.info(f"Bad key in UAV control request")
+                self._mavlogger.log(MAVLOG_RX, f"Bad key in UAV control request")
                 self._camera_mav_conn.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 1)
         elif msg is not None and msg.get_srcSystem()==self._uav_id:
             if msg.get_type() == 'HEARTBEAT':
-                logging.debug("Camera rx heartbeat from UAV")
+                self._mavlogger.log(MAVLOG_DEBUG, "Camera rx heartbeat from UAV")
             elif msg.target_system==self._uav_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'COMMAND_LONG':
                 if msg.command == m.MAV_CMD_IMAGE_START_CAPTURE:
                     cap: asyncio.Task = asyncio.create_task(self._capture_cycle(int(msg.param3), msg.param2))
@@ -1374,6 +1396,23 @@ class TestCamera:
         self._cam_id = config.getint('main', 'cam_id')
         self._uav_id = None
         
+        logging.addLevelName(MAVLOG_DEBUG, 'MAVdebug')
+        logging.addLevelName(MAVLOG_TX, 'TX')
+        logging.addLevelName(MAVLOG_RX, 'RX')
+        logging.addLevelName(MAVLOG_LOG, 'LOG')
+
+        _formatter = logging.Formatter(str(os.getpid()) + ' (%(asctime)s - %(name)s - %(levelname)s) %(message)s')
+        _filehandler = logging.FileHandler('mavlog.log', mode='a')
+        _filehandler.setFormatter(_formatter)
+
+        self._mavlogger = logging.getLogger(f'TCAMERA{self._cam_id}')
+        self._mavlogger.addHandler(_filehandler)
+        self._mavlogger.setLevel(MAVLOG_TX)
+
+        self._mavlogger.log(MAVLOG_TX, "test tx")
+        self._mavlogger.log(MAVLOG_RX, "test rx")
+        self._mavlogger.log(MAVLOG_LOG, "test log")
+        
         self._camera_mav_conn: mavutil.mavfile = mavutil.mavlink_connection(config.get('mavlink', 'camera_uav_conn'), source_system=self._cam_id, source_component=m.MAV_COMP_ID_CAMERA, input=False, autoreconnect=True)
         import common.key as key
         self._camera_mav_conn.setup_signing(key.CAMKEY.encode('utf-8'))
@@ -1384,7 +1423,7 @@ class TestCamera:
             msg = self._camera_mav_conn.recv_msg()
         except (ConnectionError, OSError):
             try:
-                logging.debug("Controller connection refused")
+                self._mavlogger.log(MAVLOG_DEBUG, "Controller connection refused")
                 await asyncio.sleep(0)
             except asyncio.exceptions.CancelledError:
                 stop.set()
@@ -1398,25 +1437,25 @@ class TestCamera:
                 if self._uav_id is None or self._uav_id==msg.get_srcSystem():
                     # Accepted
                     if self._uav_id!=msg.get_srcSystem():
-                        logging.info(f"Camera accepting control request from UAV ({msg.get_srcSystem()})")
+                        self._mavlogger.log(MAVLOG_RX, f"Camera accepting control request from UAV ({msg.get_srcSystem()})")
                     self._uav_id = msg.get_srcSystem()
                     self._camera_mav_conn.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
                 else:
                     # Already controlled
-                    logging.info(f"Camera rejecting second control request from {msg.get_srcSystem()}")
+                    self._mavlogger.log(MAVLOG_RX, f"Camera rejecting second control request from {msg.get_srcSystem()}")
                     self._camera_mav_conn.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 3)
             elif msg.control_request == 1 and msg.passkey==key.CAMKEY:
                 # Accepted (released)
-                logging.info(f"Releasing from UAV ({self._uav_id})")
+                self._mavlogger.log(MAVLOG_RX, f"Releasing from UAV ({self._uav_id})")
                 self._uav_id = None
                 self._camera_mav_conn.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
             else:
                 # Bad key
-                logging.info(f"Bad key in UAV control request")
+                self._mavlogger.log(MAVLOG_RX, f"Bad key in UAV control request")
                 self._camera_mav_conn.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 1)
         elif msg is not None and msg.get_srcSystem()==self._uav_id:
             if msg.get_type() == 'HEARTBEAT':
-                logging.debug("Camera rx heartbeat from UAV")
+                self._mavlogger.log(MAVLOG_DEBUG, "Camera rx heartbeat from UAV")
             elif msg.target_system==self._uav_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'COMMAND_LONG':
                 if msg.command == m.MAV_CMD_IMAGE_START_CAPTURE:
                     cap = asyncio.create_task(self._capture_cycle(int(msg.param3), msg.param2))
@@ -1482,7 +1521,7 @@ class TestCamera:
 
     async def close(self) -> None:
         self._camera_mav_conn.close()
-        logging.info("Closing CAM")
+        logging.debug("Closing CAM")
 
 
 async def main():

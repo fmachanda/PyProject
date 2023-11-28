@@ -39,8 +39,10 @@ streamhandler = logging.StreamHandler()
 streamhandler.setLevel(logging.INFO)
 logging.basicConfig(format='%(name)s %(levelname)s:%(message)s', level=logging.DEBUG, handlers=[filehandler, streamhandler])
 
-MAVLOG_TX = logging.DEBUG + 1
-MAVLOG_RX = logging.DEBUG + 2
+MAVLOG_DEBUG = logging.DEBUG - 3
+MAVLOG_TX = logging.DEBUG - 2
+MAVLOG_RX = logging.DEBUG - 1
+MAVLOG_LOG = logging.INFO + 1
 
 logging.warning("Generating UAVCAN files, please wait...")
 
@@ -1174,16 +1176,13 @@ class Processor:
 
         self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
         self._pidv_xsp_rol = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
-        self._pidv_rol_rls = PID(kp=1.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
-        # self._pidv_rls_out = PID(kp=0.02, ti=0.15, td=0.08, integral_limit=None, minimum=-0.08, maximum=0.08)
-        self._pidv_rls_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=0.2, minimum=-0.08, maximum=0.08)
+        self._pidv_rol_rls = PID(kp=1.0, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
+        self._pidv_rls_out = PID(kp=0.018, ti=0.1, td=0.045, integral_limit=0.2, minimum=-0.08, maximum=0.08)
 
         self._pidv_ydp_ysp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
         self._pidv_ysp_pit = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
-        self._pidv_pit_pts = PID(kp=1.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
-        # self._pidv_pts_out = PID(kp=0.033, ti=0.12, td=0.08, integral_limit=None, minimum=-0.1, maximum=0.1)
-        # self._pidv_pts_out = PID(kp=0.025, ti=0.04, td=0.065, integral_limit=1.0, minimum=-0.1, maximum=0.1)
-        self._pidv_pts_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=1.0, minimum=-0.1, maximum=0.1)
+        self._pidv_pit_pts = PID(kp=1.0, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
+        self._pidv_pts_out = PID(kp=0.024, ti=0.07, td=0.075, integral_limit=1.0, minimum=-0.1, maximum=0.1)
 
         self._pidv_alt_vsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-50.0, maximum=100.0)
         self._pidv_vsp_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=1.0)
@@ -1267,8 +1266,8 @@ class Processor:
             self.main.rxdata.gps.dt = 0.0
 
         if (att:=self.main.rxdata.att).dt > 0.0:
-            # self._spv_rollspeed = self._pidv_rol_rls.cycle(att.roll, self._spv_roll, att.dt)
-            # self._spv_pitchspeed = self._pidv_pit_pts.cycle(att.pitch, self._spv_pitch, att.dt)
+            self._spv_rollspeed = self._pidv_rol_rls.cycle(att.roll, self._spv_roll, att.dt)
+            self._spv_pitchspeed = self._pidv_pit_pts.cycle(att.pitch, self._spv_pitch, att.dt)
             self._outv_roll = self._pidv_rls_out.cycle(att.rollspeed, self._spv_rollspeed, att.dt)
             self._outv_pitch = self._pidv_pts_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt)
 
@@ -1447,8 +1446,10 @@ class Controller:
         self._roi = [0.0, 0.0, 0.0] # TODO: make waypoint
         self._roi_task = None
 
+        logging.addLevelName(MAVLOG_DEBUG, 'MAVdebug')
         logging.addLevelName(MAVLOG_TX, 'TX')
         logging.addLevelName(MAVLOG_RX, 'RX')
+        logging.addLevelName(MAVLOG_LOG, 'LOG')
 
         _formatter = logging.Formatter(str(os.getpid()) + ' (%(asctime)s - %(name)s - %(levelname)s) %(message)s')
         _filehandler = logging.FileHandler('mavlog.log', mode='a')
@@ -1456,10 +1457,11 @@ class Controller:
 
         self._mavlogger = logging.getLogger(f'UAV{self.main.systemid}')
         self._mavlogger.addHandler(_filehandler)
-        self._mavlogger.setLevel(logging.DEBUG)
+        self._mavlogger.setLevel(MAVLOG_TX)
 
         self._mavlogger.log(MAVLOG_TX, "test tx")
         self._mavlogger.log(MAVLOG_RX, "test rx")
+        self._mavlogger.log(MAVLOG_LOG, "test log")
 
         self._gcs_id = None
         self._mav_conn_gcs: mavutil.mavfile = mavutil.mavlink_connection(self.main.config.get('mavlink', 'uav_gcs_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1, input=False, autoreconnect=True)
@@ -1528,7 +1530,7 @@ class Controller:
     #region Handlers
     def _handle_heartbeat(self, msg) -> None:
         """Handle HEARTBEAT messages."""
-        self._mavlogger.log(MAVLOG_RX, f"Heartbeat message from link #{msg.get_srcSystem()}")
+        self._mavlogger.log(MAVLOG_DEBUG, f"Heartbeat message from link #{msg.get_srcSystem()}")
 
     def _handle_bad_data(self, msg) -> None:
         """Handle BAD_DATA messages."""
@@ -1542,7 +1544,7 @@ class Controller:
                 if self._gcs_id is None or self._gcs_id==msg.get_srcSystem():
                     # Accepted
                     if self._gcs_id!=msg.get_srcSystem():
-                        self._mavlogger.log(MAVLOG_RX, f"Accepting control request from GCS ({msg.get_srcSystem()})")
+                        self._mavlogger.log(MAVLOG_LOG, f"Accepting control request from GCS ({msg.get_srcSystem()})")
                     self._gcs_id = msg.get_srcSystem()
                     self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
                 else:
@@ -1628,7 +1630,7 @@ class Controller:
                         Waypoint(msg.x / 1e7, msg.y / 1e7, msg.z) if msg.z > 0.1 else Waypoint(msg.x / 1e7, msg.y / 1e7)
                     )
 
-                    self._mavlogger.log(logging.INFO, f"Directing to {self.main.navigator._waypoint_list[1].latitude}, {self.main.navigator._waypoint_list[1].longitude}")
+                    self._mavlogger.log(MAVLOG_LOG, f"Directing to {self.main.navigator._waypoint_list[1].latitude}, {self.main.navigator._waypoint_list[1].longitude}")
                 # TODO TEMPORARY PID
                 case 0:
                     # PID TUNER GOTO
@@ -1636,13 +1638,13 @@ class Controller:
                     self.main.processor._pidv_pts_out.reset()
                     self.main.processor._pidv_rol_rls.reset()
                     self.main.processor._pidv_pit_pts.reset()
-                    self.main.processor._pidv_rls_out.set(kp=msg.param1)#, ti=msg.param2, td=msg.param3)
-                    self.main.processor._pidv_pts_out.set(kp=msg.param2)#, ti=msg.param2, td=msg.param3)
-                    # self.main.processor._pidv_rol_rls.set(kp=msg.param1, td=msg.param2)
-                    # self.main.processor._pidv_pit_pts.set(kp=msg.param3, td=msg.param4)
+                    self.main.processor._pidv_rls_out.set(kp=msg.param3)#, ti=msg.param2, td=msg.param3)
+                    self.main.processor._pidv_pts_out.set(kp=msg.param4)#, ti=msg.param2, td=msg.param3)
+                    self.main.processor._pidv_rol_rls.set(kp=msg.param1)#, td=msg.param2)
+                    self.main.processor._pidv_pit_pts.set(kp=msg.param2)#, td=msg.param4)
                     # self.main.processor._pidv_pit_pts.set(kp=msg.param4)
                     self.main.processor._spv_rollspeed=msg.param4
-                    self._mavlogger.log(logging.WARNING, f"New PID state: {msg.param1}, {msg.param2}, {msg.param3} @ {msg.param4}")
+                    self._mavlogger.log(MAVLOG_LOG, f"New PID state: {msg.param1}, {msg.param2}, {msg.param3} @ {msg.param4}")
                 # TODO TEMPORARY SCREENSHOT
                 case 1:
                     logging.info("Commanding camera...")
@@ -1708,7 +1710,7 @@ class Controller:
             msg = self._mav_conn_gcs.recv_msg()
         except (ConnectionError, OSError):
             try:
-                self._mavlogger.log(MAVLOG_RX, "Controller (rx) connection refused")
+                self._mavlogger.log(MAVLOG_DEBUG, "Controller (rx) connection refused")
                 await asyncio.sleep(0)
             except asyncio.exceptions.CancelledError:
                 self.main.stop.set()
@@ -1739,12 +1741,12 @@ class Controller:
 
         if msg is not None:
             if msg.get_type() == 'HEARTBEAT' and msg.get_srcSystem()==target:
-                self._mavlogger.log(MAVLOG_RX, f"Heartbeat message from camera #{msg.get_srcSystem()}")
+                self._mavlogger.log(MAVLOG_DEBUG, f"Heartbeat message from camera #{msg.get_srcSystem()}")
                 self._last_cam_beat = self.main.rxdata.time.time
 
         if self._last_cam_beat:
             if self.main.rxdata.time.time-self._last_cam_beat > HEARTBEAT_TIMEOUT*1e6: # TODO: remove time module dependency
-                self._mavlogger.log(logging.WARNING, f"Heartbeat timeout from camera #{target}, closing...")
+                self._mavlogger.log(MAVLOG_LOG, f"Heartbeat timeout from camera #{target}, closing...")
                 self._last_cam_beat = False
                 self._cam_conn.close()
                 import common.key as key
@@ -1815,7 +1817,7 @@ class Controller:
         self._mav_conn_gcs.mav.heartbeat_send(*msg)
         self._cam_conn.mav.heartbeat_send(*msg)
         
-        self._mavlogger.log(MAVLOG_TX, "TX Heartbeat")
+        self._mavlogger.log(MAVLOG_DEBUG, "TX Heartbeat")
         await asyncio.sleep(1 / self._heartbeatfreq)
 
     async def _heartbeat(self) -> None:
