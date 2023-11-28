@@ -1176,13 +1176,13 @@ class Processor:
 
         self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
         self._pidv_xsp_rol = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
-        self._pidv_rol_rls = PID(kp=1.0, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
-        self._pidv_rls_out = PID(kp=0.018, ti=0.1, td=0.045, integral_limit=0.2, minimum=-0.08, maximum=0.08)
+        self._pidv_rol_rls = PID(kp=0.5, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
+        self._pidv_rls_out = PID(kp=0.0165, ti=0.1, td=0.045, integral_limit=0.2, minimum=-0.08, maximum=0.08)
 
         self._pidv_ydp_ysp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
         self._pidv_ysp_pit = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
-        self._pidv_pit_pts = PID(kp=1.0, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
-        self._pidv_pts_out = PID(kp=0.024, ti=0.07, td=0.075, integral_limit=1.0, minimum=-0.1, maximum=0.1)
+        self._pidv_pit_pts = PID(kp=0.5, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
+        self._pidv_pts_out = PID(kp=0.022, ti=0.07, td=0.075, integral_limit=1.0, minimum=-0.1, maximum=0.1)
 
         self._pidv_alt_vsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-50.0, maximum=100.0)
         self._pidv_vsp_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=1.0)
