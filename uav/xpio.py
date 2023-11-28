@@ -232,7 +232,6 @@ class XPConnect:
 
                 await asyncio.sleep(1 / self._freq)
         else:
-            logging.debug("Attempting to reestablish socket")
             self.sock.settimeout(0.1)
             try:
                 self.sock.recvfrom(2048)
