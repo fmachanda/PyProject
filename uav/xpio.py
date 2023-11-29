@@ -120,8 +120,8 @@ tx_data = {
 
 XP_FIND_TIMEOUT = 1
 TX_DATA_FIRST_ESC = 4 # Index of first esc dref in tx_data
-XP_FREQ = 60
-FREQ = 60
+XP_FREQ = 50
+FREQ = 50
 FT_TO_M = 3.048e-1
 KT_TO_MS = 5.14444e-1
 RADS_TO_RPM = 30/math.pi

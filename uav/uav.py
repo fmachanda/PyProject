@@ -81,7 +81,7 @@ db_config.read('./common/_db_config.ini')
 
 os.system('cls' if os.name == 'nt' else 'clear')
 
-DEFAULT_FREQ = 60
+DEFAULT_FREQ = 50
 HEARTBEAT_TIMEOUT = 2.0
 
 RPM_TO_RADS = math.pi/30
@@ -132,6 +132,7 @@ class GlobalRx:
             """Store data from a message."""
             self._last_time = self.time
             self.time = msg.microsecond
+            print(self.time)
             self.dt = self.time - self._last_time
 
     class Att:
@@ -1188,7 +1189,7 @@ class Processor:
         self._pidv_vsp_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=1.0)
 
         self._pidv_dyw_yws = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=-math.pi/6)
-        self._pidv_yws_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-0.3, maximum=0.3)
+        self._pidv_yws_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-0.5, maximum=0.5)
 
     async def boot(self) -> None:
         """Perform boot-related tasks."""
@@ -1634,16 +1635,16 @@ class Controller:
                 # TODO TEMPORARY PID
                 case 0:
                     # PID TUNER GOTO
-                    self.main.processor._pidv_rls_out.reset()
-                    self.main.processor._pidv_pts_out.reset()
-                    self.main.processor._pidv_rol_rls.reset()
-                    self.main.processor._pidv_pit_pts.reset()
-                    self.main.processor._pidv_rls_out.set(kp=msg.param3)#, ti=msg.param2, td=msg.param3)
-                    self.main.processor._pidv_pts_out.set(kp=msg.param4)#, ti=msg.param2, td=msg.param3)
-                    self.main.processor._pidv_rol_rls.set(kp=msg.param1)#, td=msg.param2)
-                    self.main.processor._pidv_pit_pts.set(kp=msg.param2)#, td=msg.param4)
-                    # self.main.processor._pidv_pit_pts.set(kp=msg.param4)
-                    self.main.processor._spv_rollspeed=msg.param4
+                    # self.main.processor._pidv_rls_out.reset()
+                    # self.main.processor._pidv_pts_out.reset()
+                    # self.main.processor._pidv_rol_rls.reset()
+                    # self.main.processor._pidv_pit_pts.reset()
+                    self.main.processor._pidv_yws_out.reset()
+                    self.main.processor._pidv_yws_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    # self.main.processor._pidv_pts_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    # self.main.processor._pidv_rol_rls.set(kp=msg.param4)#, td=msg.param2)
+                    # self.main.processor._pidv_pit_pts.set(kp=msg.param4)#, td=msg.param4)
+                    self.main.processor._spv_yawspeed=msg.param4
                     self._mavlogger.log(MAVLOG_LOG, f"New PID state: {msg.param1}, {msg.param2}, {msg.param3} @ {msg.param4}")
                 # TODO TEMPORARY SCREENSHOT
                 case 1:
