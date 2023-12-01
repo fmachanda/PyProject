@@ -6,14 +6,10 @@ import math
 import os
 import shutil
 import sys
+import threading
 import time
 from configparser import ConfigParser
 from functools import wraps
-
-try:
-    import xp
-except ImportError:
-    pass
 
 os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/../../..')
 sys.path.append(os.getcwd())
@@ -57,6 +53,11 @@ import uavcan.si.unit.velocity
 import uavcan.si.unit.angular_velocity
 import pycyphal.application
 from pymavlink import mavutil
+
+try:
+    import xp
+except ImportError:
+    pass
 
 #region from_common
 def _clip(value: float):
@@ -169,9 +170,9 @@ rx_data = {
     b'fmuas/adc/ias': 0.0,
     b'fmuas/adc/aoa': 0.0,
     
-    b'sim/time/paused': 1.0,
-    b'sim/time/local_date_days': 0.0,
-    b'sim/time/zulu_time_sec': 0.0,
+    b'sim/time/paused': 1.0, # xp.Type_Int
+    b'sim/time/local_date_days': 0.0, # xp.Type_Int
+    b'sim/time/zulu_time_sec': 0.0, # xp.Type_Float
     b'fmuas/clock/time': 0.0,
 
     b'fmuas/camera/pitch_actual': 0.0,
@@ -179,8 +180,8 @@ rx_data = {
 }
 
 tx_data = {
-    b'fmuas/afcs/output/elevon1': 0.0,
-    b'fmuas/afcs/output/elevon2': 0.0,
+    b'fmuas/afcs/output/elevon1': 90.0,
+    b'fmuas/afcs/output/elevon2': 90.0,
     b'fmuas/afcs/output/wing_tilt': 0.0,
     b'fmuas/afcs/output/wing_stow': 0.0,
     b'fmuas/afcs/output/rpm1': 0.0,
@@ -192,6 +193,7 @@ tx_data = {
     b'fmuas/python_running': 1.0
 }
 
+COMPILE_DB = False
 XP_FIND_TIMEOUT = 1
 TX_DATA_FIRST_ESC = 4 # Index of first esc dref in tx_data
 XP_FREQ = 50
@@ -250,178 +252,76 @@ get_xp_time._last_time = time.monotonic()
 get_xp_time._last_real = 0.0
 
 
-async def main() -> None:
-    # cam = Camera()
-    clk = Clock()
-    gps = GPS()
-    sns = SensorHub()
-    mot = MotorHub()
-
-    # asyncio.create_task(cam.run())
-    asyncio.create_task(clk.run())
-    asyncio.create_task(gps.run())
-    asyncio.create_task(sns.run())
-    asyncio.create_task(mot.run())
-
-
-class PythonInterface:
-    def __init__(self):
-        self.Name = "FMUAS X-Plane Interface"
-        self.Sig = "fmuas.xppython3"
-        self.Desc = "Allows connection between FMUAS software and X-Plane 12 via Cyphal and Mavlink protocols"
-
-    def XPluginStart(self) -> tuple[str]:
-        # Required by XPPython3
-        # Called once by X-Plane on startup (or when plugins are re-starting as part of reload)
-        # You need to return three strings
-        return self.Name, self.Sig, self.Desc
-
-    def XPluginStop(self):
-        # Called once by X-Plane on quit (or when plugins are exiting as part of reload)
-        # Return is ignored
-        pass
-
-    def XPluginEnable(self) -> int:
-        # Required by XPPython3
-        # Called once by X-Plane, after all plugins have "Started" (including during reload sequence).
-        # You need to return an integer 1, if you have successfully enabled, 0 otherwise.
-        xp.log("Starting FMUAS plugin")
-        self.rx_drefs = {name: xp.findDataRef(str(name)) for name in rx_data.keys()}
-        self.tx_drefs = {name: xp.findDataRef(str(name)) for name in tx_data.keys()}
-        self.flightLoopID = xp.createFlightLoop(self.FLCallback)
-        # asyncio.run(main())
-        return 1
-
-    def XPluginDisable(self):
-        # Called once by X-Plane, when plugin is requested to be disabled. All plugins
-        # are disabled prior to Stop.
-        # Return is ignored
-        xp.destroyFlightLoop(self.flightLoopID)
-        pass
-
-    def XPluginReceiveMessage(self, inFromWho, inMessage, inParam):
-        # Called by X-Plane whenever a plugin message is being sent to your
-        # plugin. Messages include MSG_PLANE_LOADED, MSG_ENTERED_VR, etc., as
-        # described in XPLMPlugin module.
-        # Messages may be custom inter-plugin messages, as defined by other plugins.
-        # Return is ignored
-        pass
-
-    def FLCallback(self, lastCall: float, elapsedTime: float, counter: int, refCon) -> float:
-        for name, dref in self.rx_drefs.items():
-            rx_data[name] = PythonInterface.getData(dref)
-        
-        for name, dref in self.tx_drefs.items():
-            PythonInterface.setData(dref, tx_data[name])
-
-        xp.log(f"{elapsedTime}, {counter}")
-        return -1
-
-    @staticmethod
-    def getData(dref):
-        match xp.getDataRefTypes(dref):
-            case xp.Type_Int:
-                return xp.getDatai(dref)
-            case xp.Type_Float:
-                return xp.getDataf(dref)
-            case xp.Type_Double:
-                return xp.getDatad(dref)
-            case xp.Type_FloatArray:
-                return xp.getDatavf(dref)
-            case xp.Type_IntArray:
-                return xp.getDatavi(dref)
-            case xp.Type_Data:
-                return xp.getDatab(dref)
-            case _:
-                return None
-    @staticmethod
-    def setData(dref, value):
-        match xp.getDataRefTypes(dref):
-            case xp.Type_Int:
-                xp.setDatai(dref, int(value))
-            case xp.Type_Float:
-                xp.setDataf(dref, float(value))
-            case xp.Type_Double:
-                xp.setDatad(dref, float(value))
-            case xp.Type_FloatArray:
-                xp.setDatavf(dref, [float(v) for v in value])
-            case xp.Type_IntArray:
-                xp.setDatavi(dref, [int(v) for v in value])
-            case xp.Type_Data:
-                xp.setDatab(dref, value)
-            case _:
-                pass
-
-
 class MotorHub:
     def __init__(self, freq: int = FREQ) -> None:
-        if os.path.exists(f:='./'+config.get('db_files', 'motorhub')):
-            os.remove(f)
-            logging.debug(f"Removing preexisting {f}")
-        logging.debug(f"Compiling {f}")
+        if COMPILE_DB:
+            if os.path.exists(f:='./'+config.get('db_files', 'motorhub')):
+                os.remove(f)
+                logging.debug(f"Removing preexisting {f}")
+            logging.debug(f"Compiling {f}")
 
-        _registry = pycyphal.application.make_registry(environment_variables={
-            'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'motorhub'),
-            'UAVCAN__UDP__IFACE'                    :db_config.get('main', 'udp'),
+            _registry = pycyphal.application.make_registry(environment_variables={
+                'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'motorhub'),
+                'UAVCAN__UDP__IFACE'                    :db_config.get('main', 'udp'),
 
-            'UAVCAN__SUB__SERVO_READINESS__ID'      :db_config.get('subject_ids', 'servo_readiness'),
-            'UAVCAN__SUB__ESC_READINESS__ID'        :db_config.get('subject_ids', 'esc_readiness'),
+                'UAVCAN__SUB__SERVO_READINESS__ID'      :db_config.get('subject_ids', 'servo_readiness'),
+                'UAVCAN__SUB__ESC_READINESS__ID'        :db_config.get('subject_ids', 'esc_readiness'),
 
-            'UAVCAN__SUB__ELEVON1_SP__ID'           :db_config.get('subject_ids', 'elevon1_sp'),
-            'UAVCAN__PUB__ELEVON1_FEEDBACK__ID'     :db_config.get('subject_ids', 'elevon1_feedback'),
-            'UAVCAN__PUB__ELEVON1_STATUS__ID'       :db_config.get('subject_ids', 'elevon1_status'),
-            'UAVCAN__PUB__ELEVON1_POWER__ID'        :db_config.get('subject_ids', 'elevon1_power'),
-            'UAVCAN__PUB__ELEVON1_DYNAMICS__ID'     :db_config.get('subject_ids', 'elevon1_dynamics'),
+                'UAVCAN__SUB__ELEVON1_SP__ID'           :db_config.get('subject_ids', 'elevon1_sp'),
+                'UAVCAN__PUB__ELEVON1_FEEDBACK__ID'     :db_config.get('subject_ids', 'elevon1_feedback'),
+                'UAVCAN__PUB__ELEVON1_STATUS__ID'       :db_config.get('subject_ids', 'elevon1_status'),
+                'UAVCAN__PUB__ELEVON1_POWER__ID'        :db_config.get('subject_ids', 'elevon1_power'),
+                'UAVCAN__PUB__ELEVON1_DYNAMICS__ID'     :db_config.get('subject_ids', 'elevon1_dynamics'),
 
-            'UAVCAN__SUB__ELEVON2_SP__ID'           :db_config.get('subject_ids', 'elevon2_sp'),
-            'UAVCAN__PUB__ELEVON2_FEEDBACK__ID'     :db_config.get('subject_ids', 'elevon2_feedback'),
-            'UAVCAN__PUB__ELEVON2_STATUS__ID'       :db_config.get('subject_ids', 'elevon2_status'),
-            'UAVCAN__PUB__ELEVON2_POWER__ID'        :db_config.get('subject_ids', 'elevon2_power'),
-            'UAVCAN__PUB__ELEVON2_DYNAMICS__ID'     :db_config.get('subject_ids', 'elevon2_dynamics'),
+                'UAVCAN__SUB__ELEVON2_SP__ID'           :db_config.get('subject_ids', 'elevon2_sp'),
+                'UAVCAN__PUB__ELEVON2_FEEDBACK__ID'     :db_config.get('subject_ids', 'elevon2_feedback'),
+                'UAVCAN__PUB__ELEVON2_STATUS__ID'       :db_config.get('subject_ids', 'elevon2_status'),
+                'UAVCAN__PUB__ELEVON2_POWER__ID'        :db_config.get('subject_ids', 'elevon2_power'),
+                'UAVCAN__PUB__ELEVON2_DYNAMICS__ID'     :db_config.get('subject_ids', 'elevon2_dynamics'),
 
-            'UAVCAN__SUB__TILT_SP__ID'              :db_config.get('subject_ids', 'tilt_sp'),
-            'UAVCAN__PUB__TILT_FEEDBACK__ID'        :db_config.get('subject_ids', 'tilt_feedback'),
-            'UAVCAN__PUB__TILT_STATUS__ID'          :db_config.get('subject_ids', 'tilt_status'),
-            'UAVCAN__PUB__TILT_POWER__ID'           :db_config.get('subject_ids', 'tilt_power'),
-            'UAVCAN__PUB__TILT_DYNAMICS__ID'        :db_config.get('subject_ids', 'tilt_dynamics'),
+                'UAVCAN__SUB__TILT_SP__ID'              :db_config.get('subject_ids', 'tilt_sp'),
+                'UAVCAN__PUB__TILT_FEEDBACK__ID'        :db_config.get('subject_ids', 'tilt_feedback'),
+                'UAVCAN__PUB__TILT_STATUS__ID'          :db_config.get('subject_ids', 'tilt_status'),
+                'UAVCAN__PUB__TILT_POWER__ID'           :db_config.get('subject_ids', 'tilt_power'),
+                'UAVCAN__PUB__TILT_DYNAMICS__ID'        :db_config.get('subject_ids', 'tilt_dynamics'),
 
-            'UAVCAN__SUB__STOW_SP__ID'              :db_config.get('subject_ids', 'stow_sp'),
-            'UAVCAN__PUB__STOW_FEEDBACK__ID'        :db_config.get('subject_ids', 'stow_feedback'),
-            'UAVCAN__PUB__STOW_STATUS__ID'          :db_config.get('subject_ids', 'stow_status'),
-            'UAVCAN__PUB__STOW_POWER__ID'           :db_config.get('subject_ids', 'stow_power'),
-            'UAVCAN__PUB__STOW_DYNAMICS__ID'        :db_config.get('subject_ids', 'stow_dynamics'),
+                'UAVCAN__SUB__STOW_SP__ID'              :db_config.get('subject_ids', 'stow_sp'),
+                'UAVCAN__PUB__STOW_FEEDBACK__ID'        :db_config.get('subject_ids', 'stow_feedback'),
+                'UAVCAN__PUB__STOW_STATUS__ID'          :db_config.get('subject_ids', 'stow_status'),
+                'UAVCAN__PUB__STOW_POWER__ID'           :db_config.get('subject_ids', 'stow_power'),
+                'UAVCAN__PUB__STOW_DYNAMICS__ID'        :db_config.get('subject_ids', 'stow_dynamics'),
 
-            'UAVCAN__SUB__ESC1_SP__ID'              :db_config.get('subject_ids', 'esc1_sp'),
-            'UAVCAN__PUB__ESC1_FEEDBACK__ID'        :db_config.get('subject_ids', 'esc1_feedback'),
-            'UAVCAN__PUB__ESC1_STATUS__ID'          :db_config.get('subject_ids', 'esc1_status'),
-            'UAVCAN__PUB__ESC1_POWER__ID'           :db_config.get('subject_ids', 'esc1_power'),
-            'UAVCAN__PUB__ESC1_DYNAMICS__ID'        :db_config.get('subject_ids', 'esc1_dynamics'),
+                'UAVCAN__SUB__ESC1_SP__ID'              :db_config.get('subject_ids', 'esc1_sp'),
+                'UAVCAN__PUB__ESC1_FEEDBACK__ID'        :db_config.get('subject_ids', 'esc1_feedback'),
+                'UAVCAN__PUB__ESC1_STATUS__ID'          :db_config.get('subject_ids', 'esc1_status'),
+                'UAVCAN__PUB__ESC1_POWER__ID'           :db_config.get('subject_ids', 'esc1_power'),
+                'UAVCAN__PUB__ESC1_DYNAMICS__ID'        :db_config.get('subject_ids', 'esc1_dynamics'),
 
-            'UAVCAN__SUB__ESC2_SP__ID'              :db_config.get('subject_ids', 'esc2_sp'),
-            'UAVCAN__PUB__ESC2_FEEDBACK__ID'        :db_config.get('subject_ids', 'esc2_feedback'),
-            'UAVCAN__PUB__ESC2_STATUS__ID'          :db_config.get('subject_ids', 'esc2_status'),
-            'UAVCAN__PUB__ESC2_POWER__ID'           :db_config.get('subject_ids', 'esc2_power'),
-            'UAVCAN__PUB__ESC2_DYNAMICS__ID'        :db_config.get('subject_ids', 'esc2_dynamics'),
+                'UAVCAN__SUB__ESC2_SP__ID'              :db_config.get('subject_ids', 'esc2_sp'),
+                'UAVCAN__PUB__ESC2_FEEDBACK__ID'        :db_config.get('subject_ids', 'esc2_feedback'),
+                'UAVCAN__PUB__ESC2_STATUS__ID'          :db_config.get('subject_ids', 'esc2_status'),
+                'UAVCAN__PUB__ESC2_POWER__ID'           :db_config.get('subject_ids', 'esc2_power'),
+                'UAVCAN__PUB__ESC2_DYNAMICS__ID'        :db_config.get('subject_ids', 'esc2_dynamics'),
 
-            'UAVCAN__SUB__ESC3_SP__ID'              :db_config.get('subject_ids', 'esc3_sp'),
-            'UAVCAN__PUB__ESC3_FEEDBACK__ID'        :db_config.get('subject_ids', 'esc3_feedback'),
-            'UAVCAN__PUB__ESC3_STATUS__ID'          :db_config.get('subject_ids', 'esc3_status'),
-            'UAVCAN__PUB__ESC3_POWER__ID'           :db_config.get('subject_ids', 'esc3_power'),
-            'UAVCAN__PUB__ESC3_DYNAMICS__ID'        :db_config.get('subject_ids', 'esc3_dynamics'),
+                'UAVCAN__SUB__ESC3_SP__ID'              :db_config.get('subject_ids', 'esc3_sp'),
+                'UAVCAN__PUB__ESC3_FEEDBACK__ID'        :db_config.get('subject_ids', 'esc3_feedback'),
+                'UAVCAN__PUB__ESC3_STATUS__ID'          :db_config.get('subject_ids', 'esc3_status'),
+                'UAVCAN__PUB__ESC3_POWER__ID'           :db_config.get('subject_ids', 'esc3_power'),
+                'UAVCAN__PUB__ESC3_DYNAMICS__ID'        :db_config.get('subject_ids', 'esc3_dynamics'),
 
-            'UAVCAN__SUB__ESC4_SP__ID'              :db_config.get('subject_ids', 'esc4_sp'),
-            'UAVCAN__PUB__ESC4_FEEDBACK__ID'        :db_config.get('subject_ids', 'esc4_feedback'),
-            'UAVCAN__PUB__ESC4_STATUS__ID'          :db_config.get('subject_ids', 'esc4_status'),
-            'UAVCAN__PUB__ESC4_POWER__ID'           :db_config.get('subject_ids', 'esc4_power'),
-            'UAVCAN__PUB__ESC4_DYNAMICS__ID'        :db_config.get('subject_ids', 'esc4_dynamics'),
-        })
+                'UAVCAN__SUB__ESC4_SP__ID'              :db_config.get('subject_ids', 'esc4_sp'),
+                'UAVCAN__PUB__ESC4_FEEDBACK__ID'        :db_config.get('subject_ids', 'esc4_feedback'),
+                'UAVCAN__PUB__ESC4_STATUS__ID'          :db_config.get('subject_ids', 'esc4_status'),
+                'UAVCAN__PUB__ESC4_POWER__ID'           :db_config.get('subject_ids', 'esc4_power'),
+                'UAVCAN__PUB__ESC4_DYNAMICS__ID'        :db_config.get('subject_ids', 'esc4_dynamics'),
+            })
 
-        for var in os.environ:
-            if var.startswith('UAVCAN__'):
-                os.environ.pop(var, None)
-        for var, value in _registry.environment_variables.items():
-            assert isinstance(value, bytes)
-            os.environ[var] = value.decode('utf-8')
+            for var in os.environ:
+                if var.startswith('UAVCAN__'):
+                    os.environ.pop(var, None)
+            for var, value in _registry.environment_variables.items():
+                assert isinstance(value, bytes)
+                os.environ[var] = value.decode('utf-8')
 
         self._freq = freq
         
@@ -806,30 +706,31 @@ class MotorHub:
 
 class SensorHub:
     def __init__(self, freq: int = FREQ) -> None:
-        if os.path.exists(f:='./'+config.get('db_files', 'sensorhub')):
-            os.remove(f)
-            logging.debug(f"Removing preexisting {f}")
-        logging.debug(f"Compiling {f}")
+        if COMPILE_DB:
+            if os.path.exists(f:='./'+config.get('db_files', 'sensorhub')):
+                os.remove(f)
+                logging.debug(f"Removing preexisting {f}")
+            logging.debug(f"Compiling {f}")
 
-        _registry = pycyphal.application.make_registry(environment_variables={
-            'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'sensorhub'),
-            'UAVCAN__UDP__IFACE'                    :db_config.get('main', 'udp'),
+            _registry = pycyphal.application.make_registry(environment_variables={
+                'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'sensorhub'),
+                'UAVCAN__UDP__IFACE'                    :db_config.get('main', 'udp'),
 
-            'UAVCAN__PUB__INERTIAL__ID'             :db_config.get('subject_ids', 'inertial'),
-            'UAVCAN__PUB__ALTITUDE__ID'             :db_config.get('subject_ids', 'altitude'),
-            'UAVCAN__PUB__IAS__ID'                  :db_config.get('subject_ids', 'ias'),
-            'UAVCAN__PUB__AOA__ID'                  :db_config.get('subject_ids', 'aoa'),
+                'UAVCAN__PUB__INERTIAL__ID'             :db_config.get('subject_ids', 'inertial'),
+                'UAVCAN__PUB__ALTITUDE__ID'             :db_config.get('subject_ids', 'altitude'),
+                'UAVCAN__PUB__IAS__ID'                  :db_config.get('subject_ids', 'ias'),
+                'UAVCAN__PUB__AOA__ID'                  :db_config.get('subject_ids', 'aoa'),
 
-            'UAVCAN__SUB__CLOCK_SYNC_TIME__ID'      :db_config.get('subject_ids', 'clock_sync_time'),
-            'UAVCAN__SUB__GPS_SYNC_TIME__ID'        :db_config.get('subject_ids', 'gps_sync_time')
-        })
-        
-        for var in os.environ:
-            if var.startswith('UAVCAN__'):
-                os.environ.pop(var, None)
-        for var, value in _registry.environment_variables.items():
-            assert isinstance(value, bytes)
-            os.environ[var] = value.decode('utf-8')
+                'UAVCAN__SUB__CLOCK_SYNC_TIME__ID'      :db_config.get('subject_ids', 'clock_sync_time'),
+                'UAVCAN__SUB__GPS_SYNC_TIME__ID'        :db_config.get('subject_ids', 'gps_sync_time')
+            })
+            
+            for var in os.environ:
+                if var.startswith('UAVCAN__'):
+                    os.environ.pop(var, None)
+            for var, value in _registry.environment_variables.items():
+                assert isinstance(value, bytes)
+                os.environ[var] = value.decode('utf-8')
 
         self._freq = freq
         self._time = 0.0
@@ -983,27 +884,28 @@ class SensorHub:
 
 class GPS:
     def __init__(self, freq: int = FREQ) -> None:
-        if os.path.exists(f:='./'+config.get('db_files', 'gps')):
-            os.remove(f)
-            logging.debug(f"Removing preexisting {f}")
-        logging.debug(f"Compiling {f}")
-        
-        _registry = pycyphal.application.make_registry(environment_variables={
-            'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'gps'),
-            'UAVCAN__UDP__IFACE'                    :db_config.get('main', 'udp'),
+        if COMPILE_DB:
+            if os.path.exists(f:='./'+config.get('db_files', 'gps')):
+                os.remove(f)
+                logging.debug(f"Removing preexisting {f}")
+            logging.debug(f"Compiling {f}")
+            
+            _registry = pycyphal.application.make_registry(environment_variables={
+                'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'gps'),
+                'UAVCAN__UDP__IFACE'                    :db_config.get('main', 'udp'),
 
-            'UAVCAN__PUB__GPS__ID'                  :db_config.get('subject_ids', 'gps'),
-            'UAVCAN__PUB__GPS_SYNC_TIME__ID'        :db_config.get('subject_ids', 'gps_sync_time'),
+                'UAVCAN__PUB__GPS__ID'                  :db_config.get('subject_ids', 'gps'),
+                'UAVCAN__PUB__GPS_SYNC_TIME__ID'        :db_config.get('subject_ids', 'gps_sync_time'),
 
-            'UAVCAN__SUB__CLOCK_SYNC_TIME__ID'      :db_config.get('subject_ids', 'clock_sync_time'),
-        })
-        
-        for var in os.environ:
-            if var.startswith('UAVCAN__'):
-                os.environ.pop(var, None)
-        for var, value in _registry.environment_variables.items():
-            assert isinstance(value, bytes)
-            os.environ[var] = value.decode('utf-8')
+                'UAVCAN__SUB__CLOCK_SYNC_TIME__ID'      :db_config.get('subject_ids', 'clock_sync_time'),
+            })
+            
+            for var in os.environ:
+                if var.startswith('UAVCAN__'):
+                    os.environ.pop(var, None)
+            for var, value in _registry.environment_variables.items():
+                assert isinstance(value, bytes)
+                os.environ[var] = value.decode('utf-8')
 
         self._freq = freq
         self._time = 0.0
@@ -1141,24 +1043,25 @@ class GPS:
 
 class Clock:
     def __init__(self) -> None:
-        if os.path.exists(f:='./'+config.get('db_files', 'clock')):
-            os.remove(f)
-            logging.debug(f"Removing preexisting {f}")
-        logging.debug(f"Compiling {f}")
-        
-        _registry = pycyphal.application.make_registry(environment_variables={
-            'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'clock'),
-            'UAVCAN__UDP__IFACE'                    :db_config.get('main', 'udp'),
+        if COMPILE_DB:
+            if os.path.exists(f:='./'+config.get('db_files', 'clock')):
+                os.remove(f)
+                logging.debug(f"Removing preexisting {f}")
+            logging.debug(f"Compiling {f}")
+            
+            _registry = pycyphal.application.make_registry(environment_variables={
+                'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'clock'),
+                'UAVCAN__UDP__IFACE'                    :db_config.get('main', 'udp'),
 
-            'UAVCAN__PUB__CLOCK_SYNC_TIME__ID'      :db_config.get('subject_ids', 'clock_sync_time'),
-        })
-        
-        for var in os.environ:
-            if var.startswith('UAVCAN__'):
-                os.environ.pop(var, None)
-        for var, value in _registry.environment_variables.items():
-            assert isinstance(value, bytes)
-            os.environ[var] = value.decode('utf-8')
+                'UAVCAN__PUB__CLOCK_SYNC_TIME__ID'      :db_config.get('subject_ids', 'clock_sync_time'),
+            })
+            
+            for var in os.environ:
+                if var.startswith('UAVCAN__'):
+                    os.environ.pop(var, None)
+            for var, value in _registry.environment_variables.items():
+                assert isinstance(value, bytes)
+                os.environ[var] = value.decode('utf-8')
             
         self._sync_time = 0.0
         
@@ -1419,3 +1322,133 @@ class Camera:
     async def close(self) -> None:
         self._camera_mav_conn.close()
         logging.debug("Closing CAM")
+
+
+class PythonInterface:
+    def __init__(self):
+        self.Name = "FMUAS X-Plane Interface"
+        self.Sig = "fmuas.xppython3"
+        self.Desc = "Allows connection between FMUAS software and X-Plane 12 via Cyphal and Mavlink protocols"
+
+    def XPluginStart(self) -> tuple[str]:
+        # Required by XPPython3
+        # Called once by X-Plane on startup (or when plugins are re-starting as part of reload)
+        # You need to return three strings
+        return self.Name, self.Sig, self.Desc
+
+    def XPluginStop(self):
+        # Called once by X-Plane on quit (or when plugins are exiting as part of reload)
+        # Return is ignored
+        pass
+
+    async def clock_main(self) -> None:
+        self.clk = Clock()
+        task = asyncio.create_task(self.clk.run())
+        try:
+            await task
+        except asyncio.exceptions.CancelledError:
+            stop.set()
+
+        logging.warning("Clock closed")
+
+    def clock(self) -> None:
+        asyncio.run(self.clock_main())
+
+    async def motor_main(self) -> None:
+        self.mot = MotorHub()
+        task = asyncio.create_task(self.mot.run())
+        try:
+            await task
+        except asyncio.exceptions.CancelledError:
+            stop.set()
+
+        logging.warning("MotorHub closed")
+
+    def motor(self) -> None:
+        asyncio.run(self.motor_main())
+        
+    async def sensor_main(self) -> None:
+        self.sns = SensorHub()
+        task = asyncio.create_task(self.sns.run())
+        try:
+            await task
+        except asyncio.exceptions.CancelledError:
+            stop.set()
+
+        logging.warning("SensorHub closed")
+
+    def sensor(self) -> None:
+        asyncio.run(self.sensor_main())
+
+    async def gps_main(self) -> None:
+        self.gps = GPS()
+        task = asyncio.create_task(self.gps.run())
+        try:
+            await task
+        except asyncio.exceptions.CancelledError:
+            stop.set()
+
+        logging.warning("GPS closed")
+
+    def gps(self) -> None:
+        asyncio.run(self.gps_main())
+
+    def XPluginEnable(self) -> int:
+        # Required by XPPython3
+        # Called once by X-Plane, after all plugins have "Started" (including during reload sequence).
+        # You need to return an integer 1, if you have successfully enabled, 0 otherwise.
+        self.rx_drefs = {name: xp.findDataRef(name.decode('utf-8')) for name in rx_data.keys()}
+        self.tx_drefs = {name: xp.findDataRef(name.decode('utf-8')) for name in tx_data.keys()}
+        self.flightLoopID = xp.createFlightLoop(self.FLCallback)
+        xp.scheduleFlightLoop(self.flightLoopID, interval=-1)
+
+        self.clock_thread = threading.Thread(target=self.clock)
+        self.clock_thread.start()
+
+        self.sensor_thread = threading.Thread(target=self.sensor)
+        self.sensor_thread.start()
+
+        self.motor_thread = threading.Thread(target=self.motor)
+        self.motor_thread.start()
+
+        self.gps_thread = threading.Thread(target=self.clock)
+        self.gps_thread.start()
+        
+        logging.warning("Starting FMUAS plugin")
+
+        return 1
+
+    def XPluginDisable(self):
+        # Called once by X-Plane, when plugin is requested to be disabled. All plugins
+        # are disabled prior to Stop.
+        # Return is ignored
+        xp.setDatad(self.tx_drefs[b'fmuas/python_running'], 0)
+        xp.destroyFlightLoop(self.flightLoopID)
+        stop.set()
+        self.clock_thread.join()
+        self.motor_thread.join()
+        self.sensor_thread.join()
+        self.gps_thread.join()
+        pass
+
+    def XPluginReceiveMessage(self, inFromWho, inMessage, inParam):
+        # Called by X-Plane whenever a plugin message is being sent to your
+        # plugin. Messages include MSG_PLANE_LOADED, MSG_ENTERED_VR, etc., as
+        # described in XPLMPlugin module.
+        # Messages may be custom inter-plugin messages, as defined by other plugins.
+        # Return is ignored
+        pass
+
+    def FLCallback(self, lastCall: float, elapsedTime: float, counter: int, refCon) -> float:
+        for name, dref in self.rx_drefs.items():
+            if name in [b'sim/time/paused', b'sim/time/local_date_days']:
+                rx_data[name] = xp.getDatai(dref)
+            elif name==b'sim/time/zulu_time_sec':
+                rx_data[name] = xp.getDataf(dref)
+            else:
+                rx_data[name] = xp.getDatad(dref)
+        
+        for name, dref in self.tx_drefs.items():
+            xp.setDatad(dref, tx_data[name])
+
+        return -1
