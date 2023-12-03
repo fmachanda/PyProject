@@ -25,17 +25,21 @@ os.environ['MAVLINK_DIALECT'] = 'common'
 
 filehandler = logging.FileHandler('uav/xpio.log', mode='a')
 filehandler.setLevel(logging.INFO)
-filehandler.setFormatter(logging.Formatter(str(os.getpid()) + ' (%(asctime)s %(name)s) %(levelname)s:%(message)s'))
+filehandler.setFormatter(logging.Formatter(str(os.getpid()) + " (%(asctime)s %(name)s) %(levelname)s:%(message)s"))
 streamhandler = logging.StreamHandler()
 streamhandler.setLevel(logging.INFO)
-logging.basicConfig(format='%(name)s %(levelname)s:%(message)s', level=logging.DEBUG, handlers=[filehandler, streamhandler])
+streamhandler.setFormatter(logging.Formatter("(%(name)s) %(levelname)s:%(message)s"))
+logger = logging.getLogger("XPIO")
+logger.addHandler(filehandler)
+logger.addHandler(streamhandler)
+logger.setLevel(logging.DEBUG)
 
 MAVLOG_DEBUG = logging.DEBUG - 3
 MAVLOG_TX = logging.DEBUG - 2
 MAVLOG_RX = logging.DEBUG - 1
 MAVLOG_LOG = logging.INFO + 1
 
-logging.warning("Generating UAVCAN files, please wait...")
+logger.warning("Generating UAVCAN files, please wait...")
 
 import pycyphal
 import reg.udral.service.actuator.common
@@ -69,8 +73,6 @@ config.read('./common/config.ini')
 
 db_config = ConfigParser()
 db_config.read('./common/_db_config.ini')
-
-os.system('cls' if os.name == 'nt' else 'clear')
 
 stop = asyncio.Event()
 
@@ -140,7 +142,7 @@ def async_loop_decorator(close=True):
                         stop.set()
                         raise
                     except Exception as e:
-                        logging.error(f"Error in {func.__name__}: {e}")
+                        logger.error(f"Error in {func.__name__}: {e}")
                         raise # TODO
             except KeyboardInterrupt:
                 stop.set()
@@ -149,7 +151,7 @@ def async_loop_decorator(close=True):
                 if close:
                     await self.close()
                 else:
-                    logging.debug(f"Closing {func.__name__}")
+                    logger.debug(f"Closing {func.__name__}")
         return wrapper
     return decorator
 
@@ -159,7 +161,7 @@ def get_xp_time() -> int:
     _xpsecs = rx_data[b'fmuas/clock/time']
 
     if abs(_xpsecs - get_xp_time._last_xpsecs) > 1.0: # Time jump
-        logging.debug("XP time jumped")
+        logger.debug("XP time jumped")
         get_xp_time._secs += 1e-6
     elif _xpsecs == get_xp_time._last_xpsecs and rx_data[b'sim/time/paused'] != 1.0: # No time but running
         get_xp_time._secs += time.monotonic() - get_xp_time._last_time
@@ -180,15 +182,15 @@ class XPConnect:
     def __init__(self, freq: int = XP_FREQ) -> None:
         self._freq = freq
 
-        logging.info("Looking for X-Plane...")
+        logger.info("Looking for X-Plane...")
         try:
             beacon=find_xp.find_xp(wait=XP_FIND_TIMEOUT)
         except find_xp.XPlaneIpNotFound:
-            logging.error(f"X-Plane not found, switching to test mode...")
+            logger.error(f"X-Plane not found, switching to test mode...")
             raise
         self.X_PLANE_IP=beacon['ip']
         self.UDP_PORT=beacon['port']
-        logging.warning("X-Plane found at IP: %s, port: %s" % (self.X_PLANE_IP,self.UDP_PORT))
+        logger.warning("X-Plane found at IP: %s, port: %s" % (self.X_PLANE_IP,self.UDP_PORT))
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((self.X_PLANE_IP, 0))
@@ -213,7 +215,7 @@ class XPConnect:
             try:
                 data, _ = self.sock.recvfrom(2048)
             except socket.timeout:
-                logging.info("Socket timeout")
+                logger.info("Socket timeout")
                 self.conn_open = False
             else:
                 header = data[0:4]
@@ -238,22 +240,22 @@ class XPConnect:
             except socket.timeout:
                 await asyncio.sleep(0.1)
             else:
-                logging.info("Socket reestablished")
+                logger.info("Socket reestablished")
                 self.sock.settimeout(1)
                 self.conn_open = True
 
     async def run(self) -> None:
-        logging.warning("Data streaming...\n----- Ctrl-C to exit -----")
+        logger.warning("Data streaming...")
         await self._xpconnect_run_loop()
 
     async def _halt(self) -> None:
         for index, dref in enumerate(rx_data.keys()):
             msg = struct.pack('<4sxii400s', b'RREF', 0, index, dref)
             self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
-        logging.info("Stopped listening for drefs")
+        logger.info("Stopped listening for drefs")
         
     async def close(self) -> None:
-        logging.info("Closing XPL")
+        logger.info("Closing XPL")
 
         await self._halt()
 
@@ -272,7 +274,7 @@ class XPConnect:
         
         msg = struct.pack('<4sxf500s', b'DREF', 0.0, b'fmuas/python_running')
         self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
-        logging.info("LUA suspended")
+        logger.info("LUA suspended")
 
         self.sock.close()
 
@@ -286,7 +288,7 @@ class TestXPConnect:
 
         self.X_PLANE_IP="TEST"
         self.UDP_PORT=0
-        logging.warning("X-Plane found at IP: %s, port: %s" % (self.X_PLANE_IP,self.UDP_PORT))
+        logger.warning("X-Plane found at IP: %s, port: %s" % (self.X_PLANE_IP,self.UDP_PORT))
 
     @async_loop_decorator()
     async def _testxpconnect_run_loop(self) -> None:
@@ -306,21 +308,21 @@ class TestXPConnect:
         await asyncio.sleep(1 / self._freq)
 
     async def run(self) -> None:
-        logging.warning("Data streaming...\n----- Ctrl-C to exit -----")
+        logger.warning("Data streaming...")
         await self._testxpconnect_run_loop()
 
     async def close(self) -> None:
-        logging.debug("Closing XPL")
-        logging.info("Stopped listening for drefs")
-        logging.info("LUA suspended")
+        logger.debug("Closing XPL")
+        logger.info("Stopped listening for drefs")
+        logger.info("LUA suspended")
 
 
 class MotorHub:
     def __init__(self, freq: int = FREQ) -> None:
         if os.path.exists(f:='./'+config.get('db_files', 'motorhub')):
             os.remove(f)
-            logging.debug(f"Removing preexisting {f}")
-        logging.debug(f"Compiling {f}")
+            logger.debug(f"Removing preexisting {f}")
+        logger.debug(f"Compiling {f}")
 
         _registry = pycyphal.application.make_registry(environment_variables={
             'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'motorhub'),
@@ -484,7 +486,7 @@ class MotorHub:
             self,
             request: uavcan.node.ExecuteCommand_1.Request, 
             metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.node.ExecuteCommand_1.Response:
-        logging.info("Execute command request %s from node %d", request, metadata.client_node_id)
+        logger.info("Execute command request %s from node %d", request, metadata.client_node_id)
         match request.command:
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
                 return uavcan.node.ExecuteCommand_1.Response(
@@ -762,7 +764,7 @@ class MotorHub:
         await self._motorhub_run_loop()
 
     async def close(self) -> None:
-        logging.debug("Closing MOT")
+        logger.debug("Closing MOT")
         self._node.close()
 
 
@@ -770,8 +772,8 @@ class SensorHub:
     def __init__(self, freq: int = FREQ) -> None:
         if os.path.exists(f:='./'+config.get('db_files', 'sensorhub')):
             os.remove(f)
-            logging.debug(f"Removing preexisting {f}")
-        logging.debug(f"Compiling {f}")
+            logger.debug(f"Removing preexisting {f}")
+        logger.debug(f"Compiling {f}")
 
         _registry = pycyphal.application.make_registry(environment_variables={
             'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'sensorhub'),
@@ -838,7 +840,7 @@ class SensorHub:
             self,
             request: uavcan.node.ExecuteCommand_1.Request, 
             metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.node.ExecuteCommand_1.Response:
-        logging.info("Execute command request %s from node %d", request, metadata.client_node_id)
+        logger.info("Execute command request %s from node %d", request, metadata.client_node_id)
         match request.command:
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
                 return uavcan.node.ExecuteCommand_1.Response(
@@ -939,7 +941,7 @@ class SensorHub:
         await self._sensorhub_run_loop()
 
     async def close(self) -> None:
-        logging.debug("Closing SNS")
+        logger.debug("Closing SNS")
         self._node.close()
 
 
@@ -947,8 +949,8 @@ class GPS:
     def __init__(self, freq: int = FREQ) -> None:
         if os.path.exists(f:='./'+config.get('db_files', 'gps')):
             os.remove(f)
-            logging.debug(f"Removing preexisting {f}")
-        logging.debug(f"Compiling {f}")
+            logger.debug(f"Removing preexisting {f}")
+        logger.debug(f"Compiling {f}")
         
         _registry = pycyphal.application.make_registry(environment_variables={
             'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'gps'),
@@ -1009,7 +1011,7 @@ class GPS:
             self,
             request: uavcan.node.ExecuteCommand_1.Request, 
             metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.node.ExecuteCommand_1.Response:
-        logging.info("Execute command request %s from node %d", request, metadata.client_node_id)
+        logger.info("Execute command request %s from node %d", request, metadata.client_node_id)
         match request.command:
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
                 return uavcan.node.ExecuteCommand_1.Response(
@@ -1044,7 +1046,7 @@ class GPS:
     async def _serve_sync_master_info(
             request: uavcan.time.GetSynchronizationMasterInfo_0.Request, 
             metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.time.GetSynchronizationMasterInfo_0.Response:
-        logging.info("Execute command request %s from node %d", request, metadata.client_node_id)
+        logger.info("Execute command request %s from node %d", request, metadata.client_node_id)
         return uavcan.time.GetSynchronizationMasterInfo_0.Response(
             0.0, # error_variance
             uavcan.time.TimeSystem_0(uavcan.time.TimeSystem_0.TAI),
@@ -1097,7 +1099,7 @@ class GPS:
         await self._gps_run_loop()
 
     async def close(self) -> None:
-        logging.debug("Closing GPS")
+        logger.debug("Closing GPS")
         self._node.close()
 
 
@@ -1105,8 +1107,8 @@ class Clock:
     def __init__(self) -> None:
         if os.path.exists(f:='./'+config.get('db_files', 'clock')):
             os.remove(f)
-            logging.debug(f"Removing preexisting {f}")
-        logging.debug(f"Compiling {f}")
+            logger.debug(f"Removing preexisting {f}")
+        logger.debug(f"Compiling {f}")
         
         _registry = pycyphal.application.make_registry(environment_variables={
             'UAVCAN__NODE__ID'                      :db_config.get('node_ids', 'clock'),
@@ -1150,7 +1152,7 @@ class Clock:
             self,
             request: uavcan.node.ExecuteCommand_1.Request, 
             metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.node.ExecuteCommand_1.Response:
-        logging.info("Execute command request %s from node %d", request, metadata.client_node_id)
+        logger.info("Execute command request %s from node %d", request, metadata.client_node_id)
         match request.command:
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
                 return uavcan.node.ExecuteCommand_1.Response(
@@ -1185,7 +1187,7 @@ class Clock:
     async def _serve_sync_master_info(
             request: uavcan.time.GetSynchronizationMasterInfo_0.Request, 
             metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.time.GetSynchronizationMasterInfo_0.Response:
-        logging.info("Execute command request %s from node %d", request, metadata.client_node_id)
+        logger.info("Execute command request %s from node %d", request, metadata.client_node_id)
         return uavcan.time.GetSynchronizationMasterInfo_0.Response(
             0.0, # error_variance
             uavcan.time.TimeSystem_0(uavcan.time.TimeSystem_0.MONOTONIC_SINCE_BOOT),
@@ -1206,7 +1208,7 @@ class Clock:
         await self._clock_run_loop()
 
     async def close(self) -> None:
-        logging.debug("Closing CLK")
+        logger.debug("Closing CLK")
         self._node.close()
 
 
@@ -1320,7 +1322,7 @@ class Camera:
     async def _capture(self) -> None:
         previous_file_list = [f for f in os.listdir(self.xp_path) if os.path.isfile(os.path.join(self.xp_path, f))]
 
-        logging.info("Commanding screenshot...")
+        logger.info("Commanding screenshot...")
         self.sock.sendto(struct.pack('<4sx400s', b'CMND', b'fmuas/commands/image_capture'), (self.X_PLANE_IP, self.UDP_PORT))
 
         await asyncio.sleep(Camera.DELAY)
@@ -1330,7 +1332,7 @@ class Camera:
         previous_file_list = new_file_list
 
         if len(file_diff) != 0:
-            logging.debug(f"Detected file_diff: {file_diff}")
+            logger.debug(f"Detected file_diff: {file_diff}")
             for f in file_diff:
                 ready = False
                 last_modified = os.stat(os.path.join(self.xp_path, f)).st_mtime
@@ -1339,16 +1341,16 @@ class Camera:
                     new_last_modified = os.stat(os.path.join(self.xp_path, f)).st_mtime
                     ready = (last_modified == new_last_modified)
                     last_modified = new_last_modified
-                    logging.debug('Shutil waiting...')
-                logging.debug("Shutil moving")
+                    logger.debug('Shutil waiting...')
+                logger.debug("Shutil moving")
                 if not os.path.exists(self.destination_dir):
                     os.makedirs(self.destination_dir)
                 file_path = os.path.join(self.xp_path, f)
                 try:
                     shutil.move(file_path, self.destination_dir)
-                    logging.info(f"Moving file {f} to {self.destination_dir}")
+                    logger.info(f"Moving file {f} to {self.destination_dir}")
                 except (shutil.Error, PermissionError):
-                    logging.error(f"Error moving file {f} to {self.destination_dir}")
+                    logger.error(f"Error moving file {f} to {self.destination_dir}")
         
         self.sock.sendto(struct.pack('<4sx400s', b'CMND', b'fmuas/commands/image_capture_reset'), (self.X_PLANE_IP, self.UDP_PORT))
 
@@ -1385,7 +1387,7 @@ class Camera:
 
     async def close(self) -> None:
         self._camera_mav_conn.close()
-        logging.debug("Closing CAM")
+        logger.debug("Closing CAM")
 
 
 class TestCamera:
@@ -1484,7 +1486,7 @@ class TestCamera:
         await asyncio.sleep(0)
 
     async def _capture(self) -> None:
-        logging.info("Commanding screenshot...")
+        logger.info("Commanding screenshot...")
         await asyncio.sleep(Camera.DELAY)
 
     async def _capture_cycle(self, iterations: int, period: float) -> None:
@@ -1520,14 +1522,14 @@ class TestCamera:
 
     async def close(self) -> None:
         self._camera_mav_conn.close()
-        logging.debug("Closing CAM")
+        logger.debug("Closing CAM")
 
 
 async def main():
     try:
         xpl = XPConnect()
         cam = Camera(xpl)
-    except find_xp.XPlaneIpNotFound or KeyboardInterrupt:
+    except (find_xp.XPlaneIpNotFound, KeyboardInterrupt, OSError):
         xpl = TestXPConnect()
         cam = TestCamera(xpl)
 
@@ -1550,7 +1552,7 @@ async def main():
     except asyncio.exceptions.CancelledError:
         stop.set()
 
-    logging.warning("Nodes closed")
+    logger.warning("Nodes closed")
 
 
 if __name__ == '__main__':

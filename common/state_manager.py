@@ -1,6 +1,6 @@
 import os
 import asyncio
-import logging
+# import logging
 
 os.environ['MAVLINK20'] = '1'
 from pymavlink import mavutil
@@ -193,7 +193,7 @@ class GlobalState:
         self.mode = mode
         self.custom_mode = custom_mode
         self.custom_submode = custom_submode
-        logging.warning(f"Submode set to: {GlobalState.CUSTOM_SUBMODE_NAMES[self.custom_submode]}")
+        pass # logging.warning(f"Submode set to: {GlobalState.CUSTOM_SUBMODE_NAMES[self.custom_submode]}")
 
         self.boot = boot
 
@@ -206,7 +206,7 @@ class GlobalState:
 
             if mode == m.MAV_MODE_MANUAL_ARMED and self.custom_mode == GlobalState.CUSTOM_MODE_FLIGHT:
                 self.custom_submode = GlobalState.CUSTOM_SUBMODE_FLIGHT_MANUAL
-                logging.warning(f"Submode set to: {GlobalState.CUSTOM_SUBMODE_NAMES[self.custom_submode]}")
+                pass # logging.warning(f"Submode set to: {GlobalState.CUSTOM_SUBMODE_NAMES[self.custom_submode]}")
                 self.mode = mode
                 self.state = m.MAV_STATE_ACTIVE
                 return True
@@ -217,7 +217,7 @@ class GlobalState:
             if custom_submode != self.custom_submode:
                 assert custom_submode in GlobalState.ALLOWED_SUBMODE_CHANGES[self.custom_submode]
                 self.custom_submode = custom_submode
-                logging.warning(f"Submode set to: {GlobalState.CUSTOM_SUBMODE_NAMES[self.custom_submode]}")
+                pass # logging.warning(f"Submode set to: {GlobalState.CUSTOM_SUBMODE_NAMES[self.custom_submode]}")
 
                 if self.state not in GlobalState.MAV_STATES_ABNORMAL:
                     self.state = GlobalState.ALLOWED_STATES[self.custom_submode][0]
@@ -241,7 +241,7 @@ class GlobalState:
     def inc_mode(self) -> None:
         """Steps the mode up one in the standard flight sequence."""
         self.custom_submode = GlobalState.ALLOWED_SUBMODE_CHANGES[self.custom_submode][0]
-        logging.warning(f"Submode set to: {GlobalState.CUSTOM_SUBMODE_NAMES[self.custom_submode]}")
+        pass # logging.warning(f"Submode set to: {GlobalState.CUSTOM_SUBMODE_NAMES[self.custom_submode]}")
         self.mode = GlobalState.ALLOWED_MODES[self.custom_submode][0]
         self.custom_mode = GlobalState.ALLOWED_CUSTOM_MODES[self.custom_submode][0]
 
@@ -252,14 +252,14 @@ class GlobalState:
         """Steps the mode down one in the standard flight sequence."""
         if self.custom_submode not in [GlobalState.CUSTOM_SUBMODE_FLIGHT_MANUAL, GlobalState.CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE, GlobalState.CUSTOM_SUBMODE_UNINIT]:
             self.custom_submode = GlobalState.ALLOWED_SUBMODE_CHANGES[self.custom_submode][1]
-            logging.warning(f"Submode set to: {GlobalState.CUSTOM_SUBMODE_NAMES[self.custom_submode]}")
+            pass # logging.warning(f"Submode set to: {GlobalState.CUSTOM_SUBMODE_NAMES[self.custom_submode]}")
             self.mode = GlobalState.ALLOWED_MODES[self.custom_submode][0]
             self.custom_mode = GlobalState.ALLOWED_CUSTOM_MODES[self.custom_submode][0]
 
             if self.state not in GlobalState.MAV_STATES_ABNORMAL:
                 self.state = GlobalState.ALLOWED_STATES[self.custom_submode][0]
         else:
-            logging.debug("Invalid submode for GlobalState.dec_mode(), running GlobalState.inc_mode() instead")
+            pass # logging.debug("Invalid submode for GlobalState.dec_mode(), running GlobalState.inc_mode() instead")
             self.inc_mode()
 
     def set_state(self, state: int) -> None:
@@ -267,4 +267,4 @@ class GlobalState:
         if (state in GlobalState.MAV_STATES_NOMINAL or state in GlobalState.MAV_STATES_ABNORMAL) and state in GlobalState.ALLOWED_STATES[self.custom_submode]:
             self.state = state
         else:
-            logging.debug("Invalid state passed into GlobalState.set_state()")
+            pass # logging.debug("Invalid state passed into GlobalState.set_state()")

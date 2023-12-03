@@ -6,6 +6,7 @@ import time
 from configparser import ConfigParser
 from typing import Any
 
+os.system('cls' if os.name == 'nt' else 'clear')
 os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
 sys.path.append(os.getcwd())
 os.environ['MAVLINK20'] = '1'
@@ -13,10 +14,14 @@ os.environ['MAVLINK_DIALECT'] = 'common'
 
 filehandler = logging.FileHandler('gcs/gcs.log', mode='a')
 filehandler.setLevel(logging.INFO)
-filehandler.setFormatter(logging.Formatter(str(os.getpid()) + ' (%(asctime)s %(name)s) %(levelname)s:%(message)s'))
+filehandler.setFormatter(logging.Formatter(str(os.getpid()) + " (%(asctime)s %(name)s) %(levelname)s:%(message)s"))
 streamhandler = logging.StreamHandler()
 streamhandler.setLevel(logging.INFO)
-logging.basicConfig(format='%(name)s %(levelname)s:%(message)s', level=logging.DEBUG, handlers=[filehandler, streamhandler])
+filehandler.setFormatter(logging.Formatter("(%(name)s) %(levelname)s:%(message)s"))
+logger = logging.getLogger("GCS")
+logger.addHandler(filehandler)
+logger.addHandler(streamhandler)
+logger.setLevel(logging.DEBUG)
 
 MAVLOG_DEBUG = logging.DEBUG - 3
 MAVLOG_TX = logging.DEBUG - 2
@@ -74,12 +79,12 @@ def flush_buffer() -> None:
         for i in range(MAX_FLUSH_BUFFER):
             msg = mav_conn.recv_match(blocking=False)
             if msg is None:
-                logging.debug(f"Buffer flushed, {i} messages cleared")
+                logger.debug(f"Buffer flushed, {i} messages cleared")
                 break
             elif i >= MAX_FLUSH_BUFFER-1:
-                logging.error(f"Messages still in buffer after {MAX_FLUSH_BUFFER} flush cycles")     
+                logger.error(f"Messages still in buffer after {MAX_FLUSH_BUFFER} flush cycles")     
     except (ConnectionError, OSError):
-        logging.debug("No connection to flush.")
+        logger.debug("No connection to flush.")
 
 
 def check_mav_conn() -> None:
@@ -283,64 +288,64 @@ class Connect:
     # region user functions
     def boot(self) -> None:
         """Set UAV mode to boot."""
-        logging.info("Calling boot()")
+        logger.info("Calling boot()")
         asyncio.run(self._command('DO_SET_MODE', m.MAV_MODE_PREFLIGHT, 1, 10))
 
     def set_mode(self, mode: int, custom_mode: int, custom_submode: int) -> None:
         """Set UAV mode."""
-        logging.info("Calling set_mode()")
+        logger.info("Calling set_mode()")
         asyncio.run(self._command('DO_SET_MODE', mode, custom_mode, custom_submode))
 
     def set_alt(self, alt: float) -> None:
         """Change UAV altitude setpoint."""
-        logging.info("Calling set_alt()")
+        logger.info("Calling set_alt()")
         asyncio.run(self._command('DO_CHANGE_ALTITUDE', alt, m.MAV_FRAME_GLOBAL_TERRAIN_ALT))
 
     def set_speed(self, airspeed: float) -> None:
         """Change UAV speed setpoint."""
-        logging.info("Calling set_speed()")
+        logger.info("Calling set_speed()")
         asyncio.run(self._command('DO_CHANGE_SPEED', m.SPEED_TYPE_AIRSPEED, airspeed*KT_TO_MS, -1))
 
     def reposition(self, lat: float | None = None, lon: float | None = None, alt: float = 0.0, speed: float = -1, radius: float = 0, yaw: float = 1):
         """Change UAV current waypoint."""
-        logging.info("Calling reposition()")
+        logger.info("Calling reposition()")
         lat = self.map_pos[0] if lat is None else lat
         lon = self.map_pos[1] if lon is None else lon
         asyncio.run(self._command_int('DO_REPOSITION', speed, 0, radius, yaw, int(lat*1e7), int(lon*1e7), int(alt*FT_TO_M), acknowledge=False))
 
     def f_takeoff(self, latitude: float, longitude: float, altitude: float, yaw: float = float('nan'), pitch: float = 10):
         """Command UAV conventional takeoff."""
-        logging.info("Calling f_takeoff()")
+        logger.info("Calling f_takeoff()")
         asyncio.run(self._command_int('NAV_TAKEOFF', pitch, 0,0, yaw, int(latitude), int(longitude), int(altitude)))
 
     def v_takeoff(self, latitude: float, longitude: float, altitude: float, transit_heading: float = m.VTOL_TRANSITION_HEADING_TAKEOFF, yaw: float = float('nan')):
         """Command UAV vertical takeoff."""
-        logging.info("Calling v_takeoff()")
+        logger.info("Calling v_takeoff()")
         asyncio.run(self._command_int('NAV_VTOL_TAKEOFF', 0, transit_heading, 0, yaw, int(latitude), int(longitude), int(altitude)))
     
     def f_land(self, latitude: float, longitude: float, altitude: float, abort_alt: float = 0, yaw: float = float('nan')):
         """Command UAV conventional landing."""
-        logging.info("Calling f_land()")
+        logger.info("Calling f_land()")
         asyncio.run(self._command_int('NAV_LAND', abort_alt, m.PRECISION_LAND_MODE_DISABLED, 0, yaw, int(latitude), int(longitude), int(altitude)))
 
     def v_land(self, latitude: float, longitude: float, altitude: float, approch_alt: float = float('nan'), yaw: float = float('nan')):
         """Command UAV vertical landing."""
-        logging.info("Calling v_land()")
+        logger.info("Calling v_land()")
         asyncio.run(self._command_int('NAV_VTOL_LAND', m.NAV_VTOL_LAND_OPTIONS_DEFAULT, 0, approch_alt, yaw, int(latitude), int(longitude), int(altitude)))
 
     def gimbal_pitchyaw(self, pitch: float, yaw: float, pitchrate: float = 0.0, yawrate: float = 0.0, flags: int = m.GIMBAL_MANAGER_FLAGS_NEUTRAL, id: int = 0):
         """Command gimbal attitude."""
-        logging.info("Calling gimbal_pitchyaw()")
+        logger.info("Calling gimbal_pitchyaw()")
         asyncio.run(self._command('DO_GIMBAL_MANAGER_PITCHYAW', pitch, yaw, pitchrate, yawrate, flags, id, acknowledge=False))
 
     def gimbal_roi_clear(self, id: int = 0):
         """Command gimbal to reset roi."""
-        logging.info("Calling gimbal_roi_clear()")
+        logger.info("Calling gimbal_roi_clear()")
         asyncio.run(self._command('DO_SET_ROI_NONE', id, acknowledge=False))
 
     def gimbal_roi(self, lat: float | None = None, lon: float | None = None, alt: float = 0.0, id: int = 0):
         """Command gimbal to roi."""
-        logging.info("Calling gimbal_roi()")
+        logger.info("Calling gimbal_roi()")
         lat = self.map_pos[0] if lat is None else lat
         lon = self.map_pos[1] if lon is None else lon
         asyncio.run(self._command_int('DO_SET_ROI_LOCATION', id, 0, 0, 0, int(lat*1e7), int(lon*1e7), int(alt*FT_TO_M), acknowledge=False))
@@ -402,4 +407,4 @@ class Connect:
 
 
 if __name__=='__main__':
-    logging.critical("Either run the GUI script or import this script to a python terminal.")
+    logger.critical("Either run the GUI script or import this script to a python terminal.")

@@ -1,7 +1,7 @@
 import asyncio
 import cv2
 import cv2.typing
-import logging
+# import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -37,7 +37,7 @@ async def find_contour(image: str | cv2.typing.MatLike) -> tuple[np.ndarray] | b
     if isinstance(image, str):
         image = cv2.imread(image)
         if image is None:
-            logging.error(f"Cannot read {image}.")
+            pass # logging.error(f"Cannot read {image}.")
             return False
         
     await asyncio.sleep(0)

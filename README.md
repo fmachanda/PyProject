@@ -20,11 +20,27 @@ The software is designed to be simulated using the [X-Plane 12][xplane-link] fli
 * Windows 11.0+ or MacOS 13.0+
 * Python 3.11.6+
     * **pip** modules listed in `requirements.txt`
-* X-Plane 12.06+ (if using simulation)
+* X-Plane 12.07+ (if using simulation)
 
-> Not tested with older versions or Linux, but may work
+> Not tested with older versions or Linux
 
 ## Installation
+
+> Ensure you have **python**/**python3** and **git** on your system path.
+
+Clone this repo into the desired directory. If you plan to use this project with the X-Plane flight simulator, ensure the files are cloned into the `X-Plane 12/Aircraft/` directory. Replace `<directory>` below with the correct path.
+
+```bash
+git clone https://github.com/fmachanda/fmuas-main.git <directory>
+```
+
+Navigate to the `scripts` folder, and double-click on `install.command` (for Windows) or `install.command` (for MacOS). You should see a terminal window open.
+
+In the event you receive an error message, please retry installation manually.
+
+### Manual Installation
+
+If you do not wish to run `scripts/install.command` or `scripts/install.bat`, follow the steps below.
 
 Clone this repo into the desired directory. This project contains the [public_regulated_data_types][prdt-link] submodule, so you must use `--recurse-submodules`.
 
@@ -47,23 +63,35 @@ python -m pip install -r requirements.txt --upgrade
 ```bash
 ├── fmuas-main 
     ├── ...
+    ├── scripts
+        ├── run.bat # Run this for Windows
+        ├── run.command # Run this for MacOS
+        ├── uav.bat
+        ├── uav.command
+        ├── gcs.bat
+        └── gcs.command
     ├── uav
-        ├── uav.py # Run this
-        └── xpio.py # Run this
+        ├── uav.py
+        └── xpio.py
     ├── gcs
-        ├── gcs.py # Use this in a python terminal
-        └── gui.py # Run this
+        ├── gui.py
+        └── gcs.py # Can only be used in a python terminal
     ├── common
-        ├── public_regulated_data_types # INIT THIS SUBMODULE!
-        ├── config.ini # Change this
-        ├── key.py # Shared mavlink encryption key
+        ├── public_regulated_data_types # Initialize this submodule!
+        ├── config.ini # Controllable settings for UAV
+        ├── key.py # Shared Mavlink encryption key
         └── ...
     └── fmuas-xp # Contains the X-Plane files for simulation
 ```
 
+`scripts/run.bat` (Windows) or `scripts/run.command` (MacOS) is an easy to run all UAV components and a GCS window simulataneously.
+
+`scripts/uav.bat` (Windows) or `scripts/uav.command` (MacOS) is an easy to run all UAV components simulataneously.
+
+`scripts/gcs.bat` (Windows) or `scripts/gcs.command` (MacOS) is an easy to run a GCS window.
 
 `uav/uav.py` runs the UAV  
-`uav/xpio.py` runs the connection with X-Plane 12  
+`uav/xpio.py` runs the connection with X-Plane 12 and simulates UAV components 
 
 `gcs/gui.py` runs a GCS window  
 `gcs/gcs.py` can be used as a [CLI](#gcs-command-line-interface) if imported in a python terminal
