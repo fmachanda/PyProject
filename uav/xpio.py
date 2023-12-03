@@ -10,7 +10,6 @@ import struct
 import sys
 import time
 from configparser import ConfigParser
-from functools import wraps
 
 os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
 sys.path.append(os.getcwd())
@@ -60,6 +59,8 @@ import pycyphal.application
 from pymavlink import mavutil
 
 import common.find_xp as find_xp
+from common.decorators import async_loop_decorator
+from common.state_manager import NodeCommands
 from common.angles import quaternion_to_euler, py_to_rp
 
 m = mavutil.mavlink
@@ -73,8 +74,6 @@ config.read('./common/config.ini')
 
 db_config = ConfigParser()
 db_config.read('./common/_db_config.ini')
-
-stop = asyncio.Event()
 
 rx_data = {
     b'fmuas/att/attitude_quaternion_x': 0.0, # 0
@@ -128,33 +127,6 @@ FT_TO_M = 3.048e-1
 KT_TO_MS = 5.14444e-1
 RADS_TO_RPM = 30/math.pi
 
-def async_loop_decorator(close=True):
-    """Provide decorator to gracefully loop coroutines."""
-    def decorator(func):
-        @wraps(func) # Preserve metadata like func.__name__
-        async def wrapper(self: 'XPConnect | TestXPConnect | MotorHub | SensorHub | GPS | Clock | Camera | TestCamera', *args, **kwargs):
-            try:
-                while not stop.is_set():
-                    try:
-                        await asyncio.sleep(0)
-                        await func(self, *args, **kwargs)
-                    except asyncio.exceptions.CancelledError:
-                        stop.set()
-                        raise
-                    except Exception as e:
-                        logger.error(f"Error in {func.__name__}: {e}")
-                        raise # TODO
-            except KeyboardInterrupt:
-                stop.set()
-                raise
-            finally:
-                if close:
-                    await self.close()
-                else:
-                    logger.debug(f"Closing {func.__name__}")
-        return wrapper
-    return decorator
-
 
 def get_xp_time() -> int:
     """Get monotonic microseconds from X-Plane with jump handling."""
@@ -181,6 +153,7 @@ get_xp_time._last_real = 0.0
 class XPConnect:
     def __init__(self, freq: int = XP_FREQ) -> None:
         self._freq = freq
+        self.stop = asyncio.Event()
 
         logger.info("Looking for X-Plane...")
         try:
@@ -284,7 +257,9 @@ class TestXPConnect:
         self._boot_time = time.time_ns() // 1000 # Used for sinusoidal data
         self._time = 0
         self._freq = freq
+        self.stop = asyncio.Event()
         self.rx_indices = rx_indices
+
 
         self.X_PLANE_IP="TEST"
         self.UDP_PORT=0
@@ -388,6 +363,7 @@ class MotorHub:
             os.environ[var] = value.decode('utf-8')
 
         self._freq = freq
+        self.stop = asyncio.Event()
         
         node_info = uavcan.node.GetInfo_1.Response(
             software_version=uavcan.node.Version_1(major=1, minor=0),
@@ -486,19 +462,26 @@ class MotorHub:
             self,
             request: uavcan.node.ExecuteCommand_1.Request, 
             metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.node.ExecuteCommand_1.Response:
-        logger.info("Execute command request %s from node %d", request, metadata.client_node_id)
+        logger.debug("Execute command request %s from node %d", request, metadata.client_node_id)
         match request.command:
-            case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
+            case NodeCommands.BOOT:
+                self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
                 return uavcan.node.ExecuteCommand_1.Response(
-                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
+                self.stop.set()
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_RESTART:
                 return uavcan.node.ExecuteCommand_1.Response(
                     uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_EMERGENCY_STOP:
+                self.stop.set()
                 return uavcan.node.ExecuteCommand_1.Response(
-                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_FACTORY_RESET:
                 return uavcan.node.ExecuteCommand_1.Response(
@@ -760,7 +743,6 @@ class MotorHub:
         
     async def run(self) -> None:
         """docstring placeholder"""
-        self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
         await self._motorhub_run_loop()
 
     async def close(self) -> None:
@@ -796,6 +778,7 @@ class SensorHub:
             os.environ[var] = value.decode('utf-8')
 
         self._freq = freq
+        self.stop = asyncio.Event()
         self._time = 0.0
         self._use_gps_time = False
         
@@ -822,8 +805,8 @@ class SensorHub:
         self._sub_gps_sync_time_last = self._node.make_subscriber(uavcan.time.Synchronization_1)
 
         # TODO: remove db_config dependency
-        self._cln_clock_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, db_config.getint('node_ids', 'clock'))
-        self._cln_gps_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, db_config.getint('node_ids', 'gps'))
+        # self._cln_clock_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, db_config.getint('node_ids', 'clock'))
+        # self._cln_gps_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, db_config.getint('node_ids', 'gps'))
 
         self._srv_exec_cmd = self._node.get_server(uavcan.node.ExecuteCommand_1)
 
@@ -840,19 +823,26 @@ class SensorHub:
             self,
             request: uavcan.node.ExecuteCommand_1.Request, 
             metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.node.ExecuteCommand_1.Response:
-        logger.info("Execute command request %s from node %d", request, metadata.client_node_id)
+        logger.debug("Execute command request %s from node %d", request, metadata.client_node_id)
         match request.command:
-            case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
+            case NodeCommands.BOOT:
+                self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
                 return uavcan.node.ExecuteCommand_1.Response(
-                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
+                self.stop.set()
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_RESTART:
                 return uavcan.node.ExecuteCommand_1.Response(
                     uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_EMERGENCY_STOP:
+                self.stop.set()
                 return uavcan.node.ExecuteCommand_1.Response(
-                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_FACTORY_RESET:
                 return uavcan.node.ExecuteCommand_1.Response(
@@ -937,7 +927,6 @@ class SensorHub:
 
     async def run(self) -> None:
         """docstring placeholder"""
-        self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
         await self._sensorhub_run_loop()
 
     async def close(self) -> None:
@@ -970,6 +959,7 @@ class GPS:
             os.environ[var] = value.decode('utf-8')
 
         self._freq = freq
+        self.stop = asyncio.Event()
         self._time = 0.0
         self._gnss_time = 0.0
         
@@ -996,7 +986,7 @@ class GPS:
         self._sub_clock_sync_time_last = self._node.make_subscriber(uavcan.time.Synchronization_1)
 
         # TODO: remove db_config dependency
-        self._cln_clock_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, db_config.getint('node_ids', 'clock'))
+        # self._cln_clock_sync_info = self._node.make_client(uavcan.time.GetSynchronizationMasterInfo_0, db_config.getint('node_ids', 'clock'))
 
         self._srv_exec_cmd = self._node.get_server(uavcan.node.ExecuteCommand_1)
 
@@ -1011,19 +1001,26 @@ class GPS:
             self,
             request: uavcan.node.ExecuteCommand_1.Request, 
             metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.node.ExecuteCommand_1.Response:
-        logger.info("Execute command request %s from node %d", request, metadata.client_node_id)
+        logger.debug("Execute command request %s from node %d", request, metadata.client_node_id)
         match request.command:
-            case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
+            case NodeCommands.BOOT:
+                self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
                 return uavcan.node.ExecuteCommand_1.Response(
-                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
+                self.stop.set()
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_RESTART:
                 return uavcan.node.ExecuteCommand_1.Response(
                     uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_EMERGENCY_STOP:
+                self.stop.set()
                 return uavcan.node.ExecuteCommand_1.Response(
-                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_FACTORY_RESET:
                 return uavcan.node.ExecuteCommand_1.Response(
@@ -1046,7 +1043,7 @@ class GPS:
     async def _serve_sync_master_info(
             request: uavcan.time.GetSynchronizationMasterInfo_0.Request, 
             metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.time.GetSynchronizationMasterInfo_0.Response:
-        logger.info("Execute command request %s from node %d", request, metadata.client_node_id)
+        logger.debug("Execute command request %s from node %d", request, metadata.client_node_id)
         return uavcan.time.GetSynchronizationMasterInfo_0.Response(
             0.0, # error_variance
             uavcan.time.TimeSystem_0(uavcan.time.TimeSystem_0.TAI),
@@ -1095,7 +1092,6 @@ class GPS:
 
     async def run(self) -> None:
         """docstring placeholder"""
-        self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
         await self._gps_run_loop()
 
     async def close(self) -> None:
@@ -1125,6 +1121,7 @@ class Clock:
             os.environ[var] = value.decode('utf-8')
             
         self._sync_time = 0.0
+        self.stop = asyncio.Event()
         
         node_info = uavcan.node.GetInfo_1.Response(
             software_version=uavcan.node.Version_1(major=1, minor=0),
@@ -1152,19 +1149,26 @@ class Clock:
             self,
             request: uavcan.node.ExecuteCommand_1.Request, 
             metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.node.ExecuteCommand_1.Response:
-        logger.info("Execute command request %s from node %d", request, metadata.client_node_id)
+        logger.debug("Execute command request %s from node %d", request, metadata.client_node_id)
         match request.command:
-            case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
+            case NodeCommands.BOOT:
+                self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
                 return uavcan.node.ExecuteCommand_1.Response(
-                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
+                )
+            case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
+                self.stop.set()
+                return uavcan.node.ExecuteCommand_1.Response(
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_RESTART:
                 return uavcan.node.ExecuteCommand_1.Response(
                     uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_EMERGENCY_STOP:
+                self.stop.set()
                 return uavcan.node.ExecuteCommand_1.Response(
-                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_FACTORY_RESET:
                 return uavcan.node.ExecuteCommand_1.Response(
@@ -1187,7 +1191,7 @@ class Clock:
     async def _serve_sync_master_info(
             request: uavcan.time.GetSynchronizationMasterInfo_0.Request, 
             metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.time.GetSynchronizationMasterInfo_0.Response:
-        logger.info("Execute command request %s from node %d", request, metadata.client_node_id)
+        logger.debug("Execute command request %s from node %d", request, metadata.client_node_id)
         return uavcan.time.GetSynchronizationMasterInfo_0.Response(
             0.0, # error_variance
             uavcan.time.TimeSystem_0(uavcan.time.TimeSystem_0.MONOTONIC_SINCE_BOOT),
@@ -1204,7 +1208,6 @@ class Clock:
         await asyncio.sleep(0)
 
     async def run(self) -> None:
-        self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
         await self._clock_run_loop()
 
     async def close(self) -> None:
@@ -1220,8 +1223,10 @@ class Camera:
         self.sock = xpconnection.sock
         self.X_PLANE_IP = xpconnection.X_PLANE_IP
         self.UDP_PORT = xpconnection.UDP_PORT
+
+        self.stop = asyncio.Event()
         
-        self._cam_id = config.getint('main', 'cam_id')
+        self._cam_id = config.getint('mavlink_ids', 'cam_id')
         self._uav_id = None
 
         self.xp_path = config.get('xplane', 'xp_screenshot_path')
@@ -1261,7 +1266,7 @@ class Camera:
                 self._mavlogger.log(MAVLOG_DEBUG, "Controller connection refused")
                 await asyncio.sleep(0)
             except asyncio.exceptions.CancelledError:
-                stop.set()
+                self.stop.set()
                 raise
             finally:
                 return
@@ -1394,8 +1399,10 @@ class TestCamera:
     def __init__(self, xpconnection: TestXPConnect) -> None:
         assert isinstance(xpconnection, TestXPConnect), "Must pass an instance of TestXPConnect"
         
-        self._cam_id = config.getint('main', 'cam_id')
+        self._cam_id = config.getint('mavlink_ids', 'cam_id')
         self._uav_id = None
+
+        self.stop = asyncio.Event()
         
         logging.addLevelName(MAVLOG_DEBUG, 'MAVdebug')
         logging.addLevelName(MAVLOG_TX, 'TX')
@@ -1427,7 +1434,7 @@ class TestCamera:
                 self._mavlogger.log(MAVLOG_DEBUG, "Controller connection refused")
                 await asyncio.sleep(0)
             except asyncio.exceptions.CancelledError:
-                stop.set()
+                self.stop.set()
                 raise
             finally:
                 return
@@ -1550,9 +1557,24 @@ async def main():
     try:
         await asyncio.gather(*tasks)
     except asyncio.exceptions.CancelledError:
-        stop.set()
+        pass
+    logger.warning("Closing nodes...")
 
-    logger.warning("Nodes closed")
+    close_tasks = [
+        asyncio.create_task(xpl.close()),
+        asyncio.create_task(cam.close()),
+        asyncio.create_task(clk.close()),
+        asyncio.create_task(gps.close()),
+        asyncio.create_task(sns.close()),
+        asyncio.create_task(mot.close()),
+    ]
+
+    try:
+        await asyncio.gather(*close_tasks)
+    except asyncio.exceptions.CancelledError:
+        logger.error("Instance closed prematurely")
+    else:
+        logger.warning("Nodes closed")
 
 
 if __name__ == '__main__':

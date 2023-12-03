@@ -17,7 +17,6 @@ import math
 import os
 import sys
 from configparser import ConfigParser
-from functools import wraps
 
 import numpy as np
 
@@ -37,7 +36,7 @@ filehandler.setLevel(logging.INFO)
 filehandler.setFormatter(logging.Formatter(str(os.getpid()) + ' (%(asctime)s %(name)s) %(levelname)s:%(message)s'))
 streamhandler = logging.StreamHandler()
 streamhandler.setLevel(logging.INFO)
-streamhandler.setFormatter(logging.Formatter('(%(name)s) %(levelname)s:%(message)s'))
+streamhandler.setFormatter(logging.Formatter('(%(name)s)  %(levelname)s:%(message)s'))
 logger = logging.getLogger("UAV")
 logger.addHandler(filehandler)
 logger.addHandler(streamhandler)
@@ -70,8 +69,10 @@ from pymavlink import mavutil
 
 import common.grapher as grapher
 import common.image_processor as img
+from common.decorators import async_loop_decorator
 from common.pid import PID
 from common.state_manager import GlobalState as g
+from common.state_manager import NodeCommands
 from common.angles import quaternion_to_euler, euler_to_quaternion, gps_angles, calc_dyaw
 
 m = mavutil.mavlink
@@ -91,34 +92,6 @@ RPM_TO_RADS = math.pi/30
 _DEBUG_SKIP = -1 # TODO: remove this!!
 
 system_ids = []
-
-
-def async_loop_decorator(close=True):
-    """Provide decorator to gracefully loop coroutines"""
-    def decorator(func):
-        @wraps(func) # Preserve metadata like func.__name__
-        async def wrapper(self: 'MainIO | Processor | ImageProcessor | Controller | Navigator', *args, **kwargs):
-            try:
-                while not self.main.stop.is_set():
-                    try:
-                        await asyncio.sleep(0)
-                        await func(self, *args, **kwargs)
-                    except asyncio.exceptions.CancelledError:
-                        self.main.stop.set()
-                        raise
-                    except Exception as e:
-                        logger.error(f"Error in {func.__name__}: {e}")
-                        raise # TODO
-            except KeyboardInterrupt:
-                self.main.stop.set()
-                raise
-            finally:
-                if close:
-                    self.close()
-                else:
-                    logger.debug(f"Closing {func.__name__}")
-        return wrapper
-    return decorator
 
 
 class GlobalRx:
@@ -877,7 +850,7 @@ class MainIO:
             self,
             request: uavcan.node.ExecuteCommand_1.Request, 
             metadata: pycyphal.presentation.ServiceRequestMetadata,) -> uavcan.node.ExecuteCommand_1.Response:
-        logger.info("Execute command request %s from node %d", request, metadata.client_node_id)
+        logger.debug("Execute command request %s from node %d", request, metadata.client_node_id)
         match request.command:
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
                 return uavcan.node.ExecuteCommand_1.Response(
@@ -888,8 +861,9 @@ class MainIO:
                     uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_EMERGENCY_STOP:
+                self.main.stop.set()
                 return uavcan.node.ExecuteCommand_1.Response(
-                    uavcan.node.ExecuteCommand_1.Response.STATUS_NOT_AUTHORIZED
+                    uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_FACTORY_RESET:
                 return uavcan.node.ExecuteCommand_1.Response(
@@ -920,6 +894,34 @@ class MainIO:
         ]
         await asyncio.gather(*tasks)
         logger.info("All components discovered")
+
+        cln_clock_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.clock.id)
+        clock_response, _ = await cln_clock_cmd.call(uavcan.node.ExecuteCommand_1.Request(NodeCommands.BOOT))
+        if clock_response.status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+            logger.error("CLOCK failed to respond to boot request.")
+        else:
+            logger.debug("CLOCK booted")
+
+        cln_sensorhub_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.sensorhub.id)
+        sensorhub_response, _ = await cln_sensorhub_cmd.call(uavcan.node.ExecuteCommand_1.Request(NodeCommands.BOOT))
+        if sensorhub_response.status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+            logger.error("SENSORHUB failed to respond to boot request.")
+        else:
+            logger.debug("SENSORHUB booted")
+
+        cln_motorhub_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.motorhub.id)
+        motorhub_response, _ = await cln_motorhub_cmd.call(uavcan.node.ExecuteCommand_1.Request(NodeCommands.BOOT))
+        if motorhub_response.status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+            logger.error("MOTORHUB failed to respond to boot request.")
+        else:
+            logger.debug("MOTORHUB booted")
+
+        cln_gps_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.gps.id)
+        gps_response, _ = await cln_gps_cmd.call(uavcan.node.ExecuteCommand_1.Request(NodeCommands.BOOT))
+        if gps_response.status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+            logger.error("GPS failed to respond to boot request.")
+        else:
+            logger.debug("GPS booted")
 
     @async_loop_decorator()
     async def _mainio_run_loop(self) -> None:
@@ -976,9 +978,46 @@ class MainIO:
 
         await self._mainio_run_loop()
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Close the instance."""
-        logger.info("Closing MainIO") # TODO: Change to logger.debug()
+        logger.info("Closing MainIO...") # TODO: Change to logger.debug()
+
+        cln_clock_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.clock.id)
+        clock_response = await cln_clock_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
+        if clock_response is None:
+            logger.error("CLOCK failed to respond to power off request")
+        elif clock_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+            logger.error("CLOCK failed to respond to power off request")
+        else:
+            logger.debug("CLOCK powered off")
+
+        cln_sensorhub_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.sensorhub.id)
+        sensorhub_response = await cln_sensorhub_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
+        if sensorhub_response is None:
+            logger.error("SENSORHUB failed to respond to power off request")
+        elif sensorhub_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+            logger.error("SENSORHUB failed to respond to power off request")
+        else:
+            logger.debug("SENSORHUB powered off")
+
+        cln_motorhub_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.motorhub.id)
+        motorhub_response = await cln_motorhub_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
+        if motorhub_response is None:
+            logger.error("MOTORHUB failed to respond to power off request")
+        elif motorhub_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+            logger.error("MOTORHUB failed to respond to power off request")
+        else:
+            logger.debug("MOTORHUB powered off")
+
+        cln_gps_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.gps.id)
+        gps_response = await cln_gps_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
+        if gps_response is None:
+            logger.error("GPS failed to respond to power off request")
+        elif gps_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+            logger.error("GPS failed to respond to power off request")
+        else:
+            logger.debug("GPS powered off")
+
         self._node.close()
 
 
@@ -1329,7 +1368,7 @@ class Processor:
         logger.info("Starting Processor")
         await self._processor_run_loop()
 
-    def close(self) -> None:
+    async def close(self) -> None:
         logger.info("Closing Processor")
         pass
 
@@ -1452,7 +1491,7 @@ class Controller:
         self._mav_conn_gcs: mavutil.mavfile = mavutil.mavlink_connection(self.main.config.get('mavlink', 'uav_gcs_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1, input=False, autoreconnect=True)
         import common.key as key
         self._mav_conn_gcs.setup_signing(key.KEY.encode('utf-8'))
-        self._cam_id = self.main.config.getint('main', 'cam_id')
+        self._cam_id = self.main.config.getint('mavlink_ids', 'cam_id')
         asyncio.create_task(self._establish_cam(key=key.CAMKEY.encode('utf-8')))
 
     class PreExistingConnection(Exception):
@@ -1719,10 +1758,10 @@ class Controller:
         try:
             msg = self._cam_conn.recv_msg()
         except (ConnectionError, OSError, AttributeError):
-            self._mavlogger.log(MAVLOG_RX, "No connection to listen to.")
+            self._mavlogger.log(MAVLOG_DEBUG, "No connection to listen to.")
             return
 
-        target = self.main.config.getint('main', 'cam_id')
+        target = self.main.config.getint('mavlink_ids', 'cam_id')
 
         if msg is not None:
             if msg.get_type() == 'HEARTBEAT' and msg.get_srcSystem()==target:
@@ -1815,12 +1854,12 @@ class Controller:
         logger.debug("Starting Controller (Heartbeat)")
         await self._controller_heartbeat_loop()
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Close the instance."""
         self._mav_conn_gcs.close()
 
         import common.key as key
-        self._cam_conn.mav.change_operator_control_send(self.main.config.getint('main', 'cam_id'), 1, 0, key.CAMKEY.encode('utf-8'))
+        self._cam_conn.mav.change_operator_control_send(self.main.config.getint('mavlink_ids', 'cam_id'), 1, 0, key.CAMKEY.encode('utf-8'))
         self._cam_conn.close()
         logger.info("Closing Controller")
 
@@ -1877,7 +1916,7 @@ class Main:
         self.config = ConfigParser()
         self.config.read(config)
 
-        self.systemid = self.config.getint('main', 'uav_id')
+        self.systemid = self.config.getint('mavlink_ids', 'uav_id')
         assert isinstance(self.systemid, int) and self.systemid > 0 and self.systemid.bit_length() <= 8, "System ID in config file must be UINT8"
 
         self.boot = asyncio.Event()
@@ -2021,8 +2060,20 @@ class Main:
             await asyncio.gather(*tasks)
         except asyncio.exceptions.CancelledError:
             self.stop.set()
+            logger.warning(f"Closing instance #{self.systemid}...")
 
-        logger.warning(f"Closing instance #{self.systemid}")
+        close_tasks = [
+            asyncio.create_task(self.processor.close()),
+            asyncio.create_task(self.controller.close()),
+            asyncio.create_task(self.io.close()),
+        ]
+
+        try:
+            await asyncio.gather(*close_tasks)
+        except asyncio.exceptions.CancelledError:
+            logger.error("Instance closed prematurely")
+        else:
+            logger.info("Instance closed")
 
 
 async def main(graph: str | bool = False, print_: str | bool = False) -> None:

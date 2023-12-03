@@ -7,6 +7,12 @@ from pymavlink import mavutil
 m = mavutil.mavlink
 
 
+class NodeCommands:
+    """Stores IDs of UAVCAN Node Commands."""
+    # IDs shall not exceed 32767, per Cyphal specifications.
+    BOOT = 30000
+
+
 class GlobalState:
     """Manages custom modes for a UAV."""
     CUSTOM_MODE_UNINIT = 0

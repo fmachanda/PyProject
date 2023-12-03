@@ -17,7 +17,7 @@ filehandler.setLevel(logging.INFO)
 filehandler.setFormatter(logging.Formatter(str(os.getpid()) + " (%(asctime)s %(name)s) %(levelname)s:%(message)s"))
 streamhandler = logging.StreamHandler()
 streamhandler.setLevel(logging.INFO)
-filehandler.setFormatter(logging.Formatter("(%(name)s) %(levelname)s:%(message)s"))
+filehandler.setFormatter(logging.Formatter("(%(name)s)  %(levelname)s:%(message)s"))
 logger = logging.getLogger("GCS")
 logger.addHandler(filehandler)
 logger.addHandler(streamhandler)
@@ -376,7 +376,7 @@ class Connect:
         try:
             msg = mav_conn.recv_msg()
         except (ConnectionError, OSError):
-            mavlogger.log(MAVLOG_RX, "No connection to listen to.")
+            mavlogger.log(MAVLOG_DEBUG, "No connection to listen to.")
             return
         
         if msg is not None:
