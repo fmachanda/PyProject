@@ -125,6 +125,8 @@ FT_TO_M = 3.048e-1
 KT_TO_MS = 5.14444e-1
 RADS_TO_RPM = 30/math.pi
 
+master_stop = asyncio.Event()
+
 
 def get_xp_time() -> int:
     """Get monotonic microseconds from X-Plane with jump handling."""
@@ -151,7 +153,7 @@ get_xp_time._last_real = 0.0
 class XPConnect:
     def __init__(self, freq: int = XP_FREQ) -> None:
         self._freq = freq
-        self.stop = asyncio.Event()
+        self.stop = master_stop
 
         logger.info("Looking for X-Plane...")
         try:
@@ -255,7 +257,7 @@ class TestXPConnect:
         self._boot_time = time.time_ns() // 1000 # Used for sinusoidal data
         self._time = 0
         self._freq = freq
-        self.stop = asyncio.Event()
+        self.stop = master_stop
         self.rx_indices = rx_indices
 
 
@@ -1114,6 +1116,7 @@ class Clock:
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
                 self.stop.set()
+                master_stop.set() # TODO: remove
                 return uavcan.node.ExecuteCommand_1.Response(
                     uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
                 )
@@ -1123,6 +1126,7 @@ class Clock:
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_EMERGENCY_STOP:
                 self.stop.set()
+                master_stop.set() # TODO: remove
                 return uavcan.node.ExecuteCommand_1.Response(
                     uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
                 )

@@ -145,7 +145,10 @@ class GlobalRx:
                 self.yaw += 2*math.pi
 
             self.rollspeed, self.pitchspeed, self.yawspeed = msg.value.twist.value.angular.radian_per_second
-            # TODO: *self.speeds = msg.value.twise.value.linear.meter_per_second
+            _nspeed, _espeed, _ = msg.value.twist.value.linear.meter_per_second
+
+            self.yspeed = _nspeed*math.cos(self.yaw) + _espeed*math.sin(self.yaw)
+            self.xspeed = _nspeed*math.sin(self.yaw) + _espeed*math.cos(self.yaw)
             self.dt = self.time - self._last_time
 
     class Alt:
@@ -1163,20 +1166,20 @@ class Processor:
         self._pidf_ias_thr = PID(kp=0.1, ti=0.0, td=0.0, integral_limit=1.0, maximum=1.00, minimum=0.02) # TODO
 
         self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
-        self._pidv_xsp_rol = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
+        self._pidv_xsp_rol = PID(kp=0.06, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12) # TODO
         self._pidv_rol_rls = PID(kp=0.5, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
-        self._pidv_rls_out = PID(kp=0.0165, ti=0.1, td=0.045, integral_limit=0.2, minimum=-0.08, maximum=0.08)
+        self._pidv_rls_out = PID(kp=0.021, ti=0.1, td=0.045, integral_limit=0.2, minimum=-0.08, maximum=0.08)
 
         self._pidv_ydp_ysp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
-        self._pidv_ysp_pit = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
+        self._pidv_ysp_pit = PID(kp=-0.5, ti=1.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
         self._pidv_pit_pts = PID(kp=0.5, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
-        self._pidv_pts_out = PID(kp=0.022, ti=0.07, td=0.075, integral_limit=1.0, minimum=-0.1, maximum=0.1)
+        self._pidv_pts_out = PID(kp=0.028, ti=0.15, td=0.04, integral_limit=1.0, minimum=-0.1, maximum=0.1)
 
         self._pidv_alt_vsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-50.0, maximum=100.0)
         self._pidv_vsp_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=1.0)
 
-        self._pidv_dyw_yws = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=-math.pi/6)
-        self._pidv_yws_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-0.5, maximum=0.5)
+        self._pidv_dyw_yws = PID(kp=-0.5, ti=1.0, td=0.0, integral_limit=0.2, minimum=-math.pi/6, maximum=math.pi/6)
+        self._pidv_yws_out = PID(kp=0.2, ti=0.1, td=0.01, integral_limit=0.15, minimum=-math.pi/12, maximum=math.pi/12)
 
     async def boot(self) -> None:
         """Perform boot-related tasks."""
@@ -1241,37 +1244,44 @@ class Processor:
         if (alt:=self.main.rxdata.alt).dt > 0.0:
             self._spv_vs = self._pidv_alt_vsp.cycle(alt.altitude, self.spv_altitude, alt.dt)
             self._outv_throttle = self._pidv_vsp_out.cycle(alt.vs, self._spv_vs, alt.dt)
+            if alt.altitude < 0.045:
+                self._pidv_pts_out._integral = 0.66
+                self._pidv_rls_out._integral = 0.0
+                self._pidv_yws_out._integral = 0.0
+                self._pidv_dyw_yws._integral = 0.0
             self.main.rxdata.alt.dt = 0.0
 
         if (cam:=self.main.rxdata.cam).dt > 0.0:
-            self._spv_xspeed = self._pidv_xdp_xsp.cycle(cam.xdp, 0.0, cam.dt)
-            self._spv_yspeed = self._pidv_ydp_ysp.cycle(cam.ydp, 0.0, cam.dt)
+            # self._spv_xspeed = self._pidv_xdp_xsp.cycle(cam.xdp, 0.0, cam.dt)
+            # self._spv_yspeed = self._pidv_ydp_ysp.cycle(cam.ydp, 0.0, cam.dt)
             self.main.rxdata.cam.dt = 0.0
 
         if (gps:=self.main.rxdata.gps).dt > 0.0:
-            self._spv_roll = self._pidv_xsp_rol.cycle(gps.xspeed, self._spv_xspeed, gps.dt)
-            self._spv_pitch = self._pidv_ysp_pit.cycle(gps.yspeed, self._spv_yspeed, gps.dt)
             self.main.rxdata.gps.dt = 0.0
 
         if (att:=self.main.rxdata.att).dt > 0.0:
+            self._spv_roll = self._pidv_xsp_rol.cycle(att.xspeed, self._spv_xspeed, gps.dt)
+            self._spv_pitch = self._pidv_ysp_pit.cycle(att.yspeed, self._spv_yspeed, gps.dt)
             self._spv_rollspeed = self._pidv_rol_rls.cycle(att.roll, self._spv_roll, att.dt)
             self._spv_pitchspeed = self._pidv_pit_pts.cycle(att.pitch, self._spv_pitch, att.dt)
             self._outv_roll = self._pidv_rls_out.cycle(att.rollspeed, self._spv_rollspeed, att.dt)
             self._outv_pitch = self._pidv_pts_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt)
 
             self._dyaw = calc_dyaw(att.yaw, self.spf_heading)
-            # self._spv_yawspeed = self._pidv_dyw_yws.cycle(self._dyaw, 0.0, att.dt)
+            self._spv_yawspeed = self._pidv_dyw_yws.cycle(self._dyaw, 0.0, att.dt)
             self._outv_yaw = self._pidv_yws_out.cycle(att.yawspeed, self._spv_yawspeed, att.dt)
             self.main.rxdata.att.dt = 0.0
 
-        t1 = self._outv_pitch + self._outv_roll - self._outv_yaw
-        t2 = self._outv_pitch - self._outv_roll + self._outv_yaw
-        t3 = -self._outv_pitch + self._outv_roll + self._outv_yaw
-        t4 = -self._outv_pitch - self._outv_roll - self._outv_yaw
+        t1 = self._outv_pitch + self._outv_roll
+        t2 = self._outv_pitch - self._outv_roll
+        t3 = -self._outv_pitch + self._outv_roll
+        t4 = -self._outv_pitch - self._outv_roll
         self._vthrottles = np.array([t1, t2, t3, t4], dtype=np.float16)
         self._vthrottles *= Processor.MAX_THROTTLE
 
-        self._vservos.fill(math.pi/2)
+        self._vservos[0] = math.pi/2 - self._outv_yaw
+        self._vservos[1] = math.pi/2 + self._outv_yaw
+        self._vservos[2] = math.pi/2
 
         return self._vservos, self._vthrottles
     #endregion
@@ -1290,6 +1300,7 @@ class Processor:
             case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT | g.CUSTOM_SUBMODE_TAKEOFF_HOVER | g.CUSTOM_SUBMODE_LANDING_DESCENT | g.CUSTOM_SUBMODE_LANDING_HOVER:
                 # VTOL
                 self._servos, self._throttles = self._vtol_calc()
+                # TODO: below ~7500 RPM is not allowed
             case g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT | g.CUSTOM_SUBMODE_LANDING_TRANSIT:
                 # Transit modes
                 # TODO mixing (DO NOT USE BOTH FUNCTIONS BECAUSE RACE CONDITION TO RESET dt)
@@ -1624,13 +1635,15 @@ class Controller:
                     # self.main.processor._pidv_pts_out.reset()
                     # self.main.processor._pidv_rol_rls.reset()
                     # self.main.processor._pidv_pit_pts.reset()
-                    self.main.processor._pidv_yws_out.reset()
-                    self.main.processor._pidv_yws_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    # self.main.processor._pidv_dyw_yws.reset()
+                    self.main.processor._pidv_dyw_yws.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    # self.main.processor._pidv_dyw_yws.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    # self.main.processor._pidv_rls_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
                     # self.main.processor._pidv_pts_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
                     # self.main.processor._pidv_rol_rls.set(kp=msg.param4)#, td=msg.param2)
                     # self.main.processor._pidv_pit_pts.set(kp=msg.param4)#, td=msg.param4)
-                    self.main.processor._spv_yawspeed=msg.param4
-                    self._mavlogger.log(MAVLOG_LOG, f"New PID state: {msg.param1}, {msg.param2}, {msg.param3} @ {msg.param4}")
+                    self.main.processor.spf_heading=msg.param4
+                    logger.info(f"New PID state: {msg.param1:.4f}, {msg.param2:.4f}, {msg.param3:.4f} @ {msg.param4:.4f}")
                 # TODO TEMPORARY SCREENSHOT
                 case 1:
                     logger.info("Commanding camera...")

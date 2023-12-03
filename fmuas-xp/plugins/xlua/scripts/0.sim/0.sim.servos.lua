@@ -194,7 +194,7 @@ function SERVOS_flight_start()
     uasDR_AFCS_wing_tilt = 90.0
     uasDR_AFCS_elevon1 = 90.0
     uasDR_AFCS_elevon2 = 90.0
-    uasDR_SERVOS_wing_stow_cmd = 1
+    uasDR_SERVOS_wing_stow_cmd = 0
     simDR_wing_stow_actual = 1.0
     simDR_wing_tilt_actual = 1.0
     uasDR_SERVOS_direct_mode = 1
