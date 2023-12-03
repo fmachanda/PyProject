@@ -106,10 +106,9 @@ rx_data = {
 }
 
 tx_data = {
-    b'fmuas/afcs/output/elevon1': 0.0,
-    b'fmuas/afcs/output/elevon2': 0.0,
-    b'fmuas/afcs/output/wing_tilt': 0.0,
-    b'fmuas/afcs/output/wing_stow': 0.0,
+    b'fmuas/afcs/output/elevon1': 90.0,
+    b'fmuas/afcs/output/elevon2': 90.0,
+    b'fmuas/afcs/output/wing_tilt': 90.0,
     b'fmuas/afcs/output/rpm1': 0.0,
     b'fmuas/afcs/output/rpm2': 0.0,
     b'fmuas/afcs/output/rpm3': 0.0,
@@ -120,7 +119,6 @@ tx_data = {
 }
 
 XP_FIND_TIMEOUT = 1
-TX_DATA_FIRST_ESC = 4 # Index of first esc dref in tx_data
 XP_FREQ = 50
 FREQ = 50
 FT_TO_M = 3.048e-1
@@ -324,12 +322,6 @@ class MotorHub:
             'UAVCAN__PUB__TILT_POWER__ID'           :db_config.get('subject_ids', 'tilt_power'),
             'UAVCAN__PUB__TILT_DYNAMICS__ID'        :db_config.get('subject_ids', 'tilt_dynamics'),
 
-            'UAVCAN__SUB__STOW_SP__ID'              :db_config.get('subject_ids', 'stow_sp'),
-            'UAVCAN__PUB__STOW_FEEDBACK__ID'        :db_config.get('subject_ids', 'stow_feedback'),
-            'UAVCAN__PUB__STOW_STATUS__ID'          :db_config.get('subject_ids', 'stow_status'),
-            'UAVCAN__PUB__STOW_POWER__ID'           :db_config.get('subject_ids', 'stow_power'),
-            'UAVCAN__PUB__STOW_DYNAMICS__ID'        :db_config.get('subject_ids', 'stow_dynamics'),
-
             'UAVCAN__SUB__ESC1_SP__ID'              :db_config.get('subject_ids', 'esc1_sp'),
             'UAVCAN__PUB__ESC1_FEEDBACK__ID'        :db_config.get('subject_ids', 'esc1_feedback'),
             'UAVCAN__PUB__ESC1_STATUS__ID'          :db_config.get('subject_ids', 'esc1_status'),
@@ -397,12 +389,6 @@ class MotorHub:
         self._pub_tilt_power = self._node.make_publisher(reg.udral.physics.electricity.PowerTs_0, 'tilt_power')
         self._pub_tilt_dynamics = self._node.make_publisher(reg.udral.physics.dynamics.rotation.PlanarTs_0, 'tilt_dynamics')
 
-        self._sub_stow_sp = self._node.make_subscriber(reg.udral.physics.dynamics.rotation.Planar_0, 'stow_sp')
-        self._pub_stow_feedback = self._node.make_publisher(reg.udral.service.actuator.common.Feedback_0, 'stow_feedback')
-        self._pub_stow_status = self._node.make_publisher(reg.udral.service.actuator.common.Status_0, 'stow_status')
-        self._pub_stow_power = self._node.make_publisher(reg.udral.physics.electricity.PowerTs_0, 'stow_power')
-        self._pub_stow_dynamics = self._node.make_publisher(reg.udral.physics.dynamics.rotation.PlanarTs_0, 'stow_dynamics')
-
         self._sub_esc1_sp = self._node.make_subscriber(reg.udral.physics.dynamics.rotation.Planar_0, 'esc1_sp')
         self._pub_esc1_feedback = self._node.make_publisher(reg.udral.service.actuator.common.Feedback_0, 'esc1_feedback')
         self._pub_esc1_status = self._node.make_publisher(reg.udral.service.actuator.common.Status_0, 'esc1_status')
@@ -434,7 +420,6 @@ class MotorHub:
         self._sub_elevon1_sp.receive_in_background(self._on_elevon1_sp)
         self._sub_elevon2_sp.receive_in_background(self._on_elevon2_sp)
         self._sub_tilt_sp.receive_in_background(self._on_tilt_sp)
-        self._sub_stow_sp.receive_in_background(self._on_stow_sp)
         self._sub_esc1_sp.receive_in_background(self._on_esc1_sp)
         self._sub_esc2_sp.receive_in_background(self._on_esc2_sp)
         self._sub_esc3_sp.receive_in_background(self._on_esc3_sp)
@@ -449,7 +434,6 @@ class MotorHub:
         self._elevon1_publish_time = now
         self._elevon2_publish_time = now
         self._tilt_publish_time = now
-        self._stow_publish_time = now
         self._esc1_publish_time = now
         self._esc2_publish_time = now
         self._esc3_publish_time = now
@@ -537,17 +521,6 @@ class MotorHub:
             await self._pub_tilt_dynamics.publish(reg.udral.physics.dynamics.rotation.PlanarTs_0())
             self._tilt_publish_time = now
 
-        if now > self._stow_publish_time + 1.0:
-            await self._pub_stow_feedback.publish(reg.udral.service.actuator.common.Feedback_0(
-                reg.udral.service.common.Heartbeat_0(
-                    reg.udral.service.common.Readiness_0(self._servo_readiness),
-                    uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
-                )
-            ))
-            await self._pub_stow_power.publish(reg.udral.physics.electricity.PowerTs_0())
-            await self._pub_stow_dynamics.publish(reg.udral.physics.dynamics.rotation.PlanarTs_0())
-            self._stow_publish_time = now
-
         if now > self._esc1_publish_time + 1.0:
             await self._pub_esc1_feedback.publish(reg.udral.service.actuator.common.Feedback_0(
                 reg.udral.service.common.Heartbeat_0(
@@ -596,7 +569,6 @@ class MotorHub:
             await self._pub_elevon1_status.publish(reg.udral.service.actuator.common.Status_0())
             await self._pub_elevon2_status.publish(reg.udral.service.actuator.common.Status_0())
             await self._pub_tilt_status.publish(reg.udral.service.actuator.common.Status_0())
-            await self._pub_stow_status.publish(reg.udral.service.actuator.common.Status_0())
             await self._pub_esc1_status.publish(reg.udral.service.actuator.common.Status_0())
             await self._pub_esc2_status.publish(reg.udral.service.actuator.common.Status_0())
             await self._pub_esc3_status.publish(reg.udral.service.actuator.common.Status_0())
@@ -659,22 +631,6 @@ class MotorHub:
             pass
         else:
             self._tilt_publish_time = time.monotonic()
-
-    def _on_stow_sp(self, msg: reg.udral.physics.dynamics.rotation.Planar_0, _: pycyphal.transport.TransferFrom) -> None:
-        tx_data[b'fmuas/afcs/output/wing_stow'] = math.degrees(msg.kinematics.angular_position.radian)
-        try:
-            self._pub_stow_feedback.publish_soon(reg.udral.service.actuator.common.Feedback_0(
-                reg.udral.service.common.Heartbeat_0(
-                    reg.udral.service.common.Readiness_0(self._servo_readiness),
-                    uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
-                )
-            ))
-            self._pub_stow_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
-            self._pub_stow_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
-        except pycyphal.presentation._port._error.PortClosedError:
-            pass
-        else:
-            self._stow_publish_time = time.monotonic()
 
     def _on_esc1_sp(self, msg: reg.udral.physics.dynamics.rotation.Planar_0, _: pycyphal.transport.TransferFrom) -> None:
         tx_data[b'fmuas/afcs/output/rpm1'] = msg.kinematics.angular_velocity.radian_per_second * (30/math.pi)

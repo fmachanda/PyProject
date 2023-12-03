@@ -325,13 +325,6 @@ class GlobalTx:
             # torque
         )
         
-        self._stow = reg.udral.physics.dynamics.rotation.Planar_0(
-            reg.udral.physics.kinematics.rotation.Planar_0(
-                uavcan.si.unit.angle.Scalar_1(0.0)
-            ),
-            # torque
-        )
-        
         self._esc1 = reg.udral.physics.dynamics.rotation.Planar_0(
             reg.udral.physics.kinematics.rotation.Planar_0(
                 angular_velocity=uavcan.si.unit.angular_velocity.Scalar_1(0.0)
@@ -380,10 +373,6 @@ class GlobalTx:
     @property
     def tilt(self) -> reg.udral.physics.dynamics.rotation.Planar_0:
         return self._tilt
-    
-    @property
-    def stow(self) -> reg.udral.physics.dynamics.rotation.Planar_0:
-        return self._stow
     
     @property
     def esc1(self) -> reg.udral.physics.dynamics.rotation.Planar_0:
@@ -438,14 +427,6 @@ class GlobalTx:
     @tilt.setter
     def tilt(self, value: float) -> None:
         self._tilt = reg.udral.physics.dynamics.rotation.Planar_0(
-            reg.udral.physics.kinematics.rotation.Planar_0(
-                uavcan.si.unit.angle.Scalar_1(value)
-            )
-        )
-
-    @stow.setter
-    def stow(self, value: float) -> None:
-        self._stow = reg.udral.physics.dynamics.rotation.Planar_0(
             reg.udral.physics.kinematics.rotation.Planar_0(
                 uavcan.si.unit.angle.Scalar_1(value)
             )
@@ -663,12 +644,6 @@ class MainIO:
             'UAVCAN__SUB__TILT_POWER__ID'           :db_config.get('subject_ids', 'tilt_power'),
             'UAVCAN__SUB__TILT_DYNAMICS__ID'        :db_config.get('subject_ids', 'tilt_dynamics'),
 
-            'UAVCAN__PUB__STOW_SP__ID'              :db_config.get('subject_ids', 'stow_sp'),
-            'UAVCAN__SUB__STOW_FEEDBACK__ID'        :db_config.get('subject_ids', 'stow_feedback'),
-            'UAVCAN__SUB__STOW_STATUS__ID'          :db_config.get('subject_ids', 'stow_status'),
-            'UAVCAN__SUB__STOW_POWER__ID'           :db_config.get('subject_ids', 'stow_power'),
-            'UAVCAN__SUB__STOW_DYNAMICS__ID'        :db_config.get('subject_ids', 'stow_dynamics'),
-
             'UAVCAN__PUB__ESC1_SP__ID'              :db_config.get('subject_ids', 'esc1_sp'),
             'UAVCAN__SUB__ESC1_FEEDBACK__ID'        :db_config.get('subject_ids', 'esc1_feedback'),
             'UAVCAN__SUB__ESC1_STATUS__ID'          :db_config.get('subject_ids', 'esc1_status'),
@@ -758,12 +733,6 @@ class MainIO:
         self._sub_tilt_power = self._node.make_subscriber(reg.udral.physics.electricity.PowerTs_0, 'tilt_power')
         self._sub_tilt_dynamics = self._node.make_subscriber(reg.udral.physics.dynamics.rotation.PlanarTs_0, 'tilt_dynamics')
 
-        self._pub_stow_sp = self._node.make_publisher(reg.udral.physics.dynamics.rotation.Planar_0, 'stow_sp')
-        self._sub_stow_feedback = self._node.make_subscriber(reg.udral.service.actuator.common.Feedback_0, 'stow_feedback')
-        self._sub_stow_status = self._node.make_subscriber(reg.udral.service.actuator.common.Status_0, 'stow_status')
-        self._sub_stow_power = self._node.make_subscriber(reg.udral.physics.electricity.PowerTs_0, 'stow_power')
-        self._sub_stow_dynamics = self._node.make_subscriber(reg.udral.physics.dynamics.rotation.PlanarTs_0, 'stow_dynamics')
-
         self._pub_esc1_sp = self._node.make_publisher(reg.udral.physics.dynamics.rotation.Planar_0, 'esc1_sp')
         self._sub_esc1_feedback = self._node.make_subscriber(reg.udral.service.actuator.common.Feedback_0, 'esc1_feedback')
         self._sub_esc1_status = self._node.make_subscriber(reg.udral.service.actuator.common.Status_0, 'esc1_status')
@@ -817,10 +786,6 @@ class MainIO:
         self._sub_tilt_status.receive_in_background(self._void_handler)
         self._sub_tilt_power.receive_in_background(self._void_handler)
         self._sub_tilt_dynamics.receive_in_background(self._void_handler)
-        self._sub_stow_feedback.receive_in_background(self._void_handler)
-        self._sub_stow_status.receive_in_background(self._void_handler)
-        self._sub_stow_power.receive_in_background(self._void_handler)
-        self._sub_stow_dynamics.receive_in_background(self._void_handler)
         self._sub_esc1_feedback.receive_in_background(self._void_handler)
         self._sub_esc1_status.receive_in_background(self._void_handler)
         self._sub_esc1_power.receive_in_background(self._void_handler)
@@ -931,7 +896,6 @@ class MainIO:
         await self._pub_elevon1_sp.publish(self.main.txdata.elevon1)
         await self._pub_elevon2_sp.publish(self.main.txdata.elevon2)
         await self._pub_tilt_sp.publish(self.main.txdata.tilt)
-        await self._pub_stow_sp.publish(self.main.txdata.stow)
 
         await self._pub_esc1_sp.publish(self.main.txdata.esc1)
         await self._pub_esc2_sp.publish(self.main.txdata.esc2)
@@ -1147,11 +1111,11 @@ class Processor:
         self._dyaw = 0.0
         self._ias_scalar = 1.0
 
-        self._servos: np.ndarray = np.zeros(4, dtype=np.float16)
+        self._servos: np.ndarray = np.zeros(3, dtype=np.float16)
         self._throttles: np.ndarray = np.zeros(4, dtype=np.float16)
 
-        self._fservos = np.zeros(4, dtype=np.float16) # elevons*2, rudder, wingtilt
-        self._vservos = np.zeros(4, dtype=np.float16)
+        self._fservos = np.zeros(3, dtype=np.float16) # elevons*2, rudder, wingtilt
+        self._vservos = np.zeros(3, dtype=np.float16)
 
         self._fthrottles = np.zeros(4, dtype=np.float16) # throttles*4
         self._vthrottles = np.zeros(4, dtype=np.float16)
@@ -1260,7 +1224,7 @@ class Processor:
 
         self._fservos[0] = self._outf_pitch + self._outf_roll # TODO
         self._fservos[1] = self._outf_pitch - self._outf_roll # TODO
-        self._fservos[2:].fill(0.0)
+        self._fservos[2] = 0.0
         self._fservos = self._fservos.clip(-10.0, 10.0) # overflow protection (not servo limits)
 
         self._throttle_roll_corr = min(self._throttle_roll_corr, 1.0)
@@ -1308,8 +1272,6 @@ class Processor:
         self._vthrottles *= Processor.MAX_THROTTLE
 
         self._vservos.fill(math.pi/2)
-        if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_HOVER:
-            self._vservos[3] = 0.0
 
         return self._vservos, self._vthrottles
     #endregion
@@ -1346,7 +1308,7 @@ class Processor:
                 self._throttles = np.zeros(4, dtype=np.float16)
 
         self._servos[:2] = np.clip(self._servos[:2], -math.pi/12, 7*math.pi/12)
-        self._servos[2:] = np.clip(self._servos[2:], 0.0, math.pi/2)
+        self._servos[2] = np.clip(self._servos[2], 0.0, math.pi/2)
         self._throttles = np.clip(self._throttles, -14000, 14000) # TODO: reset min to 0
         self._servos = np.nan_to_num(self._servos)
         self._throttles = np.nan_to_num(self._throttles)
@@ -1354,7 +1316,6 @@ class Processor:
         self.main.txdata.elevon1 = self._servos[0]
         self.main.txdata.elevon2 = self._servos[1]
         self.main.txdata.tilt = self._servos[2]
-        self.main.txdata.stow = self._servos[3]
         
         self.main.txdata.esc1 = self._throttles[0]
         self.main.txdata.esc2 = self._throttles[1]
@@ -1594,6 +1555,7 @@ class Controller:
                     self._mavlogger.log(MAVLOG_RX, "Mode change requested")
                         
                     if self.main.state.set_mode(msg.param1, msg.param2, msg.param3): # TODO: Add safety check to verify message like below
+                        logger.warning(f"Mode changed: {g.CUSTOM_SUBMODE_NAMES[self.main.state.custom_submode]}")
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_SET_MODE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
                     else:
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_SET_MODE, m.MAV_RESULT_DENIED, 255, 0, 0, 0)

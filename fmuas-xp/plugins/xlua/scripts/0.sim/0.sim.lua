@@ -162,7 +162,6 @@ dofile('0.sim.clock.lua')
 dofile('0.sim.radalt.lua')
 dofile('0.sim.gpsatt.lua')
 dofile('0.sim.adc.lua')
-dofile('0.sim.wow.lua')
 
 dofile('0.sim.servos.lua')
 
@@ -179,7 +178,7 @@ function flight_start()
 
 	simSET_WEIGHT_avionics = 0.12
 	simSET_WEIGHT_batt = 1.95
-	simSET_WEIGHT_dome = 0.56
+	simSET_WEIGHT_dome = 0.6225
 
 	simSET_WEIGHT_fwing = 0.24
 	simSET_WEIGHT_iwing = 0.3
@@ -224,13 +223,11 @@ function flight_start()
 		elseif (simDR_axes_array[i] == 4) and (simSET_throttle_axis == 499) then simSET_throttle_axis = i end
 	end
 
-	WOW_flight_start()
     CLOCK_flight_start()
 	RADALT_flight_start()
 	GPSATT_flight_start()
 	ADC_flight_start()
 
-	dofile('CONFIG.lua')
 	SERVOS_flight_start()
 
 end
@@ -258,7 +255,6 @@ function before_physics()
 
 	if uasDR_python_running == 1 then
 
-		WOW_before_physics()
 		CLOCK_before_physics()
 		RADALT_before_physics()
 		GPSATT_before_physics()
