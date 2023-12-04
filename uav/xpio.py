@@ -180,6 +180,8 @@ class XPConnect:
             self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
         logger.info("Stopped listening for drefs")
 
+        sys.exit()
+
     @async_loop_decorator(close=False)
     async def _xpconnect_reconnect_loop(self):
         await asyncio.sleep(1)
@@ -275,6 +277,8 @@ class TestXPConnect:
         logger.critical("Received SIGHUP (Ctrl+C). Cleaning up and exiting gracefully.")
         time.sleep(0.1)
         logger.info("Stopped listening for drefs")
+
+        exit()
 
     @async_loop_decorator()
     async def _testxpconnect_run_loop(self) -> None:
