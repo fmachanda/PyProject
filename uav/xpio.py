@@ -271,6 +271,11 @@ class TestXPConnect:
         self.UDP_PORT=0
         logger.warning("X-Plane found at IP: %s, port: %s" % (self.X_PLANE_IP,self.UDP_PORT))
 
+    def signal_handler(self, sig, frame):
+        logger.critical("Received SIGHUP (Ctrl+C). Cleaning up and exiting gracefully.")
+        time.sleep(0.1)
+        logger.info("Stopped listening for drefs")
+
     @async_loop_decorator()
     async def _testxpconnect_run_loop(self) -> None:
         global rx_data
@@ -1547,12 +1552,12 @@ async def main():
     try:
         xpl = XPConnect()
         cam = Camera(xpl)
-
-        import signal
-        signal.signal(signal.SIGHUP, xpl.signal_handler)
     except (find_xp.XPlaneIpNotFound, KeyboardInterrupt, OSError):
         xpl = TestXPConnect()
         cam = TestCamera(xpl)
+
+    import signal
+    signal.signal(signal.SIGHUP, xpl.signal_handler)
 
     clk = Clock()
     gps = GPS()
