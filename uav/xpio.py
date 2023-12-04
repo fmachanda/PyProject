@@ -126,7 +126,6 @@ RADS_TO_RPM = 30/math.pi
 
 master_stop = asyncio.Event()
 
-
 def get_xp_time() -> int:
     """Get monotonic microseconds from X-Plane with jump handling."""
     _xpsecs = rx_data[b'fmuas/clock/time']
@@ -172,6 +171,14 @@ class XPConnect:
         for index, dref in enumerate(rx_data.keys()):
             msg = struct.pack('<4sxii400s', b'RREF', self._freq, index, dref)
             self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
+
+    def signal_handler(self, sig, frame):
+        logger.critical("Received SIGHUP (Ctrl+C). Cleaning up and exiting gracefully.")
+
+        for index, dref in enumerate(rx_data.keys()):
+            msg = struct.pack('<4sxii400s', b'RREF', 0, index, dref)
+            self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
+        logger.info("Stopped listening for drefs")
 
     @async_loop_decorator(close=False)
     async def _xpconnect_reconnect_loop(self):
@@ -1540,6 +1547,9 @@ async def main():
     try:
         xpl = XPConnect()
         cam = Camera(xpl)
+
+        import signal
+        signal.signal(signal.SIGHUP, xpl.signal_handler)
     except (find_xp.XPlaneIpNotFound, KeyboardInterrupt, OSError):
         xpl = TestXPConnect()
         cam = TestCamera(xpl)
