@@ -4,7 +4,6 @@ import datetime
 import logging
 import math
 import os
-import shutil
 import socket
 import struct
 import sys
@@ -457,6 +456,7 @@ class MotorHub:
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
                 self.stop.set()
+                master_stop.set() # TODO: remove
                 return uavcan.node.ExecuteCommand_1.Response(
                     uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
                 )
@@ -466,6 +466,7 @@ class MotorHub:
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_EMERGENCY_STOP:
                 self.stop.set()
+                master_stop.set() # TODO: remove
                 return uavcan.node.ExecuteCommand_1.Response(
                     uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
                 )
@@ -790,6 +791,7 @@ class SensorHub:
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
                 self.stop.set()
+                master_stop.set() # TODO: remove
                 return uavcan.node.ExecuteCommand_1.Response(
                     uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
                 )
@@ -799,6 +801,7 @@ class SensorHub:
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_EMERGENCY_STOP:
                 self.stop.set()
+                master_stop.set() # TODO: remove
                 return uavcan.node.ExecuteCommand_1.Response(
                     uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
                 )
@@ -968,6 +971,7 @@ class GPS:
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF:
                 self.stop.set()
+                master_stop.set() # TODO: remove
                 return uavcan.node.ExecuteCommand_1.Response(
                     uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
                 )
@@ -977,6 +981,7 @@ class GPS:
                 )
             case uavcan.node.ExecuteCommand_1.Request.COMMAND_EMERGENCY_STOP:
                 self.stop.set()
+                master_stop.set() # TODO: remove
                 return uavcan.node.ExecuteCommand_1.Response(
                     uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS
                 )
@@ -1299,23 +1304,26 @@ class Camera:
         if len(file_diff) != 0:
             logger.debug(f"Detected file_diff: {file_diff}")
             for f in file_diff:
-                ready = False
-                last_modified = os.stat(os.path.join(self.xp_path, f)).st_mtime
-                while not ready:
-                    await asyncio.sleep(Camera.DELAY)
-                    new_last_modified = os.stat(os.path.join(self.xp_path, f)).st_mtime
-                    ready = (last_modified == new_last_modified)
-                    last_modified = new_last_modified
-                    logger.debug('Shutil waiting...')
-                logger.debug("Shutil moving")
-                if not os.path.exists(self.destination_dir):
-                    os.makedirs(self.destination_dir)
-                file_path = os.path.join(self.xp_path, f)
-                try:
-                    shutil.move(file_path, self.destination_dir)
-                    logger.info(f"Moving file {f} to {self.destination_dir}")
-                except (shutil.Error, PermissionError):
-                    logger.error(f"Error moving file {f} to {self.destination_dir}")
+                url = os.path.join(self.xp_path,f).encode('utf-8')
+                self._camera_mav_conn.mav.camera_image_captured_send(
+                    int(time.monotonic()*1e3),
+                    int(time.time()*1e6),
+                    0, # depr
+                    int(math.degrees(rx_data[b'fmuas/gps/latitude'])*1e7), # lat 1e7
+                    int(math.degrees(rx_data[b'fmuas/gps/longitude'])*1e7), # lon 1e7
+                    int(math.degrees(rx_data[b'fmuas/gps/altitude'])*1e3), # alt mm
+                    int(math.degrees(rx_data[b'fmuas/radalt/altitude'])*1e3), # alt mm
+                    [
+                        rx_data[b'fmuas/att/attitude_quaternion_w'],
+                        rx_data[b'fmuas/att/attitude_quaternion_x'],
+                        rx_data[b'fmuas/att/attitude_quaternion_y'],
+                        rx_data[b'fmuas/att/attitude_quaternion_z'],
+                    ],
+                    0, # index
+                    1, # success
+                    url
+                )
+                logger.info(f"Captured {os.path.join(self.xp_path,f)}")
         
         self.sock.sendto(struct.pack('<4sx400s', b'CMND', b'fmuas/commands/image_capture_reset'), (self.X_PLANE_IP, self.UDP_PORT))
 
@@ -1324,14 +1332,14 @@ class Camera:
             for _ in range(iterations):
                 try:
                     tstart = time.time()
-                    await asyncio.gather(asyncio.create_task(self._capture()))
+                    await asyncio.create_task(self._capture())
                     await asyncio.sleep(max(0, period - (time.time()-tstart)))
                 except asyncio.exceptions.CancelledError:
                     break
         else:
             while True:
                 try:
-                    await asyncio.gather(asyncio.create_task(self._capture()))
+                    await asyncio.create_task(self._capture())
                     await asyncio.sleep(period)
                 except asyncio.exceptions.CancelledError:
                     break
@@ -1356,11 +1364,15 @@ class Camera:
 
 
 class TestCamera:
+    DELAY = 10
+
     def __init__(self, xpconnection: TestXPConnect) -> None:
         assert isinstance(xpconnection, TestXPConnect), "Must pass an instance of TestXPConnect"
         
         self._cam_id = config.getint('mavlink_ids', 'cam_id')
         self._uav_id = None
+
+        self.xp_path = r'/Users/fletcher/Documents/GitHub/fmuas-main/stored_images'
 
         self.stop = asyncio.Event()
         
@@ -1424,7 +1436,7 @@ class TestCamera:
         elif msg is not None and msg.get_srcSystem()==self._uav_id:
             if msg.get_type() == 'HEARTBEAT':
                 self._mavlogger.log(MAVLOG_DEBUG, "Camera rx heartbeat from UAV")
-            elif msg.target_system==self._uav_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'COMMAND_LONG':
+            elif msg.target_system==self._cam_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'COMMAND_LONG':
                 if msg.command == m.MAV_CMD_IMAGE_START_CAPTURE:
                     cap = asyncio.create_task(self._capture_cycle(int(msg.param3), msg.param2))
                     self._camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_START_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self._cam_id, 0)
@@ -1453,22 +1465,54 @@ class TestCamera:
         await asyncio.sleep(0)
 
     async def _capture(self) -> None:
+        previous_file_list = [f for f in os.listdir(self.xp_path) if os.path.isfile(os.path.join(self.xp_path, f))]
+
         logger.info("Commanding screenshot...")
-        await asyncio.sleep(Camera.DELAY)
+
+        await asyncio.sleep(TestCamera.DELAY)
+        logger.info("Looking...")
+
+        new_file_list = [f for f in os.listdir(self.xp_path) if os.path.isfile(os.path.join(self.xp_path, f))]
+        file_diff = [x for x in new_file_list if x not in previous_file_list]
+        previous_file_list = new_file_list
+
+        if len(file_diff) != 0:
+            logger.debug(f"Detected file_diff: {file_diff}")
+            for f in file_diff:
+                url = os.path.join(self.xp_path,f).encode('utf-8')
+                self._camera_mav_conn.mav.camera_image_captured_send(
+                    int(time.monotonic()*1e3),
+                    int(time.time()*1e6),
+                    0, # depr
+                    int(math.degrees(rx_data[b'fmuas/gps/latitude'])*1e7), # lat 1e7
+                    int(math.degrees(rx_data[b'fmuas/gps/longitude'])*1e7), # lon 1e7
+                    int(math.degrees(rx_data[b'fmuas/gps/altitude'])*1e3), # alt mm
+                    int(math.degrees(rx_data[b'fmuas/radalt/altitude'])*1e3), # alt mm
+                    [
+                        rx_data[b'fmuas/att/attitude_quaternion_w'],
+                        rx_data[b'fmuas/att/attitude_quaternion_x'],
+                        rx_data[b'fmuas/att/attitude_quaternion_y'],
+                        rx_data[b'fmuas/att/attitude_quaternion_z'],
+                    ],
+                    0, # index
+                    1, # success
+                    url
+                )
+                logger.info(f"Captured {os.path.join(self.xp_path,f)}")
 
     async def _capture_cycle(self, iterations: int, period: float) -> None:
         if iterations != 0:
             for _ in range(iterations):
                 try:
                     tstart = time.time()
-                    await asyncio.gather(asyncio.create_task(self._capture()))
+                    await asyncio.create_task(self._capture())
                     await asyncio.sleep(max(0, period - (time.time()-tstart)))
                 except asyncio.exceptions.CancelledError:
                     break
         else:
             while True:
                 try:
-                    await asyncio.gather(asyncio.create_task(self._capture()))
+                    await asyncio.create_task(self._capture())
                     await asyncio.sleep(period)
                 except asyncio.exceptions.CancelledError:
                     break

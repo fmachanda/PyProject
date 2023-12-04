@@ -34,7 +34,7 @@ Clone this repo into the desired directory. If you plan to use this project with
 git clone https://github.com/fmachanda/fmuas-main.git <directory>
 ```
 
-Navigate to the `scripts` folder, and double-click on `install.command` (for Windows) or `install.command` (for MacOS). You should see a terminal window open.
+Navigate to the `scripts` folder, and double-click on `install.bat` (for Windows) or `install.command` (for MacOS). You should see a terminal window open.
 
 In the event you receive an error message, please retry installation manually.
 

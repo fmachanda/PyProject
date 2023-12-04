@@ -94,7 +94,7 @@ _DEBUG_SKIP = -1 # TODO: remove this!!
 system_ids = []
 
 
-class GlobalRx:
+class RxBuffer:
     """Store sensor data."""
     class Time:
         """Store clock data."""
@@ -163,7 +163,7 @@ class GlobalRx:
             self._last_altitude = 0.0
             self._last_vs = 0.0
 
-        def dump(self, msg: uavcan.si.unit.length.WideScalar_1, time: 'GlobalRx.Time.time') -> None:
+        def dump(self, msg: uavcan.si.unit.length.WideScalar_1, time: 'RxBuffer.Time.time') -> None:
             """Store data from a message."""
             self._last_time = self.time
             self._last_altitude = self.altitude
@@ -202,7 +202,7 @@ class GlobalRx:
             # self._last_espeed = 0.0
             # self._last_dspeed = 0.0
 
-        def dump(self, msg: reg.udral.physics.kinematics.geodetic.PointStateVarTs_0, heading: 'GlobalRx.Att.yaw') -> None:
+        def dump(self, msg: reg.udral.physics.kinematics.geodetic.PointStateVarTs_0, heading: 'RxBuffer.Att.yaw') -> None:
             """Store data from a message."""
             self._last_time = self.time
             # self._last_latitude = self.latitude
@@ -253,7 +253,7 @@ class GlobalRx:
             self.dt = 0.0
             # self._last_aoa = 0.0
 
-        def dump(self, msg: uavcan.si.unit.angle.Scalar_1, time: 'GlobalRx.Time.time') -> None:
+        def dump(self, msg: uavcan.si.unit.angle.Scalar_1, time: 'RxBuffer.Time.time') -> None:
             """Store data from a message."""
             self._last_time = self.time
             # self._last_aoa = self.aoa
@@ -275,7 +275,7 @@ class GlobalRx:
             # self._last_xdp = 0.0
             # self._last_ydp = 0.0
 
-        def dump(self, xdp: float, ydp: float, time: 'GlobalRx.Time.time') -> None:
+        def dump(self, xdp: float, ydp: float, time: 'RxBuffer.Time.time') -> None:
             """Store data from a message."""
             self._last_time = self.time
             # self._last_aoa = self.aoa
@@ -287,16 +287,16 @@ class GlobalRx:
             self.dt = self.time - self._last_time
 
     def __init__(self) -> None:
-        self.time = GlobalRx.Time()
-        self.att =  GlobalRx.Att()
-        self.alt =  GlobalRx.Alt()
-        self.gps =  GlobalRx.Gps()
-        self.ias =  GlobalRx.Ias()
-        self.aoa =  GlobalRx.Aoa()
-        self.cam =  GlobalRx.Cam()
+        self.time = RxBuffer.Time()
+        self.att =  RxBuffer.Att()
+        self.alt =  RxBuffer.Alt()
+        self.gps =  RxBuffer.Gps()
+        self.ias =  RxBuffer.Ias()
+        self.aoa =  RxBuffer.Aoa()
+        self.cam =  RxBuffer.Cam()
 
 
-class GlobalTx:
+class TxBuffer:
     """Store control data before publishing."""
     def __init__(self) -> None:
         self._servo_readiness = reg.udral.service.common.Readiness_0(
@@ -480,19 +480,7 @@ class GlobalTx:
         )
 
 
-class Waypoint:
-    """Stores information for a waypoint."""
-    count = 0
-    def __init__(self, latitude: float, longitude: float, altitude: float = None, name: str | None = None) -> None:
-        self.latitude = latitude
-        self.longitude = longitude
-        self.altitude = altitude
-
-        Waypoint.count += 1
-        self.name = name if name is not None else f"Waypoint {Waypoint.count}"
-
-
-class MainIO:
+class UAVCANManager:
     """Main Input/Output class for UAVCAN communication.
 
     This class serves as the interface for communication with UAVCAN 
@@ -518,7 +506,7 @@ class MainIO:
     run()
         Execute control logic and handle UAVCAN communication.
     close()
-        Close the MainIO node and release resources.
+        Close the UAVCANManager node and release resources.
     """
 
     class NodeManager:
@@ -534,7 +522,7 @@ class MainIO:
                 self.id: int
                 self.heartbeat: uavcan.node.Heartbeat_1
                 self.active = asyncio.Event()
-                self.id, self.heartbeat = MainIO.NodeManager.Node.defaults
+                self.id, self.heartbeat = UAVCANManager.NodeManager.Node.defaults
 
             def set(self, heartbeat: uavcan.node.Heartbeat_1, id: int = None,) -> None:
                 self.id = id if id is not None else self.id
@@ -542,15 +530,15 @@ class MainIO:
                 self.active.set()
 
             def reset(self) -> None:
-                self.id, self.heartbeat = MainIO.NodeManager.Node.defaults
+                self.id, self.heartbeat = UAVCANManager.NodeManager.Node.defaults
                 self.active.clear()
 
         def __init__(self, node: pycyphal.application.Node, config: ConfigParser | None = None) -> None:
             # If a config is passed, fixed node ids will be used.
-            self.clock = MainIO.NodeManager.Node()
-            self.sensorhub = MainIO.NodeManager.Node()
-            self.motorhub = MainIO.NodeManager.Node()
-            self.gps = MainIO.NodeManager.Node()
+            self.clock = UAVCANManager.NodeManager.Node()
+            self.sensorhub = UAVCANManager.NodeManager.Node()
+            self.motorhub = UAVCANManager.NodeManager.Node()
+            self.gps = UAVCANManager.NodeManager.Node()
             
             if config:
                 self.clock.id = config.getint('node_ids', 'clock')
@@ -581,13 +569,13 @@ class MainIO:
 
         def _update_values(self, id: int, entry: pycyphal.application.node_tracker.Entry) -> None:
             name = ''.join(chr(c) for c in entry.info.name)
-            if id==self.clock.id or name==MainIO.NodeManager.CLOCK_NAME:
+            if id==self.clock.id or name==UAVCANManager.NodeManager.CLOCK_NAME:
                 self.clock.set(entry.heartbeat, id)
-            elif id==self.sensorhub.id or name==MainIO.NodeManager.SENSORHUB_NAME:
+            elif id==self.sensorhub.id or name==UAVCANManager.NodeManager.SENSORHUB_NAME:
                 self.sensorhub.set(entry.heartbeat, id)
-            elif id==self.motorhub.id or name==MainIO.NodeManager.MOTORHUB_NAME:
+            elif id==self.motorhub.id or name==UAVCANManager.NodeManager.MOTORHUB_NAME:
                 self.motorhub.set(entry.heartbeat, id)
-            elif id==self.gps.id or name==MainIO.NodeManager.GPS_NAME:
+            elif id==self.gps.id or name==UAVCANManager.NodeManager.GPS_NAME:
                 self.gps.set(entry.heartbeat, id)
         
         def _destroy_values(self, id: int) -> None:
@@ -601,7 +589,7 @@ class MainIO:
                 self.gps.reset()
 
     def __init__(self, main: 'Main', freq: int = DEFAULT_FREQ) -> None:
-        """Initialize the MainIO class.
+        """Initialize the UAVCANManager class.
 
         Parameters
         ----------
@@ -702,7 +690,7 @@ class MainIO:
         self._registry = pycyphal.application.make_registry(self.main.config.get('db_files', 'uavmain'))
         self._node = pycyphal.application.make_node(node_info, self._registry)
 
-        self.node_manager = MainIO.NodeManager(self._node) # add config for fixed node ids
+        self.node_manager = UAVCANManager.NodeManager(self._node) # add config for fixed node ids
         self._tracker = pycyphal.application.node_tracker.NodeTracker(self._node)
         self._tracker.add_update_handler(self.node_manager.update)
 
@@ -812,7 +800,7 @@ class MainIO:
 
         self._node.start()
 
-        logger.info("MainIO initialized")
+        logger.info("UAVCANManager initialized")
 
     async def _serve_exec_cmd(
             self,
@@ -947,7 +935,7 @@ class MainIO:
 
     async def close(self) -> None:
         """Close the instance."""
-        logger.info("Closing MainIO...") # TODO: Change to logger.debug()
+        logger.info("Closing UAVCANManager...") # TODO: Change to logger.debug()
 
         cln_clock_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.clock.id)
         clock_response = await cln_clock_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
@@ -990,6 +978,17 @@ class MainIO:
 
 class Navigator:
     """Converts navigational commands to autopilot commands."""
+    class Waypoint:
+        """Stores information for a waypoint."""
+        count = 0
+        def __init__(self, latitude: float, longitude: float, altitude: float = None, name: str | None = None) -> None:
+            self.latitude = latitude
+            self.longitude = longitude
+            self.altitude = altitude
+
+            Navigator.Waypoint.count += 1
+            self.name = name if name is not None else f"Waypoint {Navigator.Waypoint.count}"
+
     def __init__(self, main: 'Main') -> None:
         """Initializes the Navigator class.
 
@@ -1000,16 +999,16 @@ class Navigator:
         """
 
         self.main = main
-        self._waypoint_list: list[Waypoint] = [] # Navigating from waypoint 0 to waypoint 1
+        self._waypoint_list: list[Navigator.Waypoint] = [] # Navigating from waypoint 0 to waypoint 1
         self._current_waypoint = None
         self.commanded_heading = 0.0 # DEGREES
-        self.commanded_altitude = self.main.processor.spf_altitude
+        self.commanded_altitude = self.main.afcs.spf_altitude
 
     async def boot(self) -> None:
         """Perform boot-related tasks."""
         # TODO: do boot stuff here, calibrate gps etc
         # TODO: await gps online
-        self.append_wpt(Waypoint(self.main.rxdata.gps.latitude, self.main.rxdata.gps.longitude, self.main.rxdata.gps.altitude, name='Start'))
+        self.append_wpt(Navigator.Waypoint(self.main.rxdata.gps.latitude, self.main.rxdata.gps.longitude, self.main.rxdata.gps.altitude, name='Start'))
         self._current_waypoint = self._waypoint_list[0]
         logger.debug(f"Navigator aligning at {self._waypoint_list[0].latitude}, {self._waypoint_list[0].longitude}")
         # TODO: load flight plan from a file
@@ -1044,7 +1043,7 @@ class Navigator:
     def calc_altitude(self) -> float:
         """Determine the desired altitude from the next waypoint."""
         if len(self._waypoint_list)>1:
-            self.commanded_altitude = self._waypoint_list[1].altitude if self._waypoint_list[1].altitude is not None else self.main.processor.spf_altitude
+            self.commanded_altitude = self._waypoint_list[1].altitude if self._waypoint_list[1].altitude is not None else self.main.afcs.spf_altitude
         else:
             # TODO
             pass
@@ -1052,10 +1051,10 @@ class Navigator:
 
     @async_loop_decorator(close=False)
     async def _navigator_run_loop(self) -> None:
-        """Set processor setpoints based on flight plan."""
+        """Set afcs setpoints based on flight plan."""
         # TODO: navigator modes, safety checks
-        self.main.processor.spf_heading = math.radians(self.calc_heading())
-        self.main.processor.spf_altitude = self.calc_altitude()
+        self.main.afcs.spf_heading = math.radians(self.calc_heading())
+        self.main.afcs.spf_altitude = self.calc_altitude()
         await asyncio.sleep(0)
 
     async def run(self) -> None:
@@ -1064,7 +1063,7 @@ class Navigator:
         await self._navigator_run_loop()
 
 
-class Processor:
+class AFCS:
     """Manages various calculations and controls for the system.
 
     This class handles the calculation of servo commands and throttle 
@@ -1094,13 +1093,13 @@ class Processor:
     _vtol_throttles(self)
         Calculate VTOL throttle outputs.
     run(self)
-        Run the Processor and execute control logic.
+        Run the AFCS and execute control logic.
     """
 
     MAX_THROTTLE = 14000
 
     def __init__(self, main: 'Main') -> None:
-        """Initialize the Processor class.
+        """Initialize the AFCS class.
 
         Parameters
         ----------
@@ -1235,7 +1234,7 @@ class Processor:
 
         self._fthrottles.fill(self._outf_throttle_ias + self._throttle_vpa_corr + self._throttle_roll_corr)
         self._fthrottles = self._fthrottles.clip(0.0, 1.0)
-        self._fthrottles *= Processor.MAX_THROTTLE
+        self._fthrottles *= AFCS.MAX_THROTTLE
 
         return self._fservos, self._fthrottles
 
@@ -1277,7 +1276,7 @@ class Processor:
         t3 = -self._outv_pitch + self._outv_roll
         t4 = -self._outv_pitch - self._outv_roll
         self._vthrottles = np.array([t1, t2, t3, t4], dtype=np.float16)
-        self._vthrottles *= Processor.MAX_THROTTLE
+        self._vthrottles *= AFCS.MAX_THROTTLE
 
         self._vservos[0] = math.pi/2 - self._outv_yaw
         self._vservos[1] = math.pi/2 + self._outv_yaw
@@ -1287,7 +1286,7 @@ class Processor:
     #endregion
 
     @async_loop_decorator()
-    async def _processor_run_loop(self) -> None:
+    async def _afcs_run_loop(self) -> None:
         try:
             self._ias_scalar = 1296 / (self.main.rxdata.ias.ias**2)
         except ZeroDivisionError:
@@ -1337,56 +1336,16 @@ class Processor:
 
     async def run(self) -> None:
         """Calculate desired control positions."""
-        logger.info("Starting Processor")
-        await self._processor_run_loop()
+        logger.info("Starting AFCS")
+        await self._afcs_run_loop()
 
     async def close(self) -> None:
-        logger.info("Closing Processor")
+        logger.info("Closing AFCS")
         pass
 
 
-class ImageProcessor:
-    """Find and process new images."""
-    def __init__(self, main: 'Main', freq: int = 1) -> None:
-        self.main = main
-        self._freq = freq
-        self._path = os.path.join(os.getcwd(), 'stored_images')
-
-    @async_loop_decorator(close=False)
-    async def _image_processor_run_loop(self):
-        """Find and process new images."""
-        previous_file_list = [f for f in os.listdir(self._path) if os.path.isfile(os.path.join(self._path, f))]
-
-        await asyncio.sleep(1 / self._freq)
-
-        new_file_list = [f for f in os.listdir(self._path) if os.path.isfile(os.path.join(self._path, f))]
-        file_diff = [x for x in new_file_list if x not in previous_file_list]
-        previous_file_list = new_file_list
-
-        if self.main.state.custom_mode == g.CUSTOM_MODE_LANDING or True: # TODO
-            if len(file_diff) != 0:
-                for f in file_diff:
-                    logger.info(f"Proccesing image {f}")
-                    # task = asyncio.create_task()
-                    if out := await img.find_h(os.path.join(self._path, f), display=False):
-                        dx, dy, confidence, image = out
-                        logger.info(f"'H' detected in {f} at ({dx},{dy}) with a confidence of {confidence:.2f}.")
-                        self.main.rxdata.cam.dump(dx, dy, self.main.rxdata.time.time)
-                        await grapher.imshow(image)
-                    else:
-                        self.main.rxdata.cam.dump(0.0, 0.0, self.main.rxdata.time.time)
-                        logger.info(f"None detected in {f}.")
-        else:
-            await asyncio.sleep(1 / self._freq)
-
-    async def run(self) -> None:
-        """Find and process new images."""
-        logger.debug("Starting image watch cycle...")
-        await self._image_processor_run_loop()
-
-
-class Controller:
-    """Controller class for managing MAVLINK communication with GCS.
+class CommManager:
+    """CommManager class for managing MAVLINK communication with GCS.
 
     Attributes
     ----------
@@ -1420,7 +1379,7 @@ class Controller:
     MAX_FLUSH_BUFFER = int(1e6)
 
     def __init__(self, main: 'Main', tx_freq: int = DEFAULT_FREQ, heartbeat_freq: int = 1) -> None:
-        """Initialize a Controller instance.
+        """Initialize a CommManager instance.
 
         Parameters
         ----------
@@ -1478,13 +1437,13 @@ class Controller:
         """Removes any MAV messages still in the connection buffer"""
         # Buffer flusher limited by MAX_FLUSH_BUFFER to avoid loop.
         try:
-            for i in range(Controller.MAX_FLUSH_BUFFER):
+            for i in range(CommManager.MAX_FLUSH_BUFFER):
                 msg = connection.recv_match(blocking=False)
                 if msg is None:
                     logger.debug(f"Buffer flushed, {i} messages cleared")
                     break
-                elif i >= Controller.MAX_FLUSH_BUFFER-1:
-                    logger.error(f"Messages still in buffer after {Controller.MAX_FLUSH_BUFFER} flush cycles")     
+                elif i >= CommManager.MAX_FLUSH_BUFFER-1:
+                    logger.error(f"Messages still in buffer after {CommManager.MAX_FLUSH_BUFFER} flush cycles")     
         except (ConnectionError, OSError):
             logger.debug("No connection to flush.")
 
@@ -1493,7 +1452,7 @@ class Controller:
             self._cam_conn: mavutil.mavfile = mavutil.mavlink_connection(self.main.config.get('mavlink', 'uav_camera_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1, input=True)
             self._cam_conn.setup_signing(key)
 
-            Controller.flush_buffer(self._cam_conn)
+            CommManager.flush_buffer(self._cam_conn)
 
             self._mavlogger.log(MAVLOG_TX, f"Connecting to camera #{self._cam_id}...")
 
@@ -1504,7 +1463,7 @@ class Controller:
                 try:
                     msg = self._cam_conn.recv_msg()
                 except ConnectionResetError:
-                    raise Controller.PreExistingConnection
+                    raise CommManager.PreExistingConnection
 
                 if msg is not None and msg.get_type()=='CHANGE_OPERATOR_CONTROL_ACK':# and msg.get_srcSystem()==target and msg.gcs_system_id==self.main.systemid:
                     match msg.ack:
@@ -1574,7 +1533,7 @@ class Controller:
                 case m.MAV_CMD_DO_CHANGE_ALTITUDE:
                     pass # TODO
                     try:
-                        self.main.processor.spf_altitude = msg.param1 # TODO add checks!
+                        self.main.afcs.spf_altitude = msg.param1 # TODO add checks!
                         self._mavlogger.log(MAVLOG_RX, f"GCS commanded altitude setpoint to {msg.param1}")
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
                     except AttributeError:
@@ -1583,7 +1542,7 @@ class Controller:
                 case m.MAV_CMD_DO_CHANGE_SPEED:
                     pass # TODO
                     try:
-                        self.main.processor.spf_ias = msg.param2 # TODO add checks!
+                        self.main.afcs.spf_ias = msg.param2 # TODO add checks!
                         self._mavlogger.log(MAVLOG_RX, f"GCS commanded speed setpoint to {msg.param2}")
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_SPEED, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
                     except AttributeError:
@@ -1624,25 +1583,25 @@ class Controller:
                 # DO_REPOSITION
                 case m.MAV_CMD_DO_REPOSITION:
                     self.main.navigator.next_wpt(
-                        Waypoint(msg.x / 1e7, msg.y / 1e7, msg.z) if msg.z > 0.1 else Waypoint(msg.x / 1e7, msg.y / 1e7)
+                        Navigator.Waypoint(msg.x / 1e7, msg.y / 1e7, msg.z) if msg.z > 0.1 else Navigator.Waypoint(msg.x / 1e7, msg.y / 1e7)
                     )
 
                     self._mavlogger.log(MAVLOG_LOG, f"Directing to {self.main.navigator._waypoint_list[1].latitude}, {self.main.navigator._waypoint_list[1].longitude}")
                 # TODO TEMPORARY PID
                 case 0:
                     # PID TUNER GOTO
-                    # self.main.processor._pidv_rls_out.reset()
-                    # self.main.processor._pidv_pts_out.reset()
-                    # self.main.processor._pidv_rol_rls.reset()
-                    # self.main.processor._pidv_pit_pts.reset()
-                    # self.main.processor._pidv_dyw_yws.reset()
-                    self.main.processor._pidv_dyw_yws.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
-                    # self.main.processor._pidv_dyw_yws.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
-                    # self.main.processor._pidv_rls_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
-                    # self.main.processor._pidv_pts_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
-                    # self.main.processor._pidv_rol_rls.set(kp=msg.param4)#, td=msg.param2)
-                    # self.main.processor._pidv_pit_pts.set(kp=msg.param4)#, td=msg.param4)
-                    self.main.processor.spf_heading=msg.param4
+                    # self.main.afcs._pidv_rls_out.reset()
+                    # self.main.afcs._pidv_pts_out.reset()
+                    # self.main.afcs._pidv_rol_rls.reset()
+                    # self.main.afcs._pidv_pit_pts.reset()
+                    # self.main.afcs._pidv_dyw_yws.reset()
+                    self.main.afcs._pidv_dyw_yws.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    # self.main.afcs._pidv_dyw_yws.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    # self.main.afcs._pidv_rls_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    # self.main.afcs._pidv_pts_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    # self.main.afcs._pidv_rol_rls.set(kp=msg.param4)#, td=msg.param2)
+                    # self.main.afcs._pidv_pit_pts.set(kp=msg.param4)#, td=msg.param4)
+                    self.main.afcs.spf_heading=msg.param4
                     logger.info(f"New PID state: {msg.param1:.4f}, {msg.param2:.4f}, {msg.param3:.4f} @ {msg.param4:.4f}")
                 # TODO TEMPORARY SCREENSHOT
                 case 1:
@@ -1692,24 +1651,24 @@ class Controller:
         await asyncio.sleep(0)
 
     async def manager(self) -> None:
-        """Manage the controller's various operations."""
+        """Manage the comm's various operations."""
         asyncio.create_task(self._heartbeat())
         asyncio.create_task(self._rx())
         asyncio.create_task(self._rxcam())
         asyncio.create_task(self._tx())
 
-        logger.info("Starting Controller")
+        logger.info("Starting CommManager")
 
         await self._manager_loop()
 
     @async_loop_decorator(close=False)
-    async def _controller_rx_loop(self) -> None:
+    async def _comm_rx_loop(self) -> None:
         """Recieve messages from GCS over mavlink."""
         try:
             msg = self._mav_conn_gcs.recv_msg()
         except (ConnectionError, OSError):
             try:
-                self._mavlogger.log(MAVLOG_DEBUG, "Controller (rx) connection refused")
+                self._mavlogger.log(MAVLOG_DEBUG, "CommManager (rx) connection refused")
                 await asyncio.sleep(0)
             except asyncio.exceptions.CancelledError:
                 self.main.stop.set()
@@ -1719,8 +1678,8 @@ class Controller:
 
         if msg is not None:
             type_ = msg.get_type()
-            if type_ in Controller.type_handlers:
-                handler = getattr(self, Controller.type_handlers[type_])
+            if type_ in CommManager.type_handlers:
+                handler = getattr(self, CommManager.type_handlers[type_])
                 handler(msg)
             else:
                 self._mavlogger.log(MAVLOG_RX, f"Unknown message type: {type_}")
@@ -1728,7 +1687,7 @@ class Controller:
         await asyncio.sleep(0)
 
     @async_loop_decorator(close=False)
-    async def _controller_rxcam_loop(self) -> None:
+    async def _comm_rxcam_loop(self) -> None:
         """Recieve messages from GCS over mavlink."""
         try:
             msg = self._cam_conn.recv_msg()
@@ -1742,6 +1701,17 @@ class Controller:
             if msg.get_type() == 'HEARTBEAT' and msg.get_srcSystem()==target:
                 self._mavlogger.log(MAVLOG_DEBUG, f"Heartbeat message from camera #{msg.get_srcSystem()}")
                 self._last_cam_beat = self.main.rxdata.time.time
+            elif msg.get_type() == 'CAMERA_IMAGE_CAPTURED' and msg.get_srcSystem()==self._cam_id:
+                logger.info(f"Proccesing image {msg.file_url}")
+                # task = asyncio.create_task()
+                if out := await img.find_h(msg.file_url, display=False):
+                    dx, dy, confidence, image = out
+                    logger.info(f"'H' detected in {msg.file_url} at ({dx},{dy}) with a confidence of {confidence:.2f}.")
+                    self.main.rxdata.cam.dump(dx, dy, self.main.rxdata.time.time)
+                    await grapher.imshow(image)
+                else:
+                    self.main.rxdata.cam.dump(0.0, 0.0, self.main.rxdata.time.time)
+                    logger.info(f"None detected in {msg.file_url}.")
 
         if self._last_cam_beat:
             if self.main.rxdata.time.time-self._last_cam_beat > HEARTBEAT_TIMEOUT*1e6: # TODO: remove time module dependency
@@ -1755,23 +1725,23 @@ class Controller:
 
     async def _rx(self) -> None:
         """Recieve messages from GCS over mavlink."""
-        logger.debug("Starting Controller (RX)")
-        await self._controller_rx_loop()
+        logger.debug("Starting CommManager (RX)")
+        await self._comm_rx_loop()
 
     async def _rxcam(self) -> None:
         """Recieve messages from camera over mavlink."""
         logger.debug("Starting camera (RX)")
-        await self._controller_rxcam_loop()
+        await self._comm_rxcam_loop()
 
     @async_loop_decorator(close=False)
-    async def _controller_tx_loop(self) -> None:
+    async def _comm_tx_loop(self) -> None:
         """Transmit continuous messages."""
         await asyncio.sleep(0)
 
     async def _tx(self) -> None:
         """Transmit continuous messages."""
-        logger.debug("Starting Controller (TX)")
-        await self._controller_tx_loop()
+        logger.debug("Starting CommManager (TX)")
+        await self._comm_tx_loop()
 
     async def _roi_calc(self) -> None:
         try:
@@ -1804,7 +1774,7 @@ class Controller:
             logger.info("Closing ROI cycle")
 
     @async_loop_decorator(close=False)
-    async def _controller_heartbeat_loop(self) -> None:
+    async def _comm_heartbeat_loop(self) -> None:
         msg = [
             m.MAV_TYPE_VTOL_RESERVED4, # 24
             m.MAV_AUTOPILOT_GENERIC_WAYPOINTS_AND_SIMPLE_NAVIGATION_ONLY,
@@ -1826,8 +1796,8 @@ class Controller:
 
     async def _heartbeat(self) -> None:
         """Periodically publish a heartbeat message."""
-        logger.debug("Starting Controller (Heartbeat)")
-        await self._controller_heartbeat_loop()
+        logger.debug("Starting CommManager (Heartbeat)")
+        await self._comm_heartbeat_loop()
 
     async def close(self) -> None:
         """Close the instance."""
@@ -1836,7 +1806,7 @@ class Controller:
         import common.key as key
         self._cam_conn.mav.change_operator_control_send(self.main.config.getint('mavlink_ids', 'cam_id'), 1, 0, key.CAMKEY.encode('utf-8'))
         self._cam_conn.close()
-        logger.info("Closing Controller")
+        logger.info("Closing CommManager")
 
 
 class Main:
@@ -1859,9 +1829,9 @@ class Main:
         An event to signal the system boot.
     stop : asyncio.Event
         An event to signal the system to stop.
-    rxdata : GlobalRx
+    rxdata : RxBuffer
         Global receive data.
-    txdata : GlobalTx
+    txdata : TxBuffer
         Global transmit data.
     state : g
         State information.
@@ -1897,8 +1867,8 @@ class Main:
         self.boot = asyncio.Event()
         self.stop = asyncio.Event()
 
-        self.rxdata = GlobalRx()
-        self.txdata = GlobalTx()
+        self.rxdata = RxBuffer()
+        self.txdata = TxBuffer()
 
         self.state = g(m.MAV_STATE_UNINIT, m.MAV_MODE_PREFLIGHT, g.CUSTOM_MODE_UNINIT, g.CUSTOM_SUBMODE_UNINIT, self.boot)
 
@@ -1973,13 +1943,12 @@ class Main:
             The name of the variable to graph (default is None).
         """
 
-        self.controller = Controller(self)
-        self.io = MainIO(self)
-        self.processor = Processor(self)
+        self.comm = CommManager(self)
+        self.io = UAVCANManager(self)
+        self.afcs = AFCS(self)
         self.navigator = Navigator(self)
-        self.img = ImageProcessor(self)
 
-        controller_manager = asyncio.create_task(self.controller.manager())
+        comm_manager = asyncio.create_task(self.comm.manager())
         await asyncio.sleep(0)
 
         logger.warning(f"Creating instance #{self.systemid}, waiting for boot command from GCS")
@@ -1990,7 +1959,7 @@ class Main:
                 self.state.inc_mode()
             await self.boot.wait()
         except asyncio.exceptions.CancelledError:
-            controller_manager.cancel()
+            comm_manager.cancel()
             await asyncio.sleep(0)
             logger.warning(f"Never booted, closing instance #{self.systemid}")
             return
@@ -1998,7 +1967,7 @@ class Main:
         logger.warning(f"Booting instance #{self.systemid}...")
 
         boot_tasks = [
-            asyncio.create_task(self.processor.boot()),
+            asyncio.create_task(self.afcs.boot()),
             asyncio.create_task(self.navigator.boot()),
             asyncio.create_task(self.io.boot()),
         ]
@@ -2006,7 +1975,7 @@ class Main:
         try:
             await asyncio.gather(*boot_tasks)
         except asyncio.exceptions.CancelledError:
-            controller_manager.cancel()
+            comm_manager.cancel()
             await asyncio.sleep(0)
             logger.warning(f"Ctrl-C during boot cycle, closing instance #{self.systemid}")
             return
@@ -2017,10 +1986,9 @@ class Main:
             self.state.inc_mode()
 
         tasks = [
-            asyncio.create_task(self.processor.run()),
+            asyncio.create_task(self.afcs.run()),
             asyncio.create_task(self.navigator.run()),
             asyncio.create_task(self.io.run()),
-            asyncio.create_task(self.img.run()),
         ]
 
         if graph:
@@ -2038,8 +2006,8 @@ class Main:
             logger.warning(f"Closing instance #{self.systemid}...")
 
         close_tasks = [
-            asyncio.create_task(self.processor.close()),
-            asyncio.create_task(self.controller.close()),
+            asyncio.create_task(self.afcs.close()),
+            asyncio.create_task(self.comm.close()),
             asyncio.create_task(self.io.close()),
         ]
 
@@ -2059,7 +2027,7 @@ async def main(graph: str | bool = False, print_: str | bool = False) -> None:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-g", "--graph", nargs='?', default=False, const='rxdata.att.rollspeed', help="Attribute to graph")
-    parser.add_argument("-p", "--print", nargs='?', default=False, const='processor._throttles', help="Attribute to print")
+    parser.add_argument("-p", "--print", nargs='?', default=False, const='afcs._throttles', help="Attribute to print")
     parser.add_argument("-s", "--skip", nargs='?', default='-1', const='0', help="Skip number of modes on startup")
     args = parser.parse_args()
 
