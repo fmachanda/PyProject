@@ -145,10 +145,11 @@ class RxBuffer:
                 self.yaw += 2*math.pi
 
             self.rollspeed, self.pitchspeed, self.yawspeed = msg.value.twist.value.angular.radian_per_second
-            _nspeed, _espeed, _ = msg.value.twist.value.linear.meter_per_second
+            _nspeed, _espeed, _dspeed = msg.value.twist.value.linear.meter_per_second
 
             self.yspeed = _nspeed*math.cos(self.yaw) + _espeed*math.sin(self.yaw)
             self.xspeed = _nspeed*math.sin(self.yaw) + _espeed*math.cos(self.yaw)
+            self.zspeed = -1*_dspeed
             self.dt = self.time - self._last_time
 
     class Alt:
@@ -156,7 +157,6 @@ class RxBuffer:
         def __init__(self) -> None:
             self.time = 0.0
             self.altitude = 0.0
-            self.vs = 0.0
 
             self._last_time = 0.0
             self.dt = 0.0
@@ -167,15 +167,9 @@ class RxBuffer:
             """Store data from a message."""
             self._last_time = self.time
             self._last_altitude = self.altitude
-            self._last_vs = self.vs
 
             self.time = time
             self.altitude = msg.meter
-
-            try:
-                self.vs = (self.altitude - self._last_altitude) / (self.time - self._last_time)
-            except ZeroDivisionError:
-                self.vs = self._last_vs
 
             self.dt = self.time - self._last_time
 
@@ -215,7 +209,7 @@ class RxBuffer:
             self.time = msg.timestamp.microsecond
             self.latitude = math.degrees(msg.value.position.value.latitude)
             self.longitude = math.degrees(msg.value.position.value.longitude)
-            self.altitude = msg.value.position.value.altitude
+            self.altitude = msg.value.position.value.altitude.meter
             self.nspeed, self.espeed, self.dspeed = msg.value.velocity.value.meter_per_second
 
             self.yspeed = self.nspeed*math.cos(heading) + self.espeed*math.sin(heading)
@@ -1153,6 +1147,7 @@ class AFCS:
         self._outv_roll = 0.0
         self._outv_yaw = 0.0
         self._outv_throttle = 0.0
+        self._outv_thr_mode = 0 # 0-settle 1-hover 2-launch
 
         # self._pid{f or v}_{from}_{to}
 
@@ -1174,8 +1169,8 @@ class AFCS:
         self._pidv_pit_pts = PID(kp=0.5, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
         self._pidv_pts_out = PID(kp=0.028, ti=0.15, td=0.04, integral_limit=1.0, minimum=-0.1, maximum=0.1)
 
-        self._pidv_alt_vsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-50.0, maximum=100.0)
-        self._pidv_vsp_out = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=0.0, maximum=1.0)
+        self._pidv_alt_vsp = PID(kp=0.5, ti=1.0, td=0.05, integral_limit=0.5, minimum=-1.5, maximum=2.0)
+        self._pidv_vsp_out = PID(kp=0.18, ti=0.4, td=0.001, integral_limit=5.0, minimum=0.0, maximum=0.68)
 
         self._pidv_dyw_yws = PID(kp=-0.5, ti=1.0, td=0.0, integral_limit=0.2, minimum=-math.pi/6, maximum=math.pi/6)
         self._pidv_yws_out = PID(kp=0.2, ti=0.1, td=0.01, integral_limit=0.15, minimum=-math.pi/12, maximum=math.pi/12)
@@ -1242,12 +1237,29 @@ class AFCS:
         """Calculate VTOL throttle commands from sensors."""
         if (alt:=self.main.rxdata.alt).dt > 0.0:
             self._spv_vs = self._pidv_alt_vsp.cycle(alt.altitude, self.spv_altitude, alt.dt)
-            self._outv_throttle = self._pidv_vsp_out.cycle(alt.vs, self._spv_vs, alt.dt)
-            if alt.altitude < 0.045:
+            self._outv_thr_mode = 1
+            if alt.altitude < 0.5:
+                if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_ASCENT:
+                    self._outv_thr_mode = 2
+                elif alt.altitude < 0.1:
+                    self._outv_thr_mode = 0
+
+            if alt.altitude < 0.05:
                 self._pidv_pts_out._integral = 0.66
+                self._pidv_xdp_xsp._integral = 0.0
+                self._pidv_xsp_rol._integral = 0.0
+                self._pidv_rol_rls._integral = 0.0
                 self._pidv_rls_out._integral = 0.0
-                self._pidv_yws_out._integral = 0.0
+                self._pidv_ydp_ysp._integral = 0.0
+                self._pidv_ysp_pit._integral = 0.0
+                self._pidv_pit_pts._integral = 0.0
+                self._pidv_alt_vsp._integral = 0.0
+                self._pidv_vsp_out._integral = 0.0
                 self._pidv_dyw_yws._integral = 0.0
+                self._pidv_yws_out._integral = 0.0
+                self._pidv_vsp_out.minimum = 0.0
+            else:
+                self._pidv_vsp_out.minimum = 0.55
             self.main.rxdata.alt.dt = 0.0
 
         if (cam:=self.main.rxdata.cam).dt > 0.0:
@@ -1259,6 +1271,7 @@ class AFCS:
             self.main.rxdata.gps.dt = 0.0
 
         if (att:=self.main.rxdata.att).dt > 0.0:
+            self._outv_throttle = self._pidv_vsp_out.cycle(att.zspeed, self._spv_vs, att.dt)
             self._spv_roll = self._pidv_xsp_rol.cycle(att.xspeed, self._spv_xspeed, gps.dt)
             self._spv_pitch = self._pidv_ysp_pit.cycle(att.yspeed, self._spv_yspeed, gps.dt)
             self._spv_rollspeed = self._pidv_rol_rls.cycle(att.roll, self._spv_roll, att.dt)
@@ -1266,15 +1279,24 @@ class AFCS:
             self._outv_roll = self._pidv_rls_out.cycle(att.rollspeed, self._spv_rollspeed, att.dt)
             self._outv_pitch = self._pidv_pts_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt)
 
-            self._dyaw = calc_dyaw(att.yaw, self.spf_heading)
+            self._dyaw = calc_dyaw(att.yaw, self.spv_heading)
             self._spv_yawspeed = self._pidv_dyw_yws.cycle(self._dyaw, 0.0, att.dt)
             self._outv_yaw = self._pidv_yws_out.cycle(att.yawspeed, self._spv_yawspeed, att.dt)
             self.main.rxdata.att.dt = 0.0
 
-        t1 = self._outv_pitch + self._outv_roll
-        t2 = self._outv_pitch - self._outv_roll
-        t3 = -self._outv_pitch + self._outv_roll
-        t4 = -self._outv_pitch - self._outv_roll
+        match self._outv_thr_mode:
+            case 0:
+                self._outv_throttle = 0.0
+            case 1:
+                pass
+            case 2:
+                self._outv_throttle = 0.58
+                self._pidv_vsp_out._integral = 3.2
+
+        t1 = self._outv_pitch + self._outv_roll + self._outv_throttle
+        t2 = self._outv_pitch - self._outv_roll + self._outv_throttle
+        t3 = -self._outv_pitch + self._outv_roll + self._outv_throttle
+        t4 = -self._outv_pitch - self._outv_roll + self._outv_throttle
         self._vthrottles = np.array([t1, t2, t3, t4], dtype=np.float16)
         self._vthrottles *= AFCS.MAX_THROTTLE
 
@@ -1534,6 +1556,7 @@ class CommManager:
                     pass # TODO
                     try:
                         self.main.afcs.spf_altitude = msg.param1 # TODO add checks!
+                        self.main.afcs.spv_altitude = msg.param1 # TODO add checks!
                         self._mavlogger.log(MAVLOG_RX, f"GCS commanded altitude setpoint to {msg.param1}")
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
                     except AttributeError:
@@ -1595,13 +1618,13 @@ class CommManager:
                     # self.main.afcs._pidv_rol_rls.reset()
                     # self.main.afcs._pidv_pit_pts.reset()
                     # self.main.afcs._pidv_dyw_yws.reset()
-                    self.main.afcs._pidv_dyw_yws.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    self.main.afcs._pidv_alt_vsp.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
                     # self.main.afcs._pidv_dyw_yws.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
                     # self.main.afcs._pidv_rls_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
                     # self.main.afcs._pidv_pts_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
                     # self.main.afcs._pidv_rol_rls.set(kp=msg.param4)#, td=msg.param2)
                     # self.main.afcs._pidv_pit_pts.set(kp=msg.param4)#, td=msg.param4)
-                    self.main.afcs.spf_heading=msg.param4
+                    self.main.afcs.spv_altitude=msg.param4
                     logger.info(f"New PID state: {msg.param1:.4f}, {msg.param2:.4f}, {msg.param3:.4f} @ {msg.param4:.4f}")
                 # TODO TEMPORARY SCREENSHOT
                 case 1:
@@ -1770,6 +1793,7 @@ class CommManager:
                     break
                 except Exception as e:
                     logger.error(f"Error in ROI cycle: {e}")
+                    raise
         finally:
             logger.info("Closing ROI cycle")
 

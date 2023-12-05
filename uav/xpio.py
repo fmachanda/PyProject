@@ -172,16 +172,6 @@ class XPConnect:
             msg = struct.pack('<4sxii400s', b'RREF', self._freq, index, dref)
             self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
 
-    def signal_handler(self, sig, frame):
-        logger.critical("Received SIGHUP (Ctrl+C). Cleaning up and exiting gracefully.")
-
-        for index, dref in enumerate(rx_data.keys()):
-            msg = struct.pack('<4sxii400s', b'RREF', 0, index, dref)
-            self.sock.sendto(msg, (self.X_PLANE_IP, self.UDP_PORT))
-        logger.info("Stopped listening for drefs")
-
-        sys.exit()
-
     @async_loop_decorator(close=False)
     async def _xpconnect_reconnect_loop(self):
         await asyncio.sleep(1)
@@ -272,13 +262,6 @@ class TestXPConnect:
         self.X_PLANE_IP="TEST"
         self.UDP_PORT=0
         logger.warning("X-Plane found at IP: %s, port: %s" % (self.X_PLANE_IP,self.UDP_PORT))
-
-    def signal_handler(self, sig, frame):
-        logger.critical("Received SIGHUP (Ctrl+C). Cleaning up and exiting gracefully.")
-        time.sleep(0.1)
-        logger.info("Stopped listening for drefs")
-
-        exit()
 
     @async_loop_decorator()
     async def _testxpconnect_run_loop(self) -> None:
@@ -1277,7 +1260,7 @@ class Camera:
         elif msg is not None and msg.get_srcSystem()==self._uav_id:
             if msg.get_type() == 'HEARTBEAT':
                 self._mavlogger.log(MAVLOG_DEBUG, "Camera rx heartbeat from UAV")
-            elif msg.target_system==self._uav_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'COMMAND_LONG':
+            elif msg.target_system==self._cam_id and msg.target_component==m.MAV_COMP_ID_CAMERA and msg.get_type() == 'COMMAND_LONG':
                 if msg.command == m.MAV_CMD_IMAGE_START_CAPTURE:
                     cap: asyncio.Task = asyncio.create_task(self._capture_cycle(int(msg.param3), msg.param2))
                     self._camera_mav_conn.mav.command_ack_send(m.MAV_CMD_IMAGE_START_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, self._cam_id, 0)
@@ -1559,9 +1542,6 @@ async def main():
     except (find_xp.XPlaneIpNotFound, KeyboardInterrupt, OSError):
         xpl = TestXPConnect()
         cam = TestCamera(xpl)
-
-    import signal
-    signal.signal(signal.SIGHUP, xpl.signal_handler)
 
     clk = Clock()
     gps = GPS()
