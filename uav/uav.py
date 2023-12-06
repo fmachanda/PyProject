@@ -9,6 +9,7 @@ This script uses values from the common/config.ini file.
 
 See https://github.com/fmachanda/fmuas-main for more details.
 """
+import cv2 # TODO
 
 import argparse
 import asyncio
@@ -1091,6 +1092,7 @@ class AFCS:
     """
 
     MAX_THROTTLE = 14000
+    TILT_TRANSIT_RATE = 0.05
 
     def __init__(self, main: 'Main') -> None:
         """Initialize the AFCS class.
@@ -1149,6 +1151,8 @@ class AFCS:
         self._outv_throttle = 0.0
         self._outv_thr_mode = 0 # 0-settle 1-hover 2-launch
 
+        self._last_tilt = math.pi/2
+
         # self._pid{f or v}_{from}_{to}
 
         self._pidf_alt_vpa = PID(kp=0.007, ti=0.01, td=0.1, integral_limit=0.05, maximum=0.05, minimum=-0.05)
@@ -1182,11 +1186,11 @@ class AFCS:
         await asyncio.sleep(0)
 
     #region Calculations
-    def _flight_calc(self) -> np.ndarray:
+    def _flight_calc(self, wipe: bool = True) -> np.ndarray:
         """Calculate flight servo commands from sensors."""
         if (alt:=self.main.rxdata.alt).dt > 0.0:
             self._spf_vpath = self._pidf_alt_vpa.cycle(alt.altitude, self.spf_altitude, alt.dt)
-            self.main.rxdata.alt.dt = 0.0
+            self.main.rxdata.alt.dt = 0.0 if wipe else alt.dt
 
         if any([(att:=self.main.rxdata.att).dt > 0.0, (aoa:=self.main.rxdata.aoa).dt > 0.0]):
             if not aoa.dt > 0.0:
@@ -1209,15 +1213,15 @@ class AFCS:
 
             self._throttle_roll_corr = abs(math.sin(att.roll)) if abs(att.roll)>math.pi/24 else 0.0
 
-            self.main.rxdata.att.dt = 0.0
+            self.main.rxdata.att.dt = 0.0 if wipe else att.dt
 
         if (aoa:=self.main.rxdata.aoa).dt > 0.0:
             self._outf_pitch = self._pidf_aoa_out.cycle(aoa.aoa, self._spf_aoa, aoa.dt)
-            self.main.rxdata.aoa.dt = 0.0
+            self.main.rxdata.aoa.dt = 0.0 if wipe else aoa.dt
 
         if (ias:=self.main.rxdata.ias).dt > 0.0:
             self._outf_throttle_ias = self._pidf_ias_thr.cycle(ias.ias, self.spf_ias, ias.dt)
-            ias.dt = 0.0
+            self.main.rxdata.ias.dt = 0.0 if wipe else ias.dt
 
         self._fservos[0] = self._outf_pitch + self._outf_roll # TODO
         self._fservos[1] = self._outf_pitch - self._outf_roll # TODO
@@ -1271,6 +1275,8 @@ class AFCS:
             self.main.rxdata.gps.dt = 0.0
 
         if (att:=self.main.rxdata.att).dt > 0.0:
+            if self.main.state.custom_submode in [g.CUSTOM_SUBMODE_TAKEOFF_HOVER, g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT]:
+                self._spv_yspeed = 100 # TODO
             self._outv_throttle = self._pidv_vsp_out.cycle(att.zspeed, self._spv_vs, att.dt)
             self._spv_roll = self._pidv_xsp_rol.cycle(att.xspeed, self._spv_xspeed, gps.dt)
             self._spv_pitch = self._pidv_ysp_pit.cycle(att.yspeed, self._spv_yspeed, gps.dt)
@@ -1317,15 +1323,33 @@ class AFCS:
         self._ias_scalar = min(self._ias_scalar, 10.0)
 
         # TODO: setpoints
+
         match self.main.state.custom_submode:
             case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT | g.CUSTOM_SUBMODE_TAKEOFF_HOVER | g.CUSTOM_SUBMODE_LANDING_DESCENT | g.CUSTOM_SUBMODE_LANDING_HOVER:
                 # VTOL
                 self._servos, self._throttles = self._vtol_calc()
                 # TODO: below ~7500 RPM is not allowed
-            case g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT | g.CUSTOM_SUBMODE_LANDING_TRANSIT:
+            case g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
                 # Transit modes
-                # TODO mixing (DO NOT USE BOTH FUNCTIONS BECAUSE RACE CONDITION TO RESET dt)
-                pass
+                if (dt:=self.main.rxdata.time.dt) > 0.0:
+                    self._servos[2] = max(0, self._last_tilt - AFCS.TILT_TRANSIT_RATE*(dt/1e6))
+                    self.main.rxdata.time.dt = 0.0
+                _ratio = 2*self._servos[2] / math.pi
+                _fservos, _fthrottles = self._flight_calc(wipe=False)
+                _vservos, _vthrottles = self._vtol_calc()
+                self._servos[:2] = (1-_ratio)*_fservos[:2] + _ratio*_vservos[:2]
+                self._throttles = (1-_ratio)*_fthrottles + _ratio*_vthrottles
+                self._throttles*=1.5
+            case g.CUSTOM_SUBMODE_LANDING_TRANSIT:
+                # Transit modes
+                if dt:=self.main.rxdata.time.dt > 0.0:
+                    self._servos[2] = min(math.pi/2, self._last_tilt + AFCS.TILT_TRANSIT_RATE*(dt/1e6))
+                    self.main.rxdata.time.dt = 0.0
+                _ratio = 2*self._servos[2] / math.pi
+                _fservos, _fthrottles = self._flight_calc(wipe=False)
+                _vservos, _vthrottles = self._vtol_calc()
+                self._servos[:2] = (1-_ratio)*_fservos[:2] + _ratio*_vservos[:2]
+                self._throttles = (1-_ratio)*_fthrottles + _ratio*_vthrottles
             case g.CUSTOM_SUBMODE_FLIGHT_NORMAL | g.CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE:
                 # Normal flight
                 self._servos, self._throttles = self._flight_calc()
@@ -1353,6 +1377,8 @@ class AFCS:
         self.main.txdata.esc2 = self._throttles[1]
         self.main.txdata.esc3 = self._throttles[2]
         self.main.txdata.esc4 = self._throttles[3]
+
+        self._last_tilt = self._servos[2]
 
         await asyncio.sleep(0)
 
@@ -1726,7 +1752,8 @@ class CommManager:
                 self._last_cam_beat = self.main.rxdata.time.time
             elif msg.get_type() == 'CAMERA_IMAGE_CAPTURED' and msg.get_srcSystem()==self._cam_id:
                 logger.info(f"Proccesing image {msg.file_url}")
-                # task = asyncio.create_task()
+
+                task = asyncio.create_task()
                 if out := await img.find_h(msg.file_url, display=False):
                     dx, dy, confidence, image = out
                     logger.info(f"'H' detected in {msg.file_url} at ({dx},{dy}) with a confidence of {confidence:.2f}.")

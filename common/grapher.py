@@ -3,10 +3,12 @@ import matplotlib.pyplot as plt
 from collections import deque
 
 async def imshow(img) -> None:
-    await asyncio.sleep(0.1)
-    plt.figure()
+    await asyncio.sleep(0)
     plt.imshow(img)
-    plt.show()
+    plt.draw()
+    plt.pause(0.01)
+    await asyncio.sleep(5)
+    plt.close()
 
 class Grapher:
     """Graph a deque of data in matplotlib."""
