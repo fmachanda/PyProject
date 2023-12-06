@@ -37,6 +37,7 @@ simDR_WEIGHT_empty = find_dataref("sim/aircraft/weight/acf_m_empty")
 simSET_WEIGHT_avionics = create_dataref("fmuas/config/weight/avionics_weight", "number", writable)
 simSET_WEIGHT_batt = create_dataref("fmuas/config/weight/batt_weight", "number", writable)
 simSET_WEIGHT_dome = create_dataref("fmuas/config/weight/dome_weight", "number", writable)
+simSET_WEIGHT_servo = create_dataref("fmuas/config/weight/servo_weight", "number", writable)
 simSET_WEIGHT_fwing = create_dataref("fmuas/config/weight/fwing_weight", "number", writable)
 simSET_WEIGHT_iwing = create_dataref("fmuas/config/weight/iwing_weight", "number", writable)
 simSET_WEIGHT_owing = create_dataref("fmuas/config/weight/owing_weight", "number", writable)
@@ -180,15 +181,19 @@ function flight_start()
 	simSET_WEIGHT_batt = 1.95
 	simSET_WEIGHT_dome = 0.6225
 
-	simSET_WEIGHT_fwing = 0.24
-	simSET_WEIGHT_iwing = 0.3
-	simSET_WEIGHT_owing = 0.1
-	simSET_WEIGHT_stab = 0.123
+	simSET_WEIGHT_fwing = 0.26
+	simSET_WEIGHT_iwing = 0.13
+	simSET_WEIGHT_owing = 0.34
+	simSET_WEIGHT_stab = 0.145
+	simSET_WEIGHT_servo = 0.12
 
 	simDR_station_weights[0] = simSET_WEIGHT_avionics
 	simDR_station_weights[1] = simSET_WEIGHT_batt
 	simDR_station_weights[2] = simSET_WEIGHT_batt
 	simDR_station_weights[3] = simSET_WEIGHT_dome
+	simDR_station_weights[4] = simSET_WEIGHT_servo
+	simDR_station_weights[5] = simSET_WEIGHT_servo
+	simDR_station_weights[6] = simSET_WEIGHT_servo
 
 	simDR_fuels[0] = simSET_WEIGHT_fwing
 	simDR_fuels[1] = simSET_WEIGHT_iwing

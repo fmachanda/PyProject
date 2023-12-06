@@ -1166,7 +1166,7 @@ class AFCS:
         self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
         self._pidv_xsp_rol = PID(kp=0.06, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12) # TODO
         self._pidv_rol_rls = PID(kp=0.5, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
-        self._pidv_rls_out = PID(kp=0.021, ti=0.1, td=0.045, integral_limit=0.2, minimum=-0.08, maximum=0.08)
+        self._pidv_rls_out = PID(kp=0.0077, ti=0.1, td=0.045, integral_limit=0.2, minimum=-0.08, maximum=0.08)
 
         self._pidv_ydp_ysp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
         self._pidv_ysp_pit = PID(kp=-0.5, ti=1.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
@@ -1177,7 +1177,7 @@ class AFCS:
         self._pidv_vsp_out = PID(kp=0.18, ti=0.4, td=0.001, integral_limit=5.0, minimum=0.0, maximum=0.68)
 
         self._pidv_dyw_yws = PID(kp=-0.5, ti=1.0, td=0.0, integral_limit=0.2, minimum=-math.pi/6, maximum=math.pi/6)
-        self._pidv_yws_out = PID(kp=0.2, ti=0.1, td=0.01, integral_limit=0.15, minimum=-math.pi/12, maximum=math.pi/12)
+        self._pidv_yws_out = PID(kp=0.073, ti=0.1, td=0.01, integral_limit=0.15, minimum=-math.pi/12, maximum=math.pi/12)
 
     async def boot(self) -> None:
         """Perform boot-related tasks."""
