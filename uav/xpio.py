@@ -83,9 +83,9 @@ rx_data = {
     b'fmuas/att/pitchrate': 0.0,
     b'fmuas/att/yawrate': 0.0,
 
-    b'fmuas/gps/latitude': 0.0,
-    b'fmuas/gps/longitude': 0.0,
-    b'fmuas/gps/altitude': 0.0,
+    b'fmuas/gps/latitude': math.radians(41.688306),
+    b'fmuas/gps/longitude': math.radians(-83.716114),
+    b'fmuas/gps/altitude': 202.0,
     b'fmuas/gps/vn': 0.0,
     b'fmuas/gps/ve': 0.0,
     b'fmuas/gps/vd': 0.0,
@@ -1025,8 +1025,8 @@ class GPS:
             reg.udral.physics.kinematics.geodetic.PointStateVar_0(
                 reg.udral.physics.kinematics.geodetic.PointVar_0(
                     reg.udral.physics.kinematics.geodetic.Point_0(
-                        rx_data[b'fmuas/gps/longitude'], # TODO: rads
-                        rx_data[b'fmuas/gps/latitude'], # TODO: rads
+                        rx_data[b'fmuas/gps/latitude'],
+                        rx_data[b'fmuas/gps/longitude'],
                         uavcan.si.unit.length.WideScalar_1(
                             rx_data[b'fmuas/gps/altitude']
                         )

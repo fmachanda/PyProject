@@ -145,7 +145,7 @@ def gps_angles(lat1: float, lon1: float, alt1: float, lat2: float, lon2: float, 
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
     distance = 6371000 * c
-    slant_angle = math.atan2(alt2 - alt1, distance)
+    slant_angle = math.atan2(alt1 - alt2, distance)
 
     bearing = math.degrees(bearing)
     slant_angle = math.degrees(slant_angle)
