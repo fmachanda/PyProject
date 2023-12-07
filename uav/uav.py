@@ -9,7 +9,6 @@ This script uses values from the common/config.ini file.
 
 See https://github.com/fmachanda/fmuas-main for more details.
 """
-import cv2 # TODO
 
 import argparse
 import asyncio
@@ -1598,29 +1597,35 @@ class CommManager:
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_SPEED, m.MAV_RESULT_TEMPORARILY_REJECTED, 255, 0, 0, 0)
                 # DO_GIMBAL_MANAGER_PITCHYAW
                 case m.MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW:
-                    self._mavlogger.log(MAVLOG_RX, f"GCS commanding camera to pitch:{msg.param1}, yaw: {msg.param2}")
-                    self._cam_conn.mav.gimbal_device_set_attitude_send(
-                        self._cam_id,
-                        m.MAV_COMP_ID_CAMERA,
-                        m.GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME,
-                        euler_to_quaternion(0.0, math.radians(msg.param1), math.radians(msg.param2)), # TODO: q values wxyz
-                        0.0, 0.0, 0.0 # angular velocities
-                    )
-                    self._cam_conn.mav.command_ack_send(m.MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
+                    if self.main.state.custom_submode not in [g.CUSTOM_SUBMODE_TAKEOFF_ASCENT, g.CUSTOM_SUBMODE_LANDING_HOVER, g.CUSTOM_SUBMODE_LANDING_DESCENT]:
+                        self._mavlogger.log(MAVLOG_RX, f"GCS commanding camera to pitch:{msg.param1}, yaw: {msg.param2}")
+                        self._cam_conn.mav.gimbal_device_set_attitude_send(
+                            self._cam_id,
+                            m.MAV_COMP_ID_CAMERA,
+                            m.GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME,
+                            euler_to_quaternion(0.0, math.radians(msg.param1), math.radians(msg.param2)), # TODO: q values wxyz
+                            0.0, 0.0, 0.0 # angular velocities
+                        )
+                        self._cam_conn.mav.command_ack_send(m.MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
+                    else:
+                        self._cam_conn.mav.command_ack_send(m.MAV_CMD_DO_SET_ROI_LOCATION, m.MAV_RESULT_TEMPORARILY_REJECTED, 255, 0, 0, 0)
                 # DO_GIMBAL_SET_ROI_NONE
                 case m.MAV_CMD_DO_SET_ROI_NONE:
-                    self._mavlogger.log(MAVLOG_RX, f"GCS commanding camera to reset ROI")
-                    if self._roi_task is not None:
-                        self._roi_task.cancel()
-                        self._roi_task = None
-                    self._cam_conn.mav.gimbal_device_set_attitude_send(
-                        self._cam_id,
-                        m.MAV_COMP_ID_CAMERA,
-                        m.GIMBAL_DEVICE_FLAGS_NEUTRAL,
-                        [1.0, 0.0, 0.0, 0.0],
-                        0.0, 0.0, 0.0
-                    )
-                    self._cam_conn.mav.command_ack_send(m.MAV_CMD_DO_SET_ROI_NONE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
+                    if self.main.state.custom_submode not in [g.CUSTOM_SUBMODE_TAKEOFF_ASCENT, g.CUSTOM_SUBMODE_LANDING_HOVER, g.CUSTOM_SUBMODE_LANDING_DESCENT]:
+                        self._mavlogger.log(MAVLOG_RX, f"GCS commanding camera to reset ROI")
+                        if self._roi_task is not None:
+                            self._roi_task.cancel()
+                            self._roi_task = None
+                        self._cam_conn.mav.gimbal_device_set_attitude_send(
+                            self._cam_id,
+                            m.MAV_COMP_ID_CAMERA,
+                            m.GIMBAL_DEVICE_FLAGS_NEUTRAL,
+                            [1.0, 0.0, 0.0, 0.0],
+                            0.0, 0.0, 0.0
+                        )
+                        self._cam_conn.mav.command_ack_send(m.MAV_CMD_DO_SET_ROI_NONE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
+                    else:
+                        self._cam_conn.mav.command_ack_send(m.MAV_CMD_DO_SET_ROI_LOCATION, m.MAV_RESULT_TEMPORARILY_REJECTED, 255, 0, 0, 0)
                 # Command unsupported
                 case _:
                     self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, 0, 0)
@@ -1682,14 +1687,17 @@ class CommManager:
                     pass # TODO
                 # DO_GIMBAL_SET_ROI_LOCATION
                 case m.MAV_CMD_DO_SET_ROI_LOCATION:
-                    lat = msg.x / 1e7
-                    lon = msg.y / 1e7
-                    alt = msg.z
-                    self._mavlogger.log(MAVLOG_RX, f"GCS commanding camera to lat:{lat}, lon: {lon}, alt: {alt}")
-                    self._roi = [lat, lon, alt]
-                    if self._roi_task is None:
-                        self._roi_task = asyncio.create_task(self._roi_calc())
-                    self._cam_conn.mav.command_ack_send(m.MAV_CMD_DO_SET_ROI_LOCATION, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
+                    if self.main.state.custom_submode not in [g.CUSTOM_SUBMODE_TAKEOFF_ASCENT, g.CUSTOM_SUBMODE_LANDING_HOVER, g.CUSTOM_SUBMODE_LANDING_DESCENT]:
+                        lat = msg.x / 1e7
+                        lon = msg.y / 1e7
+                        alt = msg.z
+                        self._mavlogger.log(MAVLOG_RX, f"GCS commanding camera to lat:{lat}, lon: {lon}, alt: {alt}")
+                        self._roi = [lat, lon, alt]
+                        if self._roi_task is None:
+                            self._roi_task = asyncio.create_task(self._roi_calc())
+                        self._cam_conn.mav.command_ack_send(m.MAV_CMD_DO_SET_ROI_LOCATION, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
+                    else:
+                        self._cam_conn.mav.command_ack_send(m.MAV_CMD_DO_SET_ROI_LOCATION, m.MAV_RESULT_TEMPORARILY_REJECTED, 255, 0, 0, 0)
                 # Command unsupported
                 case _:
                     self._mav_conn_gcs.mav.command_ack_send(msg.command, m.MAV_RESULT_UNSUPPORTED, 255, 0, 0, 0)
@@ -1839,6 +1847,14 @@ class CommManager:
             pass
         try:
             self._cam_conn.mav.heartbeat_send(*msg)
+            if self.main.state.custom_submode in [g.CUSTOM_SUBMODE_TAKEOFF_ASCENT, g.CUSTOM_SUBMODE_LANDING_HOVER, g.CUSTOM_SUBMODE_LANDING_DESCENT]:
+                self._cam_conn.mav.gimbal_device_set_attitude_send(
+                    self._cam_id,
+                    m.MAV_COMP_ID_CAMERA,
+                    m.GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME,
+                    euler_to_quaternion(0.0, math.radians(msg.param1), math.radians(msg.param2)), # TODO: q values wxyz
+                    0.0, 0.0, 0.0 # angular velocities
+                )
         except AttributeError:
             pass
         
