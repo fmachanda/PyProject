@@ -923,7 +923,7 @@ class UAVCANManager:
     async def run(self) -> None:
         """Write to publishers."""
         self._node.heartbeat_publisher.mode = uavcan.node.Mode_1.OPERATIONAL
-        logger.warning("UAVCAN Node Running...\n----- Ctrl-C to exit -----") # TODO: no verification
+        logger.warning("UAVCAN Node Running...\n----- Ctrl-C to exit -----")
 
         await self._mainio_run_loop()
 
@@ -1001,7 +1001,7 @@ class Navigator:
     async def boot(self) -> None:
         """Perform boot-related tasks."""
         # TODO: do boot stuff here, calibrate gps etc
-        # TODO: await gps online
+        self.main.io.node_manager.gps.active.wait()
         self.append_wpt(Navigator.Waypoint(self.main.rxdata.gps.latitude, self.main.rxdata.gps.longitude, self.main.rxdata.gps.altitude, name='Start'))
         self._current_waypoint = self._waypoint_list[0]
         logger.debug(f"Navigator aligning at {self._waypoint_list[0].latitude}, {self._waypoint_list[0].longitude}")
@@ -1091,7 +1091,8 @@ class AFCS:
     """
 
     MAX_THROTTLE = 14000
-    TILT_TRANSIT_RATE = 0.05
+    TRANSIT_TILT_LEAD = 0.08
+    TRANSIT_THROTTLE_PAD = 0.2
 
     def __init__(self, main: 'Main') -> None:
         """Initialize the AFCS class.
@@ -1201,7 +1202,7 @@ class AFCS:
                 dt = (att.dt + aoa.dt) / 2
 
             self._vpath = att.pitch - math.cos(att.roll) * aoa.aoa
-            self._spf_aoa = self._pidf_vpa_aoa.cycle(self._vpath, self._spf_vpath, dt) # TODO
+            self._spf_aoa = self._pidf_vpa_aoa.cycle(self._vpath, self._spf_vpath, dt)
             self._throttle_vpa_corr = 4*(self._spf_vpath-self._vpath) if self._vpath<self._spf_vpath-0.05 else 0.0
 
         if (att:=self.main.rxdata.att).dt > 0.0:
@@ -1223,8 +1224,8 @@ class AFCS:
             self._outf_throttle_ias = self._pidf_ias_thr.cycle(ias.ias, self.spf_ias, ias.dt)
             self.main.rxdata.ias.dt = 0.0 if wipe else ias.dt
 
-        self._fservos[0] = self._outf_pitch + self._outf_roll # TODO
-        self._fservos[1] = self._outf_pitch - self._outf_roll # TODO
+        self._fservos[0] = self._outf_pitch + self._outf_roll
+        self._fservos[1] = self._outf_pitch - self._outf_roll
         self._fservos[2] = 0.0
         self._fservos = self._fservos.clip(-10.0, 10.0) # overflow protection (not servo limits)
 
@@ -1299,8 +1300,8 @@ class AFCS:
                 self._outv_throttle = 0.63
                 self._pidv_vsp_out._integral = 3.2
 
-        t1 = self._outv_pitch + self._outv_roll + self._outv_throttle
-        t2 = self._outv_pitch - self._outv_roll + self._outv_throttle
+        t1 = self._outv_pitch + self._outv_throttle # TODO: test no roll, maybe move roll to t1/t2
+        t2 = self._outv_pitch + self._outv_throttle
         t3 = -self._outv_pitch + self._outv_roll + self._outv_throttle
         t4 = -self._outv_pitch - self._outv_roll + self._outv_throttle
         self._vthrottles = np.array([t1, t2, t3, t4], dtype=np.float16)
@@ -1317,10 +1318,12 @@ class AFCS:
     async def _afcs_run_loop(self) -> None:
         try:
             self._ias_scalar = 1296 / (self.main.rxdata.ias.ias**2)
+            self._vtol_ratio = 1 - (self.main.rxdata.ias.ias/60) # 1 is VTOL
         except ZeroDivisionError:
             self._ias_scalar = 1.0
 
         self._ias_scalar = min(self._ias_scalar, 10.0)
+        self._vtol_ratio = max(min(self._vtol_ratio, 1.0), 0.0)
 
         # TODO: setpoints
 
@@ -1328,28 +1331,22 @@ class AFCS:
             case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT | g.CUSTOM_SUBMODE_TAKEOFF_HOVER | g.CUSTOM_SUBMODE_LANDING_DESCENT | g.CUSTOM_SUBMODE_LANDING_HOVER:
                 # VTOL
                 self._servos, self._throttles = self._vtol_calc()
-                # TODO: below ~7500 RPM is not allowed
             case g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
                 # Transit modes
-                if (dt:=self.main.rxdata.time.dt) > 0.0:
-                    self._servos[2] = max(0, self._last_tilt - AFCS.TILT_TRANSIT_RATE*(dt/1e6))
-                    self.main.rxdata.time.dt = 0.0
-                _ratio = 2*self._servos[2] / math.pi
-                _fservos, _fthrottles = self._flight_calc(wipe=False)
-                _vservos, _vthrottles = self._vtol_calc()
-                self._servos[:2] = (1-_ratio)*_fservos[:2] + _ratio*_vservos[:2]
-                self._throttles = (1-_ratio)*_fthrottles + _ratio*_vthrottles
-                self._throttles*=1.5
+                fservos, fthrottles = self._flight_calc(wipe=False)
+                vservos, vthrottles = self._vtol_calc()
+                self._servos[2] = ((math.pi/2) - AFCS.TRANSIT_TILT_LEAD) * (self._vtol_ratio)
+                self._servos[:2] = (1-self._vtol_ratio)*fservos[:2] + self._vtol_ratio*vservos[:2]
+                self._throttles = (1-self._vtol_ratio)*fthrottles + self._vtol_ratio*vthrottles
+                self._throttles*=(AFCS.TRANSIT_THROTTLE_PAD+1)
             case g.CUSTOM_SUBMODE_LANDING_TRANSIT:
                 # Transit modes
-                if dt:=self.main.rxdata.time.dt > 0.0:
-                    self._servos[2] = min(math.pi/2, self._last_tilt + AFCS.TILT_TRANSIT_RATE*(dt/1e6))
-                    self.main.rxdata.time.dt = 0.0
-                _ratio = 2*self._servos[2] / math.pi
-                _fservos, _fthrottles = self._flight_calc(wipe=False)
-                _vservos, _vthrottles = self._vtol_calc()
-                self._servos[:2] = (1-_ratio)*_fservos[:2] + _ratio*_vservos[:2]
-                self._throttles = (1-_ratio)*_fthrottles + _ratio*_vthrottles
+                fservos, fthrottles = self._flight_calc(wipe=False)
+                vservos, vthrottles = self._vtol_calc()
+                self._servos[2] = (math.pi/2) * (self._vtol_ratio) + AFCS.TRANSIT_TILT_LEAD*(1-self._vtol_ratio)
+                self._servos[:2] = (1-self._vtol_ratio)*fservos[:2] + self._vtol_ratio*vservos[:2]
+                self._throttles = (1-self._vtol_ratio)*fthrottles + self._vtol_ratio*vthrottles
+                self._throttles*=(AFCS.TRANSIT_THROTTLE_PAD+1)
             case g.CUSTOM_SUBMODE_FLIGHT_NORMAL | g.CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE:
                 # Normal flight
                 self._servos, self._throttles = self._flight_calc()
@@ -1365,7 +1362,7 @@ class AFCS:
 
         self._servos[:2] = np.clip(self._servos[:2], -math.pi/12, 7*math.pi/12)
         self._servos[2] = np.clip(self._servos[2], 0.0, math.pi/2)
-        self._throttles = np.clip(self._throttles, -14000, 14000) # TODO: reset min to 0
+        self._throttles = np.clip(self._throttles, 0, 14000)
         self._servos = np.nan_to_num(self._servos)
         self._throttles = np.nan_to_num(self._throttles)
 
@@ -1572,14 +1569,13 @@ class CommManager:
                 case m.MAV_CMD_DO_SET_MODE:
                     self._mavlogger.log(MAVLOG_RX, "Mode change requested")
                         
-                    if self.main.state.set_mode(msg.param1, msg.param2, msg.param3): # TODO: Add safety check to verify message like below
+                    if self.main.state.set_mode(msg.param1, msg.param2, msg.param3):
                         logger.warning(f"Mode changed: {g.CUSTOM_SUBMODE_NAMES[self.main.state.custom_submode]}")
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_SET_MODE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
                     else:
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_SET_MODE, m.MAV_RESULT_DENIED, 255, 0, 0, 0)
                 # DO_CHANGE_ALTITUDE
                 case m.MAV_CMD_DO_CHANGE_ALTITUDE:
-                    pass # TODO
                     try:
                         self.main.afcs.spf_altitude = msg.param1 # TODO add checks!
                         self.main.afcs.spv_altitude = msg.param1 # TODO add checks!
@@ -1589,7 +1585,6 @@ class CommManager:
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_RESULT_TEMPORARILY_REJECTED, 255, 0, 0, 0)
                 # DO_CHANGE_SPEED
                 case m.MAV_CMD_DO_CHANGE_SPEED:
-                    pass # TODO
                     try:
                         self.main.afcs.spf_ias = msg.param2 # TODO add checks!
                         self._mavlogger.log(MAVLOG_RX, f"GCS commanded speed setpoint to {msg.param2}")
@@ -1604,7 +1599,7 @@ class CommManager:
                             self._cam_id,
                             m.MAV_COMP_ID_CAMERA,
                             m.GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME,
-                            euler_to_quaternion(0.0, math.radians(msg.param1), math.radians(msg.param2)), # TODO: q values wxyz
+                            euler_to_quaternion(0.0, math.radians(msg.param1), math.radians(msg.param2)),
                             0.0, 0.0, 0.0 # angular velocities
                         )
                         self._cam_conn.mav.command_ack_send(m.MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
@@ -1642,7 +1637,7 @@ class CommManager:
                     )
 
                     self._mavlogger.log(MAVLOG_LOG, f"Directing to {self.main.navigator._waypoint_list[1].latitude}, {self.main.navigator._waypoint_list[1].longitude}")
-                # TODO TEMPORARY PID
+                # TEMPORARY PID
                 case 0:
                     # PID TUNER GOTO
                     # self.main.afcs._pidv_rls_out.reset()
@@ -1658,7 +1653,7 @@ class CommManager:
                     # self.main.afcs._pidv_pit_pts.set(kp=msg.param4)#, td=msg.param4)
                     self.main.afcs._spv_pitchspeed=msg.param4
                     logger.info(f"New PID state: {msg.param1:.4f}, {msg.param2:.4f}, {msg.param3:.4f} @ {msg.param4:.4f}")
-                # TODO TEMPORARY SCREENSHOT
+                # TEMPORARY SCREENSHOT
                 case 1:
                     logger.info("Commanding camera...")
                     self._cam_conn.mav.command_long_send(
@@ -1773,7 +1768,7 @@ class CommManager:
                     logger.info(f"None detected in {msg.file_url}.")
 
         if self._last_cam_beat:
-            if self.main.rxdata.time.time-self._last_cam_beat > HEARTBEAT_TIMEOUT*1e6: # TODO: remove time module dependency
+            if self.main.rxdata.time.time-self._last_cam_beat > HEARTBEAT_TIMEOUT*1e6:
                 self._mavlogger.log(MAVLOG_LOG, f"Heartbeat timeout from camera #{target}, closing...")
                 self._last_cam_beat = False
                 self._cam_conn.close()
@@ -1821,7 +1816,7 @@ class CommManager:
                         self._cam_id,
                         m.MAV_COMP_ID_CAMERA,
                         m.GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME,
-                        quat, # TODO: q values wxyz
+                        quat,
                         0.0, 0.0, 0.0 # angular velocities
                     )
                     await asyncio.sleep(1 / self._txfreq)
@@ -1853,7 +1848,7 @@ class CommManager:
                     self._cam_id,
                     m.MAV_COMP_ID_CAMERA,
                     m.GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME,
-                    euler_to_quaternion(0.0, math.radians(msg.param1), math.radians(msg.param2)), # TODO: q values wxyz
+                    euler_to_quaternion(0.0, math.radians(msg.param1), math.radians(msg.param2)),
                     0.0, 0.0, 0.0 # angular velocities
                 )
         except AttributeError:
