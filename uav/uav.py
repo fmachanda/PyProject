@@ -1163,20 +1163,21 @@ class AFCS:
         self._pidf_ias_thr = PID(kp=0.1, ti=0.0, td=0.0, integral_limit=1.0, maximum=1.00, minimum=0.02) # TODO
 
         self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
-        self._pidv_xsp_rol = PID(kp=0.06, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12) # TODO
-        self._pidv_rol_rls = PID(kp=0.5, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
-        self._pidv_rls_out = PID(kp=0.0077, ti=0.1, td=0.045, integral_limit=0.2, minimum=-0.08, maximum=0.08)
+        # self._pidv_xsp_rol = PID(kp=0.1, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
+        self._pidv_xsp_rol = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12) # TODO
+        self._pidv_rol_rls = PID(kp=0.5, ti=0.5, td=0.0, integral_limit=0.08, minimum=-math.pi/6, maximum=math.pi/6)
+        self._pidv_rls_out = PID(kp=0.021, ti=0.05, td=0.04, integral_limit=0.3, minimum=-0.08, maximum=0.08)
 
         self._pidv_ydp_ysp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
-        self._pidv_ysp_pit = PID(kp=-0.5, ti=1.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
-        self._pidv_pit_pts = PID(kp=0.5, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/6, maximum=math.pi/6)
-        self._pidv_pts_out = PID(kp=0.028, ti=0.15, td=0.04, integral_limit=1.0, minimum=-0.1, maximum=0.1)
+        self._pidv_ysp_pit = PID(kp=-0.35, ti=0.6, td=0.0, integral_limit=0.3, minimum=-math.pi/12, maximum=math.pi/12)
+        self._pidv_pit_pts = PID(kp=0.5, ti=0.5, td=0.0, integral_limit=0.1, minimum=-math.pi/6, maximum=math.pi/6)
+        self._pidv_pts_out = PID(kp=0.033, ti=0.07, td=0.035, integral_limit=1.0, minimum=-0.1, maximum=0.1)
 
         self._pidv_alt_vsp = PID(kp=0.5, ti=1.0, td=0.05, integral_limit=0.5, minimum=-1.5, maximum=2.0)
         self._pidv_vsp_out = PID(kp=0.18, ti=0.4, td=0.001, integral_limit=5.0, minimum=0.0, maximum=0.68)
 
         self._pidv_dyw_yws = PID(kp=-0.5, ti=1.0, td=0.0, integral_limit=0.2, minimum=-math.pi/6, maximum=math.pi/6)
-        self._pidv_yws_out = PID(kp=0.073, ti=0.1, td=0.01, integral_limit=0.15, minimum=-math.pi/12, maximum=math.pi/12)
+        self._pidv_yws_out = PID(kp=0.22, ti=0.3, td=0.01, integral_limit=0.15, minimum=-math.pi/12, maximum=math.pi/12)
 
     async def boot(self) -> None:
         """Perform boot-related tasks."""
@@ -1248,7 +1249,7 @@ class AFCS:
                     self._outv_thr_mode = 0
 
             if alt.altitude < 0.05:
-                self._pidv_pts_out._integral = 0.66
+                self._pidv_pts_out._integral = 0.03
                 self._pidv_xdp_xsp._integral = 0.0
                 self._pidv_xsp_rol._integral = 0.0
                 self._pidv_rol_rls._integral = 0.0
@@ -1285,7 +1286,7 @@ class AFCS:
             self._outv_pitch = self._pidv_pts_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt)
 
             self._dyaw = calc_dyaw(att.yaw, self.spv_heading)
-            self._spv_yawspeed = self._pidv_dyw_yws.cycle(self._dyaw, 0.0, att.dt)
+            # self._spv_yawspeed = self._pidv_dyw_yws.cycle(self._dyaw, 0.0, att.dt)
             self._outv_yaw = self._pidv_yws_out.cycle(att.yawspeed, self._spv_yawspeed, att.dt)
             self.main.rxdata.att.dt = 0.0
 
@@ -1295,7 +1296,7 @@ class AFCS:
             case 1:
                 pass
             case 2:
-                self._outv_throttle = 0.58
+                self._outv_throttle = 0.63
                 self._pidv_vsp_out._integral = 3.2
 
         t1 = self._outv_pitch + self._outv_roll + self._outv_throttle
@@ -1649,13 +1650,13 @@ class CommManager:
                     # self.main.afcs._pidv_rol_rls.reset()
                     # self.main.afcs._pidv_pit_pts.reset()
                     # self.main.afcs._pidv_dyw_yws.reset()
-                    self.main.afcs._pidv_alt_vsp.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    # self.main.afcs._pidv_alt_vsp.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
                     # self.main.afcs._pidv_dyw_yws.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
-                    # self.main.afcs._pidv_rls_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    self.main.afcs._pidv_xsp_rol.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
                     # self.main.afcs._pidv_pts_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
                     # self.main.afcs._pidv_rol_rls.set(kp=msg.param4)#, td=msg.param2)
                     # self.main.afcs._pidv_pit_pts.set(kp=msg.param4)#, td=msg.param4)
-                    self.main.afcs.spv_altitude=msg.param4
+                    self.main.afcs._spv_xspeed=msg.param4
                     logger.info(f"New PID state: {msg.param1:.4f}, {msg.param2:.4f}, {msg.param3:.4f} @ {msg.param4:.4f}")
                 # TODO TEMPORARY SCREENSHOT
                 case 1:
