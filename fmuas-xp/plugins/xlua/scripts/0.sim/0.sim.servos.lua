@@ -218,10 +218,10 @@ function SERVOS_after_physics()
 
     if uasDR_SERVOS_direct_mode == 1 then
         pitch_deflection_raw = simDR_axes_values_array[simSET_pitch_axis] - 0.5
-        -- pitch_deflection = ((pitch_deflection_raw - 0.5) / 2) + 0.75
+        -- pitch_deflection = -0.75 + 3*math.abs(pitch_deflection_raw)
         -- pitch_deflection = -(((uasDR_AFCS_elevon1 + uasDR_AFCS_elevon2) / 2) - 45) / 60.0
         roll_deflection_raw = simDR_axes_values_array[simSET_roll_axis] - 0.5
-        -- roll_deflection = (roll_deflection_raw - 0.5) / 24
+        -- roll_deflection = 0.0
         -- roll_deflection = (uasDR_AFCS_elevon1 - uasDR_AFCS_elevon2) / 120.0
         throttle_raw = 1 - simDR_axes_values_array[simSET_throttle_axis]
 
@@ -231,6 +231,7 @@ function SERVOS_after_physics()
         rpm_cmd4 = uasDR_AFCS_rpm4-- + (14000*throttle_raw)
 
         tilt_cmd = uasDR_AFCS_wing_tilt / 90.0
+        -- tilt_cmd = 1 - 2*math.abs(roll_deflection_raw)
 
         pitch_deflection = -(((uasDR_AFCS_elevon1 + uasDR_AFCS_elevon2) / 2) - 45) / 60.0
         roll_deflection = (uasDR_AFCS_elevon1 - uasDR_AFCS_elevon2) / 120.0

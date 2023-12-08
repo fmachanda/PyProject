@@ -71,8 +71,8 @@ import common.grapher as grapher
 import common.image_processor as img
 from common.decorators import async_loop_decorator
 from common.pid import PID
-from common.state_manager import GlobalState as g
-from common.state_manager import NodeCommands
+from common.states import GlobalStates as g
+from common.states import NodeCommands
 from common.angles import quaternion_to_euler, euler_to_quaternion, gps_angles, calc_dyaw
 
 m = mavutil.mavlink
@@ -92,6 +92,100 @@ RPM_TO_RADS = math.pi/30
 _DEBUG_SKIP = -1 # TODO: remove this!!
 
 system_ids = []
+
+
+class StateManager:
+    def __init__(self, state: int, mode: int, custom_mode: int, custom_submode: int, boot: asyncio.Event) -> None:
+        """Inits the state manager."""
+        state = int(state)
+        mode = int(mode)
+        custom_mode = int(custom_mode)
+        custom_submode = int(custom_submode)
+
+        assert state in g.MAV_STATES_NOMINAL or state in g.MAV_STATES_ABNORMAL, "g input 'state' must be MAV_STATE int"
+        assert mode in g.MAV_MODES, "g input 'mode' must be MAV_MODE int"
+        assert custom_mode in g.CUSTOM_MODES, "g input 'custom_mode' must be g.CUSTOM_MODE int"
+        assert custom_submode in g.CUSTOM_SUBMODES, "g input 'custom_submode' must be g.CUSTOM_SUBMODE int"
+        
+        self.state = state
+        self.mode = mode
+        self.custom_mode = custom_mode
+        self.custom_submode = custom_submode
+        logger.warning(f"Submode set to: {g.CUSTOM_SUBMODE_NAMES[self.custom_submode]}")
+
+        self.boot = boot
+
+    def set_mode(self, mode: int, custom_mode: int, custom_submode: int) -> bool:
+        """Sets a new custom_mode and checks for compatibility."""
+        try:
+            mode = int(mode)
+            custom_mode = int(custom_mode)
+            custom_submode = int(custom_submode)
+
+            if mode == m.MAV_MODE_MANUAL_ARMED and self.custom_mode == g.CUSTOM_MODE_FLIGHT:
+                self.custom_submode = g.CUSTOM_SUBMODE_FLIGHT_MANUAL
+                logger.warning(f"Submode set to: {g.CUSTOM_SUBMODE_NAMES[self.custom_submode]}")
+                self.mode = mode
+                self.state = m.MAV_STATE_ACTIVE
+                return True
+
+            if self.custom_submode == g.CUSTOM_SUBMODE_UNINIT and custom_submode == g.CUSTOM_SUBMODE_BOOT:
+                self.boot.set()
+
+            if custom_submode != self.custom_submode:
+                assert custom_submode in g.ALLOWED_SUBMODE_CHANGES[self.custom_submode]
+                self.custom_submode = custom_submode
+                logger.warning(f"Submode set to: {g.CUSTOM_SUBMODE_NAMES[self.custom_submode]}")
+
+                if self.state not in g.MAV_STATES_ABNORMAL:
+                    self.state = g.ALLOWED_STATES[self.custom_submode][0]
+
+            if mode != self.mode:
+                if mode in g.ALLOWED_MODES[self.custom_submode]:
+                    self.mode = mode
+                else:
+                    self.mode = g.ALLOWED_MODES[self.custom_submode][0]
+
+            if custom_mode != self.custom_mode:
+                if custom_mode in g.ALLOWED_CUSTOM_MODES[self.custom_submode]:
+                    self.custom_mode = custom_mode
+                else:
+                    self.custom_mode = g.ALLOWED_CUSTOM_MODES[self.custom_submode][0]
+
+            return True
+        except AssertionError:
+            return False
+
+    def inc_mode(self) -> None:
+        """Steps the mode up one in the standard flight sequence."""
+        self.custom_submode = g.ALLOWED_SUBMODE_CHANGES[self.custom_submode][0]
+        logger.warning(f"Submode set to: {g.CUSTOM_SUBMODE_NAMES[self.custom_submode]}")
+        self.mode = g.ALLOWED_MODES[self.custom_submode][0]
+        self.custom_mode = g.ALLOWED_CUSTOM_MODES[self.custom_submode][0]
+
+        if self.state not in g.MAV_STATES_ABNORMAL:
+            self.state = g.ALLOWED_STATES[self.custom_submode][0]
+
+    def dec_mode(self) -> None:
+        """Steps the mode down one in the standard flight sequence."""
+        if self.custom_submode not in [g.CUSTOM_SUBMODE_FLIGHT_MANUAL, g.CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE, g.CUSTOM_SUBMODE_UNINIT]:
+            self.custom_submode = g.ALLOWED_SUBMODE_CHANGES[self.custom_submode][1]
+            logger.warning(f"Submode set to: {g.CUSTOM_SUBMODE_NAMES[self.custom_submode]}")
+            self.mode = g.ALLOWED_MODES[self.custom_submode][0]
+            self.custom_mode = g.ALLOWED_CUSTOM_MODES[self.custom_submode][0]
+
+            if self.state not in g.MAV_STATES_ABNORMAL:
+                self.state = g.ALLOWED_STATES[self.custom_submode][0]
+        else:
+            logger.debug("Invalid submode for StateManager.dec_mode(), running StateManager.inc_mode() instead")
+            self.inc_mode()
+
+    def set_state(self, state: int) -> None:
+        """Sets a new MAVLINK state."""
+        if (state in g.MAV_STATES_NOMINAL or state in g.MAV_STATES_ABNORMAL) and state in g.ALLOWED_STATES[self.custom_submode]:
+            self.state = state
+        else:
+            logger.debug("Invalid state passed into StateManager.set_state()")
 
 
 class RxBuffer:
@@ -1001,7 +1095,7 @@ class Navigator:
     async def boot(self) -> None:
         """Perform boot-related tasks."""
         # TODO: do boot stuff here, calibrate gps etc
-        self.main.io.node_manager.gps.active.wait()
+        await self.main.io.node_manager.gps.active.wait()
         self.append_wpt(Navigator.Waypoint(self.main.rxdata.gps.latitude, self.main.rxdata.gps.longitude, self.main.rxdata.gps.altitude, name='Start'))
         self._current_waypoint = self._waypoint_list[0]
         logger.debug(f"Navigator aligning at {self._waypoint_list[0].latitude}, {self._waypoint_list[0].longitude}")
@@ -1091,8 +1185,6 @@ class AFCS:
     """
 
     MAX_THROTTLE = 14000
-    TRANSIT_TILT_LEAD = 0.08
-    TRANSIT_THROTTLE_PAD = 0.2
 
     def __init__(self, main: 'Main') -> None:
         """Initialize the AFCS class.
@@ -1108,6 +1200,7 @@ class AFCS:
         self._vpath = 0.0
         self._dyaw = 0.0
         self._ias_scalar = 1.0
+        self._vtol_ratio = 1.0
 
         self._servos: np.ndarray = np.zeros(3, dtype=np.float16)
         self._throttles: np.ndarray = np.zeros(4, dtype=np.float16)
@@ -1151,7 +1244,10 @@ class AFCS:
         self._outv_throttle = 0.0
         self._outv_thr_mode = 0 # 0-settle 1-hover 2-launch
 
-        self._last_tilt = math.pi/2
+        self._ftilt = math.pi/2
+        self._rtilt = math.pi/2
+        self._last_tilt = 0.0
+        self._outt_pitch = 0.0
 
         # self._pid{f or v}_{from}_{to}
 
@@ -1164,21 +1260,24 @@ class AFCS:
         self._pidf_ias_thr = PID(kp=0.1, ti=0.0, td=0.0, integral_limit=1.0, maximum=1.00, minimum=0.02) # TODO
 
         self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
-        # self._pidv_xsp_rol = PID(kp=0.1, ti=0.5, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12)
-        self._pidv_xsp_rol = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-math.pi/12, maximum=math.pi/12) # TODO
-        self._pidv_rol_rls = PID(kp=0.5, ti=0.5, td=0.0, integral_limit=0.08, minimum=-math.pi/6, maximum=math.pi/6)
+        self._pidv_xsp_rol = PID(kp=0.1, ti=0.5, td=0.0, integral_limit=0.3, minimum=-math.pi/12, maximum=math.pi/12) # TODO
+        self._pidv_rol_rls = PID(kp=1.0, ti=1.0, td=0.05, integral_limit=0.08, minimum=-math.pi/6, maximum=math.pi/6)
         self._pidv_rls_out = PID(kp=0.021, ti=0.05, td=0.04, integral_limit=0.3, minimum=-0.08, maximum=0.08)
 
         self._pidv_ydp_ysp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
-        self._pidv_ysp_pit = PID(kp=-0.35, ti=0.6, td=0.0, integral_limit=0.3, minimum=-math.pi/12, maximum=math.pi/12)
-        self._pidv_pit_pts = PID(kp=0.5, ti=0.5, td=0.0, integral_limit=0.1, minimum=-math.pi/6, maximum=math.pi/6)
+        self._pidv_ysp_pit = PID(kp=-0.35, ti=0.6, td=0.0, integral_limit=0.3, minimum=-math.pi/9, maximum=math.pi/12)
+        self._pidv_pit_pts = PID(kp=0.7, ti=0.8, td=0.0, integral_limit=0.1, minimum=-math.pi/6, maximum=math.pi/6)
         self._pidv_pts_out = PID(kp=0.027, ti=0.03, td=0.06, integral_limit=1.0, minimum=-0.1, maximum=0.1)
 
         self._pidv_alt_vsp = PID(kp=0.5, ti=1.0, td=0.05, integral_limit=0.5, minimum=-1.5, maximum=2.0)
         self._pidv_vsp_out = PID(kp=0.18, ti=0.4, td=0.001, integral_limit=5.0, minimum=0.0, maximum=0.68)
 
         self._pidv_dyw_yws = PID(kp=-0.5, ti=1.0, td=0.0, integral_limit=0.2, minimum=-math.pi/6, maximum=math.pi/6)
-        self._pidv_yws_out = PID(kp=0.2, ti=0.3, td=0.01, integral_limit=0.15, minimum=-math.pi/12, maximum=math.pi/12)
+        self._pidv_yws_out = PID(kp=0.2, ti=0.3, td=0.01, integral_limit=0.15, minimum=-math.pi/24, maximum=math.pi/24)
+
+        self._pidt_dep_out = PID(kp=0.5, ti=0.0, td=0.0, integral_limit=None, minimum=None, maximum=None)
+        self._pidt_arr_out = PID(kp=0.5, ti=0.0, td=0.0, integral_limit=None, minimum=None, maximum=None)
+        # TODO: arrival needs to bleed off energy first
 
     async def boot(self) -> None:
         """Perform boot-related tasks."""
@@ -1236,6 +1335,11 @@ class AFCS:
         self._fthrottles = self._fthrottles.clip(0.0, 1.0)
         self._fthrottles *= AFCS.MAX_THROTTLE
 
+        if wipe:
+            self._outt_pitch = 0.0
+            self._ftilt = 0.0
+            self._rtilt = 0.0
+
         return self._fservos, self._fthrottles
 
     def _vtol_calc(self) -> np.ndarray:
@@ -1277,12 +1381,42 @@ class AFCS:
 
         if (att:=self.main.rxdata.att).dt > 0.0:
             if self.main.state.custom_submode in [g.CUSTOM_SUBMODE_TAKEOFF_HOVER, g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT]:
-                self._spv_yspeed = 100 # TODO
+                self._spv_yspeed = 30
+
+                if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
+                    self._last_tilt = self._outt_pitch
+                    self._outt_pitch = self._pidt_dep_out.cycle(att.pitch, 0.0, att.dt)
+                    if self._outt_pitch>self._last_tilt: # put the nose up (lower back wing a little)!
+                        self._rtilt -= self._outt_pitch-self._last_tilt
+                        self._rtilt = max(min(self._rtilt, math.pi/2), 0.0)
+                    else: # put the nose down (lower front wing a little)!
+                        self._ftilt -= self._last_tilt-self._outt_pitch
+                        self._ftilt = max(min(self._ftilt, math.pi/2), 0.0)
+                else:
+                    self._outt_pitch = 0.0
+                    self._ftilt = math.pi/2
+                    self._rtilt = math.pi/2
+            elif self.main.state.custom_submode == g.CUSTOM_SUBMODE_LANDING_TRANSIT:
+                self._spv_yspeed = 0
+
+                self._last_tilt = self._outt_pitch
+                self._outt_pitch = self._pidt_arr_out.cycle(att.pitch, 0.0, att.dt)
+                if self._outt_pitch>self._last_tilt: # put the nose up (raise front wing a little)!
+                    self._ftilt += self._outt_pitch-self._last_tilt
+                    self._ftilt = max(min(self._ftilt, math.pi/2), 0.0)
+                else: # put the nose down (raise back wing a little)!
+                    self._rtilt += self._last_tilt-self._outt_pitch
+                    self._rtilt = max(min(self._rtilt, math.pi/2), 0.0)
+            else:
+                self._outt_pitch = 0.0
+                self._ftilt = 0.0
+                self._rtilt = 0.0
+    
             self._outv_throttle = self._pidv_vsp_out.cycle(att.zspeed, self._spv_vs, att.dt)
-            self._spv_roll = self._pidv_xsp_rol.cycle(att.xspeed, self._spv_xspeed, gps.dt)
-            self._spv_pitch = self._pidv_ysp_pit.cycle(att.yspeed, self._spv_yspeed, gps.dt)
+            self._spv_roll = self._pidv_xsp_rol.cycle(att.xspeed, self._spv_xspeed, att.dt)
+            self._spv_pitch = self._pidv_ysp_pit.cycle(att.yspeed, self._spv_yspeed, att.dt)
             self._spv_rollspeed = self._pidv_rol_rls.cycle(att.roll, self._spv_roll, att.dt)
-            # self._spv_pitchspeed = self._pidv_pit_pts.cycle(att.pitch, self._spv_pitch, att.dt)
+            self._spv_pitchspeed = self._pidv_pit_pts.cycle(att.pitch, self._spv_pitch, att.dt)
             self._outv_roll = self._pidv_rls_out.cycle(att.rollspeed, self._spv_rollspeed, att.dt)
             self._outv_pitch = self._pidv_pts_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt)
 
@@ -1300,7 +1434,7 @@ class AFCS:
                 self._outv_throttle = 0.63
                 self._pidv_vsp_out._integral = 3.2
 
-        t1 = self._outv_pitch + self._outv_throttle # TODO: test no roll, maybe move roll to t1/t2
+        t1 = self._outv_pitch + self._outv_throttle
         t2 = self._outv_pitch + self._outv_throttle
         t3 = -self._outv_pitch + self._outv_roll + self._outv_throttle
         t4 = -self._outv_pitch - self._outv_roll + self._outv_throttle
@@ -1316,14 +1450,14 @@ class AFCS:
 
     @async_loop_decorator()
     async def _afcs_run_loop(self) -> None:
+        self._vtol_ratio = 1 - (self.main.rxdata.ias.ias/30) # 1 is VTOL
         try:
             self._ias_scalar = 1296 / (self.main.rxdata.ias.ias**2)
-            self._vtol_ratio = 1 - (self.main.rxdata.ias.ias/60) # 1 is VTOL
         except ZeroDivisionError:
             self._ias_scalar = 1.0
 
-        self._ias_scalar = min(self._ias_scalar, 10.0)
         self._vtol_ratio = max(min(self._vtol_ratio, 1.0), 0.0)
+        self._ias_scalar = min(self._ias_scalar, 10.0)
 
         # TODO: setpoints
 
@@ -1332,21 +1466,19 @@ class AFCS:
                 # VTOL
                 self._servos, self._throttles = self._vtol_calc()
             case g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
-                # Transit modes
+                # Departure transition
                 fservos, fthrottles = self._flight_calc(wipe=False)
-                vservos, vthrottles = self._vtol_calc()
-                self._servos[2] = ((math.pi/2) - AFCS.TRANSIT_TILT_LEAD) * (self._vtol_ratio)
-                self._servos[:2] = (1-self._vtol_ratio)*fservos[:2] + self._vtol_ratio*vservos[:2]
+                _, vthrottles = self._vtol_calc()
+                self._servos[2] = self._ftilt
+                self._servos[:2] = (1-self._vtol_ratio)*fservos[:2] + self._rtilt
                 self._throttles = (1-self._vtol_ratio)*fthrottles + self._vtol_ratio*vthrottles
-                self._throttles*=(AFCS.TRANSIT_THROTTLE_PAD+1)
             case g.CUSTOM_SUBMODE_LANDING_TRANSIT:
-                # Transit modes
+                # Arrival transition
                 fservos, fthrottles = self._flight_calc(wipe=False)
-                vservos, vthrottles = self._vtol_calc()
-                self._servos[2] = (math.pi/2) * (self._vtol_ratio) + AFCS.TRANSIT_TILT_LEAD*(1-self._vtol_ratio)
-                self._servos[:2] = (1-self._vtol_ratio)*fservos[:2] + self._vtol_ratio*vservos[:2]
+                _, vthrottles = self._vtol_calc()
+                self._servos[2] = self._ftilt
+                self._servos[:2] = (1-self._vtol_ratio)*fservos[:2] + self._rtilt
                 self._throttles = (1-self._vtol_ratio)*fthrottles + self._vtol_ratio*vthrottles
-                self._throttles*=(AFCS.TRANSIT_THROTTLE_PAD+1)
             case g.CUSTOM_SUBMODE_FLIGHT_NORMAL | g.CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE:
                 # Normal flight
                 self._servos, self._throttles = self._flight_calc()
@@ -1374,8 +1506,6 @@ class AFCS:
         self.main.txdata.esc2 = self._throttles[1]
         self.main.txdata.esc3 = self._throttles[2]
         self.main.txdata.esc4 = self._throttles[3]
-
-        self._last_tilt = self._servos[2]
 
         await asyncio.sleep(0)
 
@@ -1457,11 +1587,12 @@ class CommManager:
 
         self._mavlogger = logging.getLogger(f'UAV{self.main.systemid}')
         self._mavlogger.addHandler(_filehandler)
+        self._mavlogger.addHandler(streamhandler)
         self._mavlogger.setLevel(MAVLOG_TX)
 
-        self._mavlogger.log(MAVLOG_TX, "test tx")
-        self._mavlogger.log(MAVLOG_RX, "test rx")
-        self._mavlogger.log(MAVLOG_LOG, "test log")
+        self._mavlogger.log(MAVLOG_TX, "Test TX")
+        self._mavlogger.log(MAVLOG_RX, "Test RX")
+        self._mavlogger.log(MAVLOG_LOG, "Test Log")
 
         self._gcs_id = None
         self._mav_conn_gcs: mavutil.mavfile = mavutil.mavlink_connection(self.main.config.get('mavlink', 'uav_gcs_conn'), source_system=self.main.systemid, source_component=m.MAV_COMP_ID_AUTOPILOT1, input=False, autoreconnect=True)
@@ -1645,13 +1776,9 @@ class CommManager:
                     # self.main.afcs._pidv_rol_rls.reset()
                     # self.main.afcs._pidv_pit_pts.reset()
                     # self.main.afcs._pidv_dyw_yws.reset()
-                    # self.main.afcs._pidv_alt_vsp.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
-                    # self.main.afcs._pidv_dyw_yws.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
-                    self.main.afcs._pidv_pts_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
-                    # self.main.afcs._pidv_pts_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    self.main.afcs._pidt_arr_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
                     # self.main.afcs._pidv_rol_rls.set(kp=msg.param4)#, td=msg.param2)
-                    # self.main.afcs._pidv_pit_pts.set(kp=msg.param4)#, td=msg.param4)
-                    self.main.afcs._spv_pitchspeed=msg.param4
+                    # self.main.afcs._rtilt=math.radians(msg.param2)
                     logger.info(f"New PID state: {msg.param1:.4f}, {msg.param2:.4f}, {msg.param3:.4f} @ {msg.param4:.4f}")
                 # TEMPORARY SCREENSHOT
                 case 1:
@@ -1848,12 +1975,12 @@ class CommManager:
                     self._cam_id,
                     m.MAV_COMP_ID_CAMERA,
                     m.GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME,
-                    euler_to_quaternion(0.0, math.radians(msg.param1), math.radians(msg.param2)),
+                    euler_to_quaternion(0.0, math.radians(-90), math.radians(0)),
                     0.0, 0.0, 0.0 # angular velocities
                 )
         except AttributeError:
             pass
-        
+
         self._mavlogger.log(MAVLOG_DEBUG, "TX Heartbeat")
         await asyncio.sleep(1 / self._heartbeatfreq)
 
@@ -1933,7 +2060,7 @@ class Main:
         self.rxdata = RxBuffer()
         self.txdata = TxBuffer()
 
-        self.state = g(m.MAV_STATE_UNINIT, m.MAV_MODE_PREFLIGHT, g.CUSTOM_MODE_UNINIT, g.CUSTOM_SUBMODE_UNINIT, self.boot)
+        self.state = StateManager(m.MAV_STATE_UNINIT, m.MAV_MODE_PREFLIGHT, g.CUSTOM_MODE_UNINIT, g.CUSTOM_SUBMODE_UNINIT, self.boot)
 
     async def _graph(self, name: str = '0.0', freq: int = 10) -> None:
         """Asynchronously collect and graph data.
