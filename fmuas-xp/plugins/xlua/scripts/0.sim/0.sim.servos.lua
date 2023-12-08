@@ -216,40 +216,26 @@ function SERVOS_after_physics()
 
     servo_noiser()
 
-    if uasDR_SERVOS_direct_mode == 1 then
-        pitch_deflection_raw = simDR_axes_values_array[simSET_pitch_axis] - 0.5
-        -- pitch_deflection = -0.75 + 3*math.abs(pitch_deflection_raw)
-        -- pitch_deflection = -(((uasDR_AFCS_elevon1 + uasDR_AFCS_elevon2) / 2) - 45) / 60.0
-        roll_deflection_raw = simDR_axes_values_array[simSET_roll_axis] - 0.5
-        -- roll_deflection = 0.0
-        -- roll_deflection = (uasDR_AFCS_elevon1 - uasDR_AFCS_elevon2) / 120.0
-        throttle_raw = 1 - simDR_axes_values_array[simSET_throttle_axis]
+    pitch_deflection_raw = simDR_axes_values_array[simSET_pitch_axis] - 0.5
+    -- pitch_deflection = -0.75 + 3*math.abs(pitch_deflection_raw)
+    -- pitch_deflection = -(((uasDR_AFCS_elevon1 + uasDR_AFCS_elevon2) / 2) - 45) / 60.0
+    roll_deflection_raw = simDR_axes_values_array[simSET_roll_axis] - 0.5
+    -- roll_deflection = 0.0
+    -- roll_deflection = (uasDR_AFCS_elevon1 - uasDR_AFCS_elevon2) / 120.0
+    throttle_raw = 1 - simDR_axes_values_array[simSET_throttle_axis]
 
-        rpm_cmd1 = uasDR_AFCS_rpm1-- + (14000*throttle_raw)
-        rpm_cmd2 = uasDR_AFCS_rpm2-- + (14000*throttle_raw)
-        rpm_cmd3 = uasDR_AFCS_rpm3-- + (14000*throttle_raw)
-        rpm_cmd4 = uasDR_AFCS_rpm4-- + (14000*throttle_raw)
+    rpm_cmd1 = uasDR_AFCS_rpm1-- + (14000*throttle_raw)
+    rpm_cmd2 = uasDR_AFCS_rpm2-- + (14000*throttle_raw)
+    rpm_cmd3 = uasDR_AFCS_rpm3-- + (14000*throttle_raw)
+    rpm_cmd4 = uasDR_AFCS_rpm4-- + (14000*throttle_raw)
 
-        tilt_cmd = uasDR_AFCS_wing_tilt / 90.0
-        -- tilt_cmd = 1 - 2*math.abs(roll_deflection_raw)
+    tilt_cmd = uasDR_AFCS_wing_tilt / 90.0
+    -- tilt_cmd = 1 - 2*math.abs(roll_deflection_raw)
 
-        pitch_deflection = -(((uasDR_AFCS_elevon1 + uasDR_AFCS_elevon2) / 2) - 45) / 60.0
-        roll_deflection = (uasDR_AFCS_elevon1 - uasDR_AFCS_elevon2) / 120.0
+    pitch_deflection = -(((uasDR_AFCS_elevon1 + uasDR_AFCS_elevon2) / 2) - 45) / 60.0
+    roll_deflection = (uasDR_AFCS_elevon1 - uasDR_AFCS_elevon2) / 120.0
 
-    else
-
-        rpm_cmd1 = uasDR_AFCS_rpm1
-        rpm_cmd2 = uasDR_AFCS_rpm2
-        rpm_cmd3 = uasDR_AFCS_rpm3
-        rpm_cmd4 = uasDR_AFCS_rpm4
-
-        tilt_cmd = uasDR_AFCS_wing_tilt / 90.0
-
-        pitch_deflection = -(((uasDR_AFCS_elevon1 + uasDR_AFCS_elevon2) / 2) - 45) / 60.0
-        roll_deflection = (uasDR_AFCS_elevon1 - uasDR_AFCS_elevon2) / 120.0
-
-    end
-
+    -- effective section
     pitch_deflection = math.min(pitch_deflection, prev_pitch_deflection + (uasSET_SERVOS_rate_limiter * SIM_PERIOD))
     roll_deflection = math.min(roll_deflection, prev_roll_deflection + (uasSET_SERVOS_rate_limiter * SIM_PERIOD))
     pitch_deflection = math.max(pitch_deflection, prev_pitch_deflection - (uasSET_SERVOS_rate_limiter * SIM_PERIOD))
@@ -278,10 +264,17 @@ function SERVOS_after_physics()
     rpm_cmd3 = math.max(math.min(rpm_cmd3, 14000), 0)
     rpm_cmd4 = math.max(math.min(rpm_cmd4, 14000), 0)
 
-    simDR_throttle1 = esc_pid(simDR_prop_speeds[0], rpm_cmd1)
-    simDR_throttle2 = esc_pid(simDR_prop_speeds[1], rpm_cmd2)
-    simDR_throttle3 = esc_pid(simDR_prop_speeds[2], rpm_cmd3)
-    simDR_throttle4 = esc_pid(simDR_prop_speeds[3], rpm_cmd4)
+    if uasDR_SERVOS_wing_stow_cmd == 0 then
+        simDR_throttle1 = esc_pid(simDR_prop_speeds[0], rpm_cmd1)
+        simDR_throttle2 = esc_pid(simDR_prop_speeds[1], rpm_cmd2)
+        simDR_throttle3 = esc_pid(simDR_prop_speeds[2], rpm_cmd3)
+        simDR_throttle4 = esc_pid(simDR_prop_speeds[3], rpm_cmd4)
+    else
+        simDR_throttle1 = 0.0
+        simDR_throttle2 = 0.0
+        simDR_throttle3 = 0.0
+        simDR_throttle4 = 0.0
+    end
 
     if simDR_radalt<5 then
         simDR_gear = 1.0
