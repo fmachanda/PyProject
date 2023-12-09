@@ -1585,6 +1585,8 @@ async def main():
 
     try:
         await asyncio.gather(*close_tasks)
+    except pycyphal.presentation._port._error.PortClosedError:
+        pass
     except asyncio.exceptions.CancelledError:
         logger.error("Instance closed prematurely")
     else:

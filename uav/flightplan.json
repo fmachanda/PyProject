@@ -1,0 +1,10 @@
+{
+    "waypoints": [
+        {"lat": 37.7749, "long": -122.4194, "alt_m_agl": 100},
+        {"lat": 34.0522, "long": -118.2437, "alt_m_agl": 150},
+        {"lat": 40.7128, "long": -74.0060, "alt_m_agl": 0}
+    ],
+
+    "hover_alt_m_agl": 100,
+    "cruise_ias": 70
+}

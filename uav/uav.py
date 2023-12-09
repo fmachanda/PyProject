@@ -12,6 +12,7 @@ See https://github.com/fmachanda/fmuas-main for more details.
 
 import argparse
 import asyncio
+import json
 import logging
 import math
 import os
@@ -89,7 +90,7 @@ HEARTBEAT_TIMEOUT = 2.0
 
 RPM_TO_RADS = math.pi/30
 
-_DEBUG_SKIP = -1 # TODO: remove this!!
+DEBUG_SKIP = -1 # TODO: remove this!!
 
 system_ids = []
 
@@ -767,6 +768,7 @@ class UAVCANManager:
 
         self._freq = freq
         self._use_gps_time = False
+        self.boot = asyncio.Event()
         
         logger.info("Initializing UAVCAN Node...")
 
@@ -926,7 +928,7 @@ class UAVCANManager:
                     uavcan.node.ExecuteCommand_1.Response.STATUS_BAD_COMMAND
                 )
 
-    async def boot(self) -> None:
+    async def boot_proc(self) -> None:
         """Perform boot-related tasks."""
         # TODO: do boot stuff here, maybe read a different .ini?
         logger.info("Waiting for components...")
@@ -967,19 +969,24 @@ class UAVCANManager:
         else:
             logger.debug("GPS booted")
 
+        self.boot.set()
+
     @async_loop_decorator()
     async def _mainio_run_loop(self) -> None:
-        await self._pub_servo_readiness.publish(self.main.txdata.servo_readiness)
-        await self._pub_esc_readiness.publish(self.main.txdata.esc_readiness)
+        try:
+            await self._pub_servo_readiness.publish(self.main.txdata.servo_readiness)
+            await self._pub_esc_readiness.publish(self.main.txdata.esc_readiness)
 
-        await self._pub_elevon1_sp.publish(self.main.txdata.elevon1)
-        await self._pub_elevon2_sp.publish(self.main.txdata.elevon2)
-        await self._pub_tilt_sp.publish(self.main.txdata.tilt)
+            await self._pub_elevon1_sp.publish(self.main.txdata.elevon1)
+            await self._pub_elevon2_sp.publish(self.main.txdata.elevon2)
+            await self._pub_tilt_sp.publish(self.main.txdata.tilt)
 
-        await self._pub_esc1_sp.publish(self.main.txdata.esc1)
-        await self._pub_esc2_sp.publish(self.main.txdata.esc2)
-        await self._pub_esc3_sp.publish(self.main.txdata.esc3)
-        await self._pub_esc4_sp.publish(self.main.txdata.esc4)
+            await self._pub_esc1_sp.publish(self.main.txdata.esc1)
+            await self._pub_esc2_sp.publish(self.main.txdata.esc2)
+            await self._pub_esc3_sp.publish(self.main.txdata.esc3)
+            await self._pub_esc4_sp.publish(self.main.txdata.esc4)
+        except pycyphal.presentation._port._error.PortClosedError:
+            pass
 
         await asyncio.sleep(1 / self._freq)
 
@@ -1088,62 +1095,72 @@ class Navigator:
 
         self.main = main
         self._waypoint_list: list[Navigator.Waypoint] = [] # Navigating from waypoint 0 to waypoint 1
-        self._current_waypoint = None
         self.commanded_heading = 0.0 # DEGREES
-        self.commanded_altitude = self.main.afcs.spf_altitude
+        self.commanded_altitude = self.main.afcs._sp_altitude
+        self.distance = 0.0
 
-    async def boot(self) -> None:
+        self.boot = asyncio.Event()
+
+    async def boot_proc(self) -> None:
         """Perform boot-related tasks."""
         # TODO: do boot stuff here, calibrate gps etc
         await self.main.io.node_manager.gps.active.wait()
         self.append_wpt(Navigator.Waypoint(self.main.rxdata.gps.latitude, self.main.rxdata.gps.longitude, self.main.rxdata.gps.altitude, name='Start'))
-        self._current_waypoint = self._waypoint_list[0]
         logger.debug(f"Navigator aligning at {self._waypoint_list[0].latitude}, {self._waypoint_list[0].longitude}")
-        # TODO: load flight plan from a file
-        await asyncio.sleep(0)
+
+        with open('uav/flightplan.json', 'r') as fpl_file:
+            self._fpl = json.load(fpl_file)
+        waypoints = self._fpl['waypoints']
+        self.append_wpt(*[Navigator.Waypoint(wpt['lat'], wpt['long'], wpt['alt_m_agl']) for wpt in waypoints])
+        self.hover_alt = self._fpl['hover_alt_m_agl']
+        self.cruise_ias = self._fpl['cruise_ias']
+        self.landing_wpt = self._waypoint_list[-1]
+
+        self.boot.set()
 
     def append_wpt(self, *wpts: Waypoint) -> None:
         """Add a Waypoint to the end of the flight plan."""
         for wpt in wpts:
             self._waypoint_list.append(wpt)
 
-    def next_wpt(self, wpt: Waypoint) -> None:
+    def direct_wpt(self, wpt: Waypoint) -> None:
         """Direct to a waypoint."""
         self._waypoint_list.insert(1, wpt)
 
-    def calc_heading(self) -> float:
-        """"Determine the desired heading to the next waypoint."""
+    def next_wpt(self) -> None:
+        """Increment flight plan wpt."""
         if len(self._waypoint_list)>1:
-            lata = self.main.rxdata.gps.latitude
-            latb = self._waypoint_list[1].latitude
-            dlon = self._waypoint_list[1].longitude - self.main.rxdata.gps.longitude
-
-            x = math.cos(latb) * math.sin(dlon)
-            y = math.cos(lata)*math.sin(latb) - math.sin(lata)*math.cos(latb)*math.cos(dlon)
-            
-            self.commanded_heading = -math.degrees(math.atan2(x, y))
-            self.commanded_heading %= 360.0
-        else:
-            self.commanded_heading = self.main.rxdata.att.yaw + 15.0 # Enter right hand continuous turn
-            self.commanded_heading %= 360.0
-        return self.commanded_heading # DEGREES
+            self._waypoint_list.pop(0, None)
     
-    def calc_altitude(self) -> float:
+    def _calc_altitude(self) -> float:
         """Determine the desired altitude from the next waypoint."""
         if len(self._waypoint_list)>1:
-            self.commanded_altitude = self._waypoint_list[1].altitude if self._waypoint_list[1].altitude is not None else self.main.afcs.spf_altitude
+            self.commanded_altitude = self._waypoint_list[1].altitude if self._waypoint_list[1].altitude is not None else self.main.afcs._sp_altitude
         else:
             # TODO
             pass
         return self.commanded_altitude
+    
+    def _detect_change(self) -> None:
+        if self.distance<10 and self.main.state.custom_submode==g.CUSTOM_SUBMODE_FLIGHT_NORMAL:
+            self.next_wpt
 
     @async_loop_decorator(close=False)
     async def _navigator_run_loop(self) -> None:
         """Set afcs setpoints based on flight plan."""
         # TODO: navigator modes, safety checks
-        self.main.afcs.spf_heading = math.radians(self.calc_heading())
-        self.main.afcs.spf_altitude = self.calc_altitude()
-        await asyncio.sleep(0)
+        hdg, _, self.distance = gps_angles(
+            self.main.rxdata.gps.latitude,
+            self.main.rxdata.gps.longitude,
+            self.main.rxdata.alt.altitude,
+            self._waypoint_list[1].latitude,
+            self._waypoint_list[1].longitude,
+            self._waypoint_list[1].altitude
+        )
+        self.commanded_heading = math.radians(hdg)
+        self._calc_altitude()
+        # check for next wpt, if yes make sure to reset afcs.auto_sp
+        await asyncio.sleep(0.1)
 
     async def run(self) -> None:
         """Calculate desired heading from flight plan."""
@@ -1196,6 +1213,7 @@ class AFCS:
         """
 
         self.main = main
+        self.boot = asyncio.Event()
 
         self._vpath = 0.0
         self._dyaw = 0.0
@@ -1211,17 +1229,16 @@ class AFCS:
         self._fthrottles = np.zeros(4, dtype=np.float16) # throttles*4
         self._vthrottles = np.zeros(4, dtype=np.float16)
 
-        self.spf_altitude = 100.0
-        self.spf_heading = 0.0
-        self.spf_ias = 40.0
+        self.auto_sp = True
+
+        self._spf_ias = 40.0
+        self._sp_altitude = 100.0
+        self._sp_heading = 0.0
 
         self._spf_vpath = 0.0
         self._spf_aoa = 0.1
         self._spf_roll = 0.0
         self._spf_rollspeed = 0.0
-
-        self.spv_altitude = 100.0
-        self.spv_heading = 0.0
 
         self._spv_xspeed = 0.0
         self._spv_yspeed = 0.0
@@ -1279,17 +1296,15 @@ class AFCS:
         self._pidt_arr_out = PID(kp=0.5, ti=0.0, td=0.0, integral_limit=None, minimum=None, maximum=None)
         # TODO: arrival needs to bleed off energy first
 
-    async def boot(self) -> None:
+    async def boot_proc(self) -> None:
         """Perform boot-related tasks."""
-        # TODO: do boot stuff here, maybe read a different .ini?
-        self.main.state.inc_mode()
-        await asyncio.sleep(0)
+        await self.main.navigator.boot.wait()
 
     #region Calculations
     def _flight_calc(self, wipe: bool = True) -> np.ndarray:
         """Calculate flight servo commands from sensors."""
         if (alt:=self.main.rxdata.alt).dt > 0.0:
-            self._spf_vpath = self._pidf_alt_vpa.cycle(alt.altitude, self.spf_altitude, alt.dt)
+            self._spf_vpath = self._pidf_alt_vpa.cycle(alt.altitude, self._sp_altitude, alt.dt)
             self.main.rxdata.alt.dt = 0.0 if wipe else alt.dt
 
         if any([(att:=self.main.rxdata.att).dt > 0.0, (aoa:=self.main.rxdata.aoa).dt > 0.0]):
@@ -1305,7 +1320,7 @@ class AFCS:
             self._throttle_vpa_corr = 4*(self._spf_vpath-self._vpath) if self._vpath<self._spf_vpath-0.05 else 0.0
 
         if (att:=self.main.rxdata.att).dt > 0.0:
-            self._dyaw = calc_dyaw(att.yaw, self.spf_heading)
+            self._dyaw = calc_dyaw(att.yaw, self._sp_heading)
 
             self._spf_roll = self._pidf_dyw_rol.cycle(self._dyaw, 0.0, att.dt)
             self._spf_rollspeed = self._pidf_rol_rls.cycle(att.roll, self._spf_roll, att.dt)
@@ -1320,7 +1335,7 @@ class AFCS:
             self.main.rxdata.aoa.dt = 0.0 if wipe else aoa.dt
 
         if (ias:=self.main.rxdata.ias).dt > 0.0:
-            self._outf_throttle_ias = self._pidf_ias_thr.cycle(ias.ias, self.spf_ias, ias.dt)
+            self._outf_throttle_ias = self._pidf_ias_thr.cycle(ias.ias, self._spf_ias, ias.dt)
             self.main.rxdata.ias.dt = 0.0 if wipe else ias.dt
 
         self._fservos[0] = self._outf_pitch + self._outf_roll
@@ -1345,7 +1360,7 @@ class AFCS:
     def _vtol_calc(self) -> np.ndarray:
         """Calculate VTOL throttle commands from sensors."""
         if (alt:=self.main.rxdata.alt).dt > 0.0:
-            self._spv_vs = self._pidv_alt_vsp.cycle(alt.altitude, self.spv_altitude, alt.dt)
+            self._spv_vs = self._pidv_alt_vsp.cycle(alt.altitude, self._sp_altitude, alt.dt)
             self._outv_thr_mode = 1
             if alt.altitude < 0.5:
                 if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_ASCENT:
@@ -1380,7 +1395,7 @@ class AFCS:
             self.main.rxdata.gps.dt = 0.0
 
         if (att:=self.main.rxdata.att).dt > 0.0:
-            if self.main.state.custom_submode in [g.CUSTOM_SUBMODE_TAKEOFF_HOVER, g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT]:
+            if self.main.state.custom_submode==g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
                 self._spv_yspeed = 30
 
                 if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
@@ -1411,6 +1426,9 @@ class AFCS:
                 self._outt_pitch = 0.0
                 self._ftilt = 0.0
                 self._rtilt = 0.0
+
+            if self.main.state.custom_submode in [g.CUSTOM_SUBMODE_TAKEOFF_HOVER, g.CUSTOM_SUBMODE_LANDING_HOVER]:
+                self._spv_vs = 0.0
     
             self._outv_throttle = self._pidv_vsp_out.cycle(att.zspeed, self._spv_vs, att.dt)
             self._spv_roll = self._pidv_xsp_rol.cycle(att.xspeed, self._spv_xspeed, att.dt)
@@ -1420,7 +1438,7 @@ class AFCS:
             self._outv_roll = self._pidv_rls_out.cycle(att.rollspeed, self._spv_rollspeed, att.dt)
             self._outv_pitch = self._pidv_pts_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt)
 
-            self._dyaw = calc_dyaw(att.yaw, self.spv_heading)
+            self._dyaw = calc_dyaw(att.yaw, self._sp_heading)
             self._spv_yawspeed = self._pidv_dyw_yws.cycle(self._dyaw, 0.0, att.dt)
             self._outv_yaw = self._pidv_yws_out.cycle(att.yawspeed, self._spv_yawspeed, att.dt)
             self.main.rxdata.att.dt = 0.0
@@ -1459,8 +1477,21 @@ class AFCS:
         self._vtol_ratio = max(min(self._vtol_ratio, 1.0), 0.0)
         self._ias_scalar = min(self._ias_scalar, 10.0)
 
-        # TODO: setpoints
+        # Setpoints
+        if self.auto_sp:
+            match self.main.state.custom_submode:
+                case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT | g.CUSTOM_SUBMODE_TAKEOFF_HOVER | g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT | g.CUSTOM_SUBMODE_LANDING_TRANSIT | g.CUSTOM_SUBMODE_LANDING_HOVER:
+                    self._sp_altitude = self.main.navigator.hover_alt
+                    self._sp_heading = self.main.navigator.commanded_heading
+                    self._spf_ias = self.main.navigator.cruise_ias
+                case g.CUSTOM_SUBMODE_FLIGHT_NORMAL:
+                    self._sp_altitude = self.main.navigator.commanded_altitude
+                    self._sp_heading = self.main.navigator.commanded_heading
+                    self._spf_ias = self.main.navigator.cruise_ias
+                case _:
+                    self._sp_altitude = 0.0
 
+        # Controls
         match self.main.state.custom_submode:
             case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT | g.CUSTOM_SUBMODE_TAKEOFF_HOVER | g.CUSTOM_SUBMODE_LANDING_DESCENT | g.CUSTOM_SUBMODE_LANDING_HOVER:
                 # VTOL
@@ -1491,6 +1522,32 @@ class AFCS:
                 # Safed
                 self._servos = np.array([math.pi/2, math.pi/2, math.pi/2, math.pi/2], dtype=np.float16)
                 self._throttles = np.zeros(4, dtype=np.float16)
+
+        # Mode increments
+        match self.main.state.custom_submode:
+            case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT:
+                if self.main.rxdata.alt.altitude > self.main.navigator.hover_alt-3:
+                    self.main.state.inc_mode()
+            case g.CUSTOM_SUBMODE_TAKEOFF_HOVER:
+                if self.main.rxdata.att.yspeed > 3:
+                    self.main.state.inc_mode()
+            case g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
+                if self._vtol_ratio==0 and self.ftilt==0 and self.rtilt==0:
+                    self.main.state.inc_mode()
+            case g.CUSTOM_SUBMODE_LANDING_TRANSIT:
+                # TODO
+                if False:
+                    self.main.state.inc_mode()
+            case g.CUSTOM_SUBMODE_LANDING_HOVER:
+                # TODO
+                if False:
+                    self.main.state.inc_mode()
+            case g.CUSTOM_SUBMODE_LANDING_DESCENT:
+                # TODO
+                if False:
+                    self.main.state.inc_mode()
+            case g.CUSTOM_SUBMODE_FLIGHT_NORMAL | g.CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE:
+                pass # TODO: terr avoidance check
 
         self._servos[:2] = np.clip(self._servos[:2], -math.pi/12, 7*math.pi/12)
         self._servos[2] = np.clip(self._servos[2], 0.0, math.pi/2)
@@ -1708,8 +1765,7 @@ class CommManager:
                 # DO_CHANGE_ALTITUDE
                 case m.MAV_CMD_DO_CHANGE_ALTITUDE:
                     try:
-                        self.main.afcs.spf_altitude = msg.param1 # TODO add checks!
-                        self.main.afcs.spv_altitude = msg.param1 # TODO add checks!
+                        self.main.afcs.sp_altitude = msg.param1 # TODO add checks!
                         self._mavlogger.log(MAVLOG_RX, f"GCS commanded altitude setpoint to {msg.param1}")
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
                     except AttributeError:
@@ -1717,7 +1773,7 @@ class CommManager:
                 # DO_CHANGE_SPEED
                 case m.MAV_CMD_DO_CHANGE_SPEED:
                     try:
-                        self.main.afcs.spf_ias = msg.param2 # TODO add checks!
+                        self.main.afcs._spf_ias = msg.param2 # TODO add checks!
                         self._mavlogger.log(MAVLOG_RX, f"GCS commanded speed setpoint to {msg.param2}")
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_SPEED, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
                     except AttributeError:
@@ -1763,7 +1819,7 @@ class CommManager:
             match msg.command:
                 # DO_REPOSITION
                 case m.MAV_CMD_DO_REPOSITION:
-                    self.main.navigator.next_wpt(
+                    self.main.navigator.direct_wpt(
                         Navigator.Waypoint(msg.x / 1e7, msg.y / 1e7, msg.z) if msg.z > 0.1 else Navigator.Waypoint(msg.x / 1e7, msg.y / 1e7)
                     )
 
@@ -2144,7 +2200,7 @@ class Main:
         logger.warning(f"Creating instance #{self.systemid}, waiting for boot command from GCS")
 
         try:
-            if _DEBUG_SKIP>-1:
+            if DEBUG_SKIP>-1:
                 self.boot.set()
                 self.state.inc_mode()
             await self.boot.wait()
@@ -2157,13 +2213,14 @@ class Main:
         logger.warning(f"Booting instance #{self.systemid}...")
 
         boot_tasks = [
-            asyncio.create_task(self.afcs.boot()),
-            asyncio.create_task(self.navigator.boot()),
-            asyncio.create_task(self.io.boot()),
+            asyncio.create_task(self.afcs.boot_proc()),
+            asyncio.create_task(self.navigator.boot_proc()),
+            asyncio.create_task(self.io.boot_proc()),
         ]
 
         try:
             await asyncio.gather(*boot_tasks)
+            self.state.inc_mode()
         except asyncio.exceptions.CancelledError:
             comm_manager.cancel()
             await asyncio.sleep(0)
@@ -2172,7 +2229,7 @@ class Main:
 
         logger.warning(f"Boot successful on #{self.systemid}")
 
-        for _ in range(_DEBUG_SKIP):
+        for _ in range(DEBUG_SKIP):
             self.state.inc_mode()
 
         tasks = [
@@ -2203,6 +2260,8 @@ class Main:
 
         try:
             await asyncio.gather(*close_tasks)
+        except pycyphal.presentation._port._error.PortClosedError:
+            pass
         except asyncio.exceptions.CancelledError:
             logger.error("Instance closed prematurely")
         else:
@@ -2221,12 +2280,14 @@ if __name__ == '__main__':
     parser.add_argument("-s", "--skip", nargs='?', default='-1', const='0', help="Skip number of modes on startup")
     args = parser.parse_args()
 
-    whitelisted = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._")
+    whitelisted = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
     if args.graph:
         assert all(char in whitelisted for char in args.graph) and '__' not in args.graph
     if args.print:
         assert all(char in whitelisted for char in args.print) and '__' not in args.print
+    if args.skip:
+        assert all(char in whitelisted for char in args.skip) and '__' not in args.skip
 
-    _DEBUG_SKIP = int(args.skip)
+    DEBUG_SKIP = int(args.skip)
 
     asyncio.run(main(args.graph, args.print))
