@@ -1,6 +1,6 @@
 I
 10 Version
-_hobs_time 121544.698632
+_hobs_time 123940.319856
 _iql_view_type_0 v_3dc
 _iql_pe_x_0 -0.000043
 _iql_pe_y_0 0.189025
@@ -37,8 +37,8 @@ _wind_display_2 0
 _inset_map_2 1
 _dg_lat_adjust_0 0.000000
 _dg_lat_adjust_1 0.000000
-_dg_lat_adjust_2 41.579525
-_dg_lat_adjust_3 41.579525
-_dg_lat_adjust_4 41.579525
-_dg_lat_adjust_5 41.579525
+_dg_lat_adjust_2 41.590199
+_dg_lat_adjust_3 41.590199
+_dg_lat_adjust_4 41.590199
+_dg_lat_adjust_5 41.590199
 atc/_acf_tailnumber_ N126RC

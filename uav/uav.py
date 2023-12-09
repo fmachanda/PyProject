@@ -1951,7 +1951,6 @@ class CommManager:
             elif msg.get_type() == 'CAMERA_IMAGE_CAPTURED' and msg.get_srcSystem()==self._cam_id:
                 logger.info(f"Proccesing image {msg.file_url}")
 
-                task = asyncio.create_task()
                 if out := await img.find_h(msg.file_url, display=False):
                     dx, dy, confidence, image = out
                     logger.info(f"'H' detected in {msg.file_url} at ({dx},{dy}) with a confidence of {confidence:.2f}.")

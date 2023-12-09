@@ -10140,7 +10140,7 @@ P _body/1/_locked/9,9 0
 P _body/1/_locked/i_count 20
 P _body/1/_locked/j_count 18
 P _body/1/_part_area_rule 1.000000000
-P _body/1/_part_cd 0.088000000
+P _body/1/_part_cd 0.167999998
 P _body/1/_part_phi 0.000000000
 P _body/1/_part_psi 0.000000000
 P _body/1/_part_rad 0.159999996
@@ -11611,7 +11611,7 @@ P _body/10/_locked/9,9 0
 P _body/10/_locked/i_count 20
 P _body/10/_locked/j_count 18
 P _body/10/_part_area_rule 1.000000000
-P _body/10/_part_cd 0.177000001
+P _body/10/_part_cd 0.187000006
 P _body/10/_part_phi 0.000000000
 P _body/10/_part_psi 0.000000000
 P _body/10/_part_rad 0.119999997
@@ -13082,7 +13082,7 @@ P _body/11/_locked/9,9 0
 P _body/11/_locked/i_count 20
 P _body/11/_locked/j_count 18
 P _body/11/_part_area_rule 1.000000000
-P _body/11/_part_cd 0.177000001
+P _body/11/_part_cd 0.187000006
 P _body/11/_part_phi 0.000000000
 P _body/11/_part_psi 0.000000000
 P _body/11/_part_rad 0.119999997
@@ -14553,7 +14553,7 @@ P _body/12/_locked/9,9 0
 P _body/12/_locked/i_count 20
 P _body/12/_locked/j_count 18
 P _body/12/_part_area_rule 1.000000000
-P _body/12/_part_cd 0.177000001
+P _body/12/_part_cd 0.187000006
 P _body/12/_part_phi 0.000000000
 P _body/12/_part_psi 0.000000000
 P _body/12/_part_rad 0.119999997
@@ -16024,7 +16024,7 @@ P _body/13/_locked/9,9 0
 P _body/13/_locked/i_count 20
 P _body/13/_locked/j_count 18
 P _body/13/_part_area_rule 1.000000000
-P _body/13/_part_cd 0.177000001
+P _body/13/_part_cd 0.187000006
 P _body/13/_part_phi 0.000000000
 P _body/13/_part_psi 0.000000000
 P _body/13/_part_rad 0.119999997
@@ -31740,18 +31740,18 @@ P acf/_ball_ang_acc_deg_ss 0.000000000
 P acf/_ball_ang_def_deg 0.000000000
 P acf/_ball_ang_spd_deg_s 0.000000000
 P acf/_batt_power_rat/0 0.000510197
-P acf/_batt_power_rat/1 0.780612171
+P acf/_batt_power_rat/1 0.543027163
 P acf/_batt_power_rat/10 1.000000000
-P acf/_batt_power_rat/2 0.885374069
-P acf/_batt_power_rat/3 0.919047534
-P acf/_batt_power_rat/4 0.943367243
-P acf/_batt_power_rat/5 0.958333194
+P acf/_batt_power_rat/2 0.810544133
+P acf/_batt_power_rat/3 0.900340021
+P acf/_batt_power_rat/4 0.941496491
+P acf/_batt_power_rat/5 0.960203946
 P acf/_batt_power_rat/6 0.973299205
 P acf/_batt_power_rat/7 0.986394465
 P acf/_batt_power_rat/8 0.993877470
 P acf/_batt_power_rat/9 0.995748222
 P acf/_batt_power_rat/count 11
-P acf/_battery_watt_hr_max 622.000000000
+P acf/_battery_watt_hr_max 572.000000000
 P acf/_beacon_EQ 0
 P acf/_beta_pitch 0.000000000
 P acf/_beta_prop_EQ 0
@@ -32826,7 +32826,7 @@ P acf/_dump_altitude 0.000000000
 P acf/_dump_press_below_1k 0
 P acf/_dump_press_wow 0
 P acf/_eagle_shock_to_tire_def_rat 0.000000000
-P acf/_elec_drive_eta 0.769999981
+P acf/_elec_drive_eta 0.822000027
 P acf/_elec_fuelP 30.000000000
 P acf/_elec_regen_eta 0.050000001
 P acf/_elec_regen_rat 0.250000000
@@ -33370,9 +33370,9 @@ P acf/_green_hi_N1 0.000000000
 P acf/_green_hi_N1_apu 0.000000000
 P acf/_green_hi_N2 0.000000000
 P acf/_green_hi_TRQ 0.000000000
-P acf/_green_hi_bat_amp 0.000000000
+P acf/_green_hi_bat_amp 122.000000000
 P acf/_green_hi_bat_temp 0.000000000
-P acf/_green_hi_bat_volt 24.000000000
+P acf/_green_hi_bat_volt 22.200000763
 P acf/_green_hi_fuelP 0.000000000
 P acf/_green_hi_gen_amp 0.000000000
 P acf/_green_hi_gen_volt 0.000000000
@@ -33396,7 +33396,7 @@ P acf/_green_lo_N2 0.000000000
 P acf/_green_lo_TRQ 0.000000000
 P acf/_green_lo_bat_amp 0.000000000
 P acf/_green_lo_bat_temp 0.000000000
-P acf/_green_lo_bat_volt 22.000000000
+P acf/_green_lo_bat_volt 21.600000381
 P acf/_green_lo_fuelP 0.000000000
 P acf/_green_lo_gen_amp 0.000000000
 P acf/_green_lo_gen_volt 0.000000000
@@ -33612,7 +33612,7 @@ P acf/_max_CHT 500.000000000
 P acf/_max_EGT 1450.000000000
 P acf/_max_ITT 680.000000000
 P acf/_max_MP_limit 29.920000076
-P acf/_max_bat_amp 200.000000000
+P acf/_max_bat_amp 123.000000000
 P acf/_max_bat_temp 60.000000000
 P acf/_max_gen_amp0 60.000000000
 P acf/_max_gen_amp_per_gen/0 60.000000000
@@ -33661,9 +33661,9 @@ P acf/_no_default_wash_fx 0
 P acf/_no_default_wing_fx 0
 P acf/_no_hydro_force_mult_brakes 0.000000000
 P acf/_no_hydro_force_mult_flcons 0.000000000
-P acf/_nom_bat_volt 24.000000000
+P acf/_nom_bat_volt 21.600000381
 P acf/_nom_fuelP 30.000000000
-P acf/_nom_gen_volt 24.500000000
+P acf/_nom_gen_volt 22.700000763
 P acf/_nom_oilP 115.000000000
 P acf/_notes Must be run using a Python application, see docs
 P acf/_num_batteries 1
@@ -33762,9 +33762,9 @@ P acf/_red_hi_N1 100.000000000
 P acf/_red_hi_N1_apu 0.000000000
 P acf/_red_hi_N2 100.000000000
 P acf/_red_hi_TRQ 100.000000000
-P acf/_red_hi_bat_amp 200.000000000
+P acf/_red_hi_bat_amp 123.000000000
 P acf/_red_hi_bat_temp 0.000000000
-P acf/_red_hi_bat_volt 24.500000000
+P acf/_red_hi_bat_volt 25.200000763
 P acf/_red_hi_fuelP 0.000000000
 P acf/_red_hi_gen_amp 0.000000000
 P acf/_red_hi_gen_volt 0.000000000
@@ -33788,7 +33788,7 @@ P acf/_red_lo_N2 0.000000000
 P acf/_red_lo_TRQ 0.000000000
 P acf/_red_lo_bat_amp 0.000000000
 P acf/_red_lo_bat_temp 0.000000000
-P acf/_red_lo_bat_volt 20.000000000
+P acf/_red_lo_bat_volt 15.000000000
 P acf/_red_lo_fuelP 0.000000000
 P acf/_red_lo_gen_amp 0.000000000
 P acf/_red_lo_gen_volt 0.000000000

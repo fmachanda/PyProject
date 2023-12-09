@@ -11,7 +11,7 @@ os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
 sys.path.append(os.getcwd())
 templates: np.ndarray = np.load('./common/templates.npy')
 
-CONFIDENCE_THRESHOLD = 0.0
+CONFIDENCE_THRESHOLD = 0.3
 ROI_MIN_WIDTH = 15
 ROI_MIN_HEIGHT = 15
 ANNOTATION_COLOR = (200, 0, 200)

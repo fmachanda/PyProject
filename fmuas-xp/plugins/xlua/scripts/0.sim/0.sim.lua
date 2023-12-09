@@ -158,7 +158,7 @@ cmd_handler = create_command("fmuas/commands/toggle_camera_view", "Turn on/off F
 function recharge(phase, duration)
 	if phase==0 then
 		if uasDR_BATT_batt_cover_actual>0.8 then
-			simDR_BATT_watthour[0] = 622.08
+			simDR_BATT_watthour[0] = 571.7952
 		end
 	end
 end
@@ -188,13 +188,13 @@ function flight_start()
 
     uasDR_hide_internals = 1
 
-	simDR_WEIGHT_empty = 0.01
+	simDR_WEIGHT_empty = 0.36
 
 	uasDR_python_running = 0
 	uasDR_flir_view_on = 0
 
 	simSET_WEIGHT_avionics = 0.12
-	simSET_WEIGHT_batt = 2.280
+	simSET_WEIGHT_batt = 2.320
 	simSET_WEIGHT_dome = 0.6225
 
 	simSET_WEIGHT_fwing = 0.26
