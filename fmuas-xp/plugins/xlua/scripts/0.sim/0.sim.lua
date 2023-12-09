@@ -27,12 +27,16 @@ uasDR_CAM_eff_yaw = create_dataref("fmuas/camera/effective_yaw", "number", writa
 
 uasDR_CAM_rate_limit = create_dataref("fmuas/camera/rate_limit", "number", writable)
 
+uasDR_hide_internals = create_dataref("fmuas/hide_internals", "number", writable) -- 1=hidden
+
 simDR_brake = find_dataref("sim/cockpit2/controls/parking_brake_ratio")
 
 simDR_fuels = find_dataref("sim/flightmodel/weight/m_fuel")
 simDR_station_weights = find_dataref("sim/flightmodel/weight/m_stations")
 
 simDR_WEIGHT_empty = find_dataref("sim/aircraft/weight/acf_m_empty")
+
+simDR_BATT_watthour = find_dataref("sim/cockpit/electrical/battery_charge_watt_hr")
 
 simSET_WEIGHT_avionics = create_dataref("fmuas/config/weight/avionics_weight", "number", writable)
 simSET_WEIGHT_batt = create_dataref("fmuas/config/weight/batt_weight", "number", writable)
@@ -151,6 +155,14 @@ end
 
 cmd_handler = create_command("fmuas/commands/toggle_camera_view", "Turn on/off FLIR view", flir_view)
 
+function recharge(phase, duration)
+	if phase==0 then
+		simDR_BATT_watthour[0] = 622.08
+	end
+end
+
+cmd_handler = create_command("fmuas/commands/recharge_batt", "Recharge battery", recharge)
+
 ----------------------------------------------------------------
 -- INTERNAL FUNCTIONS ------------------------------------------
 ----------------------------------------------------------------
@@ -171,6 +183,8 @@ dofile('0.sim.servos.lua')
 ----------------------------------------------------------------
 
 function flight_start()
+
+    uasDR_hide_internals = 1
 
 	simDR_WEIGHT_empty = 0.01
 
@@ -238,6 +252,12 @@ function flight_start()
 end
 
 function before_physics()
+
+	if uasDR_BATT_batt_cover_actual>0 then
+		uasDR_hide_internals = 0
+	else
+		uasDR_hide_internals = 1
+	end
 
 	if (simDR_rollrate>100 or simDR_pitchrate>100 or simDR_yawrate>100) and (simDR_pause==0) then
 		simCMD_pause:once()

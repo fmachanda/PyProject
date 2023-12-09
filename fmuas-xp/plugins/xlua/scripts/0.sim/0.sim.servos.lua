@@ -25,6 +25,8 @@ Inputs:
 
 uasDR_SERVOS_direct_mode = create_dataref("fmuas/servos/direct_mode", "number", writable) -- 1=direct mode on
 uasDR_SERVOS_wing_stow_cmd = create_dataref("fmuas/servos/wing_stow", "number", writable) -- 1=stowed
+uasDR_BATT_batt_cover_cmd = create_dataref("fmuas/batt_cover", "number", writable) -- 1=stowed
+uasDR_BATT_batt_cover_actual = create_dataref("fmuas/batt_cover_actual", "number", writable) -- 1=stowed
 simDR_wow = find_dataref("sim/flightmodel2/gear/on_ground[0]")
 
 function toggle_direct_mode(phase, duration)
@@ -53,13 +55,23 @@ function toggle_wing_stow(phase, duration)
     end
 end
 
+function toggle_batt_cover(phase, duration)
+    if phase == 0 then
+        if simDR_wow > 0 then
+            uasDR_BATT_batt_cover_cmd = math.abs(uasDR_BATT_batt_cover_cmd - 1)
+        end
+    end
+end
+
 cmd_handler = create_command("fmuas/commands/servos/direct_mode", "Toggle SERVOS direct mode", toggle_direct_mode)
 cmd_handler = create_command("fmuas/commands/servos/temporary_direct_mode", "Temporary SERVOS direct mode", hold_direct_mode)
 cmd_handler = create_command("fmuas/commands/servos/wing_stow", "Toggle wing stow", toggle_wing_stow)
+cmd_handler = create_command("fmuas/commands/batt_cover", "Toggle wing stow", toggle_batt_cover)
 
 uasSET_SERVOS_rate_limiter = create_dataref("fmuas/config/servos/elevon_rate_limiter", "number", writable)
 uasSET_SERVOS_stow_rate_limiter = create_dataref("fmuas/config/servos/stow_rate_limiter", "number", writable)
 uasSET_SERVOS_tilt_rate_limiter = create_dataref("fmuas/config/servos/tilt_rate_limiter", "number", writable)
+uasSET_SERVOS_cover_rate_limiter = create_dataref("fmuas/config/servos/cover_rate_limiter", "number", writable)
 uasSET_SERVOS_noise_gain = create_dataref("fmuas/config/servos/noise_gain", "number", writable)
 
 uasDR_AFCS_elevon1 = create_dataref("fmuas/afcs/output/elevon1", "number", writable)
@@ -185,6 +197,7 @@ function SERVOS_flight_start()
     uasSET_SERVOS_rate_limiter = 0.5
     uasSET_SERVOS_tilt_rate_limiter = 0.3
     uasSET_SERVOS_stow_rate_limiter = 2.5
+    uasSET_SERVOS_cover_rate_limiter = 2.5
 
     simDR_cant3 = simDR_elevons[20] + 45.0
 	simDR_cant4 = simDR_elevons[30] + 45.0
@@ -195,6 +208,8 @@ function SERVOS_flight_start()
     uasDR_AFCS_elevon1 = 90.0
     uasDR_AFCS_elevon2 = 90.0
     uasDR_SERVOS_wing_stow_cmd = 0
+    uasDR_BATT_batt_cover_cmd = 0
+    uasDR_BATT_batt_cover_actual = 0
     simDR_wing_stow_actual = 1.0
     simDR_wing_tilt_actual = 1.0
     uasDR_SERVOS_direct_mode = 1
@@ -213,6 +228,7 @@ function SERVOS_after_physics()
     prev_roll_deflection = roll_deflection
     prev_tilt_cmd = tilt_cmd
     prev_stow_cmd = stow_cmd
+    prev_cover_cmd = cover_cmd
 
     servo_noiser()
 
@@ -245,14 +261,18 @@ function SERVOS_after_physics()
     simDR_joystick_roll = roll_deflection
 
     stow_cmd = uasDR_SERVOS_wing_stow_cmd
+    cover_cmd = uasDR_BATT_batt_cover_cmd
 
     stow_cmd = math.min(stow_cmd, prev_stow_cmd + (uasSET_SERVOS_stow_rate_limiter * SIM_PERIOD))
     tilt_cmd = math.min(tilt_cmd, prev_tilt_cmd + (uasSET_SERVOS_tilt_rate_limiter * SIM_PERIOD))
     stow_cmd = math.max(stow_cmd, prev_stow_cmd - (uasSET_SERVOS_stow_rate_limiter * SIM_PERIOD))
     tilt_cmd = math.max(tilt_cmd, prev_tilt_cmd - (uasSET_SERVOS_tilt_rate_limiter * SIM_PERIOD))
+    cover_cmd = math.min(cover_cmd, prev_cover_cmd + (uasSET_SERVOS_cover_rate_limiter * SIM_PERIOD))
+    cover_cmd = math.max(cover_cmd, prev_cover_cmd - (uasSET_SERVOS_cover_rate_limiter * SIM_PERIOD))
 
     simDR_wing_tilt_actual = tilt_cmd
     simDR_wing_stow_actual = stow_cmd
+    uasDR_BATT_batt_cover_actual = cover_cmd
 
 	simDR_cant3 = simDR_elevons[20] + 45.0
 	simDR_cant4 = simDR_elevons[30] + 45.0

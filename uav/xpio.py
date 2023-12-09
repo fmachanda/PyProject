@@ -59,7 +59,7 @@ from pymavlink import mavutil
 
 import common.find_xp as find_xp
 from common.decorators import async_loop_decorator
-from common.state_manager import NodeCommands
+from common.states import NodeCommands
 from common.angles import quaternion_to_euler, py_to_rp
 
 m = mavutil.mavlink
@@ -489,93 +489,95 @@ class MotorHub:
     @async_loop_decorator()
     async def _motorhub_run_loop(self) -> None:
         now = time.monotonic()
+        try:
+            if now > self._elevon1_publish_time + 1.0:
+                await self._pub_elevon1_feedback.publish(reg.udral.service.actuator.common.Feedback_0(
+                    reg.udral.service.common.Heartbeat_0(
+                        reg.udral.service.common.Readiness_0(self._servo_readiness),
+                        uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
+                    )
+                ))
+                await self._pub_elevon1_power.publish(reg.udral.physics.electricity.PowerTs_0())
+                await self._pub_elevon1_dynamics.publish(reg.udral.physics.dynamics.rotation.PlanarTs_0())
+                self._elevon1_publish_time = now
 
-        if now > self._elevon1_publish_time + 1.0:
-            await self._pub_elevon1_feedback.publish(reg.udral.service.actuator.common.Feedback_0(
-                reg.udral.service.common.Heartbeat_0(
-                    reg.udral.service.common.Readiness_0(self._servo_readiness),
-                    uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
-                )
-            ))
-            await self._pub_elevon1_power.publish(reg.udral.physics.electricity.PowerTs_0())
-            await self._pub_elevon1_dynamics.publish(reg.udral.physics.dynamics.rotation.PlanarTs_0())
-            self._elevon1_publish_time = now
+            if now > self._elevon2_publish_time + 1.0:
+                await self._pub_elevon2_feedback.publish(reg.udral.service.actuator.common.Feedback_0(
+                    reg.udral.service.common.Heartbeat_0(
+                        reg.udral.service.common.Readiness_0(self._servo_readiness),
+                        uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
+                    )
+                ))
+                await self._pub_elevon2_power.publish(reg.udral.physics.electricity.PowerTs_0())
+                await self._pub_elevon2_dynamics.publish(reg.udral.physics.dynamics.rotation.PlanarTs_0())
+                self._elevon2_publish_time = now
 
-        if now > self._elevon2_publish_time + 1.0:
-            await self._pub_elevon2_feedback.publish(reg.udral.service.actuator.common.Feedback_0(
-                reg.udral.service.common.Heartbeat_0(
-                    reg.udral.service.common.Readiness_0(self._servo_readiness),
-                    uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
-                )
-            ))
-            await self._pub_elevon2_power.publish(reg.udral.physics.electricity.PowerTs_0())
-            await self._pub_elevon2_dynamics.publish(reg.udral.physics.dynamics.rotation.PlanarTs_0())
-            self._elevon2_publish_time = now
+            if now > self._tilt_publish_time + 1.0:
+                await self._pub_tilt_feedback.publish(reg.udral.service.actuator.common.Feedback_0(
+                    reg.udral.service.common.Heartbeat_0(
+                        reg.udral.service.common.Readiness_0(self._servo_readiness),
+                        uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
+                    )
+                ))
+                await self._pub_tilt_power.publish(reg.udral.physics.electricity.PowerTs_0())
+                await self._pub_tilt_dynamics.publish(reg.udral.physics.dynamics.rotation.PlanarTs_0())
+                self._tilt_publish_time = now
 
-        if now > self._tilt_publish_time + 1.0:
-            await self._pub_tilt_feedback.publish(reg.udral.service.actuator.common.Feedback_0(
-                reg.udral.service.common.Heartbeat_0(
-                    reg.udral.service.common.Readiness_0(self._servo_readiness),
-                    uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
-                )
-            ))
-            await self._pub_tilt_power.publish(reg.udral.physics.electricity.PowerTs_0())
-            await self._pub_tilt_dynamics.publish(reg.udral.physics.dynamics.rotation.PlanarTs_0())
-            self._tilt_publish_time = now
+            if now > self._esc1_publish_time + 1.0:
+                await self._pub_esc1_feedback.publish(reg.udral.service.actuator.common.Feedback_0(
+                    reg.udral.service.common.Heartbeat_0(
+                        reg.udral.service.common.Readiness_0(self._esc_readiness),
+                        uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
+                    )
+                ))
+                await self._pub_esc1_power.publish(reg.udral.physics.electricity.PowerTs_0())
+                await self._pub_esc1_dynamics.publish(reg.udral.physics.dynamics.rotation.PlanarTs_0())
+                self._esc1_publish_time = now
 
-        if now > self._esc1_publish_time + 1.0:
-            await self._pub_esc1_feedback.publish(reg.udral.service.actuator.common.Feedback_0(
-                reg.udral.service.common.Heartbeat_0(
-                    reg.udral.service.common.Readiness_0(self._esc_readiness),
-                    uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
-                )
-            ))
-            await self._pub_esc1_power.publish(reg.udral.physics.electricity.PowerTs_0())
-            await self._pub_esc1_dynamics.publish(reg.udral.physics.dynamics.rotation.PlanarTs_0())
-            self._esc1_publish_time = now
+            if now > self._esc2_publish_time + 1.0:
+                await self._pub_esc2_feedback.publish(reg.udral.service.actuator.common.Feedback_0(
+                    reg.udral.service.common.Heartbeat_0(
+                        reg.udral.service.common.Readiness_0(self._esc_readiness),
+                        uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
+                    )
+                ))
+                await self._pub_esc2_power.publish(reg.udral.physics.electricity.PowerTs_0())
+                await self._pub_esc2_dynamics.publish(reg.udral.physics.dynamics.rotation.PlanarTs_0())
+                self._esc2_publish_time = now
 
-        if now > self._esc2_publish_time + 1.0:
-            await self._pub_esc2_feedback.publish(reg.udral.service.actuator.common.Feedback_0(
-                reg.udral.service.common.Heartbeat_0(
-                    reg.udral.service.common.Readiness_0(self._esc_readiness),
-                    uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
-                )
-            ))
-            await self._pub_esc2_power.publish(reg.udral.physics.electricity.PowerTs_0())
-            await self._pub_esc2_dynamics.publish(reg.udral.physics.dynamics.rotation.PlanarTs_0())
-            self._esc2_publish_time = now
+            if now > self._esc3_publish_time + 1.0:
+                await self._pub_esc3_feedback.publish(reg.udral.service.actuator.common.Feedback_0(
+                    reg.udral.service.common.Heartbeat_0(
+                        reg.udral.service.common.Readiness_0(self._esc_readiness),
+                        uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
+                    )
+                ))
+                await self._pub_esc3_power.publish(reg.udral.physics.electricity.PowerTs_0())
+                await self._pub_esc3_dynamics.publish(reg.udral.physics.dynamics.rotation.PlanarTs_0())
+                self._esc3_publish_time = now
 
-        if now > self._esc3_publish_time + 1.0:
-            await self._pub_esc3_feedback.publish(reg.udral.service.actuator.common.Feedback_0(
-                reg.udral.service.common.Heartbeat_0(
-                    reg.udral.service.common.Readiness_0(self._esc_readiness),
-                    uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
-                )
-            ))
-            await self._pub_esc3_power.publish(reg.udral.physics.electricity.PowerTs_0())
-            await self._pub_esc3_dynamics.publish(reg.udral.physics.dynamics.rotation.PlanarTs_0())
-            self._esc3_publish_time = now
+            if now > self._esc4_publish_time + 1.0:
+                await self._pub_esc4_feedback.publish(reg.udral.service.actuator.common.Feedback_0(
+                    reg.udral.service.common.Heartbeat_0(
+                        reg.udral.service.common.Readiness_0(self._esc_readiness),
+                        uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
+                    )
+                ))
+                await self._pub_esc4_power.publish(reg.udral.physics.electricity.PowerTs_0())
+                await self._pub_esc4_dynamics.publish(reg.udral.physics.dynamics.rotation.PlanarTs_0())
+                self._esc4_publish_time = now
 
-        if now > self._esc4_publish_time + 1.0:
-            await self._pub_esc4_feedback.publish(reg.udral.service.actuator.common.Feedback_0(
-                reg.udral.service.common.Heartbeat_0(
-                    reg.udral.service.common.Readiness_0(self._esc_readiness),
-                    uavcan.node.Health_1(uavcan.node.Health_1.NOMINAL)
-                )
-            ))
-            await self._pub_esc4_power.publish(reg.udral.physics.electricity.PowerTs_0())
-            await self._pub_esc4_dynamics.publish(reg.udral.physics.dynamics.rotation.PlanarTs_0())
-            self._esc4_publish_time = now
-
-        if now > self._status_publish_time + 1.0:
-            await self._pub_elevon1_status.publish(reg.udral.service.actuator.common.Status_0())
-            await self._pub_elevon2_status.publish(reg.udral.service.actuator.common.Status_0())
-            await self._pub_tilt_status.publish(reg.udral.service.actuator.common.Status_0())
-            await self._pub_esc1_status.publish(reg.udral.service.actuator.common.Status_0())
-            await self._pub_esc2_status.publish(reg.udral.service.actuator.common.Status_0())
-            await self._pub_esc3_status.publish(reg.udral.service.actuator.common.Status_0())
-            await self._pub_esc4_status.publish(reg.udral.service.actuator.common.Status_0())
-            self._status_publish_time = now
+            if now > self._status_publish_time + 1.0:
+                await self._pub_elevon1_status.publish(reg.udral.service.actuator.common.Status_0())
+                await self._pub_elevon2_status.publish(reg.udral.service.actuator.common.Status_0())
+                await self._pub_tilt_status.publish(reg.udral.service.actuator.common.Status_0())
+                await self._pub_esc1_status.publish(reg.udral.service.actuator.common.Status_0())
+                await self._pub_esc2_status.publish(reg.udral.service.actuator.common.Status_0())
+                await self._pub_esc3_status.publish(reg.udral.service.actuator.common.Status_0())
+                await self._pub_esc4_status.publish(reg.udral.service.actuator.common.Status_0())
+                self._status_publish_time = now
+        except pycyphal.presentation._port._error.PortClosedError:
+            pass
 
         await asyncio.sleep(1 / self._freq)
 
@@ -823,52 +825,55 @@ class SensorHub:
 
     @async_loop_decorator()
     async def _sensorhub_run_loop(self) -> None:
-        await self._pub_ins.publish(reg.udral.physics.kinematics.cartesian.StateVarTs_0(
-            uavcan.time.SynchronizedTimestamp_1(self._time),
-            reg.udral.physics.kinematics.cartesian.StateVar_0(
-                reg.udral.physics.kinematics.cartesian.PoseVar_0(
-                    reg.udral.physics.kinematics.cartesian.Pose_0(
-                        # position,
-                        orientation = uavcan.si.unit.angle.Quaternion_1(
-                            [
-                                rx_data[b'fmuas/att/attitude_quaternion_w'],
-                                rx_data[b'fmuas/att/attitude_quaternion_x'], 
-                                rx_data[b'fmuas/att/attitude_quaternion_y'], 
-                                rx_data[b'fmuas/att/attitude_quaternion_z']
-                            ]
-                        )
-                    ),
-                    # covariance
-                ),
-                reg.udral.physics.kinematics.cartesian.TwistVar_0(
-                    reg.udral.physics.kinematics.cartesian.Twist_0(
-                        uavcan.si.unit.velocity.Vector3_1(
-                            # TODO: inertial velocity
-                            [rx_data[b'fmuas/gps/vn'], rx_data[b'fmuas/gps/ve'], rx_data[b'fmuas/gps/vd']],
+        try:
+            await self._pub_ins.publish(reg.udral.physics.kinematics.cartesian.StateVarTs_0(
+                uavcan.time.SynchronizedTimestamp_1(self._time),
+                reg.udral.physics.kinematics.cartesian.StateVar_0(
+                    reg.udral.physics.kinematics.cartesian.PoseVar_0(
+                        reg.udral.physics.kinematics.cartesian.Pose_0(
+                            # position,
+                            orientation = uavcan.si.unit.angle.Quaternion_1(
+                                [
+                                    rx_data[b'fmuas/att/attitude_quaternion_w'],
+                                    rx_data[b'fmuas/att/attitude_quaternion_x'], 
+                                    rx_data[b'fmuas/att/attitude_quaternion_y'], 
+                                    rx_data[b'fmuas/att/attitude_quaternion_z']
+                                ]
+                            )
                         ),
-                        uavcan.si.unit.angular_velocity.Vector3_1(
-                            # TODO: not extrinsic
-                            [
-                                rx_data[b'fmuas/att/rollrate'],
-                                rx_data[b'fmuas/att/pitchrate'],
-                                rx_data[b'fmuas/att/yawrate'],
-                            ],
-                        )
+                        # covariance
                     ),
-                    # covariance
+                    reg.udral.physics.kinematics.cartesian.TwistVar_0(
+                        reg.udral.physics.kinematics.cartesian.Twist_0(
+                            uavcan.si.unit.velocity.Vector3_1(
+                                # TODO: inertial velocity
+                                [rx_data[b'fmuas/gps/vn'], rx_data[b'fmuas/gps/ve'], rx_data[b'fmuas/gps/vd']],
+                            ),
+                            uavcan.si.unit.angular_velocity.Vector3_1(
+                                # TODO: not extrinsic
+                                [
+                                    rx_data[b'fmuas/att/rollrate'],
+                                    rx_data[b'fmuas/att/pitchrate'],
+                                    rx_data[b'fmuas/att/yawrate'],
+                                ],
+                            )
+                        ),
+                        # covariance
+                    )
                 )
-            )
-        ))
+            ))
 
-        await self._pub_ias.publish(reg.udral.physics.kinematics.translation.LinearTs_0(
-            uavcan.time.SynchronizedTimestamp_1(self._time),
-            reg.udral.physics.kinematics.translation.Linear_0(
-                velocity = uavcan.si.unit.velocity.Scalar_1(rx_data[b'fmuas/adc/ias'])
-            )
-        ))
+            await self._pub_ias.publish(reg.udral.physics.kinematics.translation.LinearTs_0(
+                uavcan.time.SynchronizedTimestamp_1(self._time),
+                reg.udral.physics.kinematics.translation.Linear_0(
+                    velocity = uavcan.si.unit.velocity.Scalar_1(rx_data[b'fmuas/adc/ias'])
+                )
+            ))
 
-        await self._pub_alt.publish(uavcan.si.unit.length.WideScalar_1(rx_data[b'fmuas/radalt/altitude']))
-        await self._pub_aoa.publish(uavcan.si.unit.angle.Scalar_1(rx_data[b'fmuas/adc/aoa']))
+            await self._pub_alt.publish(uavcan.si.unit.length.WideScalar_1(rx_data[b'fmuas/radalt/altitude']))
+            await self._pub_aoa.publish(uavcan.si.unit.angle.Scalar_1(rx_data[b'fmuas/adc/aoa']))
+        except pycyphal.presentation._port._error.PortClosedError:
+            pass
 
         await asyncio.sleep(1 / self._freq)
 
@@ -1014,35 +1019,38 @@ class GPS:
     
     @async_loop_decorator()
     async def _gps_run_loop(self) -> None:
-        await self._pub_gps_sync_time_last.publish(uavcan.time.Synchronization_1(self._gnss_time))
+        try:
+            await self._pub_gps_sync_time_last.publish(uavcan.time.Synchronization_1(self._gnss_time))
 
-        self._gnss_time = int(1e6*(calendar.timegm(datetime.datetime.strptime(str(datetime.date.today().year), '%Y').timetuple())
-                             + (1+rx_data[b'sim/time/local_date_days'])*86400
-                             + rx_data[b'sim/time/zulu_time_sec']))
+            self._gnss_time = int(1e6*(calendar.timegm(datetime.datetime.strptime(str(datetime.date.today().year), '%Y').timetuple())
+                                + (1+rx_data[b'sim/time/local_date_days'])*86400
+                                + rx_data[b'sim/time/zulu_time_sec']))
 
-        await self._pub_gps.publish(reg.udral.physics.kinematics.geodetic.PointStateVarTs_0(
-            uavcan.time.SynchronizedTimestamp_1(self._time),
-            reg.udral.physics.kinematics.geodetic.PointStateVar_0(
-                reg.udral.physics.kinematics.geodetic.PointVar_0(
-                    reg.udral.physics.kinematics.geodetic.Point_0(
-                        rx_data[b'fmuas/gps/latitude'],
-                        rx_data[b'fmuas/gps/longitude'],
-                        uavcan.si.unit.length.WideScalar_1(
-                            rx_data[b'fmuas/gps/altitude']
-                        )
+            await self._pub_gps.publish(reg.udral.physics.kinematics.geodetic.PointStateVarTs_0(
+                uavcan.time.SynchronizedTimestamp_1(self._time),
+                reg.udral.physics.kinematics.geodetic.PointStateVar_0(
+                    reg.udral.physics.kinematics.geodetic.PointVar_0(
+                        reg.udral.physics.kinematics.geodetic.Point_0(
+                            rx_data[b'fmuas/gps/latitude'],
+                            rx_data[b'fmuas/gps/longitude'],
+                            uavcan.si.unit.length.WideScalar_1(
+                                rx_data[b'fmuas/gps/altitude']
+                            )
+                        ),
+                        # covariance
                     ),
-                    # covariance
-                ),
-                reg.udral.physics.kinematics.translation.Velocity3Var_0(
-                    uavcan.si.unit.velocity.Vector3_1(
-                        [rx_data[b'fmuas/gps/vn'], rx_data[b'fmuas/gps/ve'], rx_data[b'fmuas/gps/vd']]
-                    ),
-                    # covariance
+                    reg.udral.physics.kinematics.translation.Velocity3Var_0(
+                        uavcan.si.unit.velocity.Vector3_1(
+                            [rx_data[b'fmuas/gps/vn'], rx_data[b'fmuas/gps/ve'], rx_data[b'fmuas/gps/vd']]
+                        ),
+                        # covariance
+                    )
                 )
-            )
-        ))
+            ))
 
-        await self._pub_gps_sync_time.publish(uavcan.time.SynchronizedTimestamp_1(self._gnss_time))
+            await self._pub_gps_sync_time.publish(uavcan.time.SynchronizedTimestamp_1(self._gnss_time))
+        except pycyphal.presentation._port._error.PortClosedError:
+            pass
         
         await asyncio.sleep(1 / self._freq)
 
@@ -1164,11 +1172,14 @@ class Clock:
 
     @async_loop_decorator()
     async def _clock_run_loop(self) -> None:
-        await self._pub_sync_time_last.publish(uavcan.time.Synchronization_1(int(self._sync_time))) # Last timestamp
+        try:
+            await self._pub_sync_time_last.publish(uavcan.time.Synchronization_1(int(self._sync_time))) # Last timestamp
 
-        self._sync_time = get_xp_time()
+            self._sync_time = get_xp_time()
 
-        await self._pub_sync_time.publish(uavcan.time.SynchronizedTimestamp_1(int(self._sync_time))) # Current timestamp
+            await self._pub_sync_time.publish(uavcan.time.SynchronizedTimestamp_1(int(self._sync_time))) # Current timestamp
+        except pycyphal.presentation._port._error.PortClosedError:
+            pass
         await asyncio.sleep(0)
 
     async def run(self) -> None:
