@@ -25,7 +25,7 @@ if __name__ == '__main__':
     parser.add_argument("-s", "--skip", nargs='?', default='-1', const='0', help="Skip number of modes on startup")
     args = parser.parse_args()
 
-    whitelisted = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+    whitelisted = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-[]")
     if args.graph:
         assert all(char in whitelisted for char in args.graph) and '__' not in args.graph
     if args.print:

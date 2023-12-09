@@ -27,7 +27,6 @@ uasDR_SERVOS_direct_mode = create_dataref("fmuas/servos/direct_mode", "number", 
 uasDR_SERVOS_wing_stow_cmd = create_dataref("fmuas/servos/wing_stow", "number", writable) -- 1=stowed
 uasDR_BATT_batt_cover_cmd = create_dataref("fmuas/batt_cover", "number", writable) -- 1=stowed
 uasDR_BATT_batt_cover_actual = create_dataref("fmuas/batt_cover_actual", "number", writable) -- 1=stowed
-simDR_wow = find_dataref("sim/flightmodel2/gear/on_ground[0]")
 
 function toggle_direct_mode(phase, duration)
 	if phase == 0 then
@@ -49,7 +48,7 @@ end
 
 function toggle_wing_stow(phase, duration)
     if phase == 0 then
-        if simDR_wow > 0 then
+        if simDR_radalt < .2 then
             uasDR_SERVOS_wing_stow_cmd = math.abs(uasDR_SERVOS_wing_stow_cmd - 1)
         end
     end
@@ -57,7 +56,7 @@ end
 
 function toggle_batt_cover(phase, duration)
     if phase == 0 then
-        if simDR_wow > 0 then
+        if simDR_radalt < .2 then
             uasDR_BATT_batt_cover_cmd = math.abs(uasDR_BATT_batt_cover_cmd - 1)
         end
     end
@@ -214,7 +213,7 @@ function SERVOS_flight_start()
     simDR_wing_tilt_actual = 1.0
     uasDR_SERVOS_direct_mode = 1
 
-    if simDR_radalt<5 then
+    if simDR_radalt<.5 then
         simDR_gear = 1.0
     else
         simDR_gear = 0.0

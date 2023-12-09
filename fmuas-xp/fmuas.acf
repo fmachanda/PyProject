@@ -19792,7 +19792,7 @@ P _wing/0/_inc_vect/7 0
 P _wing/0/_inc_vect/8 0
 P _wing/0/_inc_vect/9 0
 P _wing/0/_inc_vect/count 10
-P _wing/0/_incid_chrd_inc 43.585132599
+P _wing/0/_incid_chrd_inc 0.000000000
 P _wing/0/_incid_full_up 90.000000000
 P _wing/0/_incidence/0 0.000000000
 P _wing/0/_incidence/1 0.000000000
@@ -21595,7 +21595,7 @@ P _wing/1/_inc_vect/7 0
 P _wing/1/_inc_vect/8 0
 P _wing/1/_inc_vect/9 0
 P _wing/1/_inc_vect/count 10
-P _wing/1/_incid_chrd_inc 43.585132599
+P _wing/1/_incid_chrd_inc 0.000000000
 P _wing/1/_incid_full_up 90.000000000
 P _wing/1/_incidence/0 0.000000000
 P _wing/1/_incidence/1 0.000000000
@@ -31719,7 +31719,7 @@ P acf/_auto_rpm_with_tvec 0
 P acf/_auto_sync_EQ 0
 P acf/_auto_trim_EQ 0
 P acf/_autopilot_logic 0
-P acf/_average_mac_acf 0.449999988
+P acf/_average_mac_acf 0.449999958
 P acf/_bagg_1/0 0.000000000
 P acf/_bagg_1/1 0.000000000
 P acf/_bagg_1/2 0.000000000
@@ -33152,7 +33152,7 @@ P acf/_ff_rat_idle_turbo 0.100000001
 P acf/_file_writer_version 120808
 P acf/_fixed_max/0 2.000000000
 P acf/_fixed_max/1 8.000000000
-P acf/_fixed_max/2 8.000000000
+P acf/_fixed_max/2 0.000000000
 P acf/_fixed_max/3 1.500000000
 P acf/_fixed_max/4 0.500000000
 P acf/_fixed_max/5 0.500000000
@@ -33161,8 +33161,7 @@ P acf/_fixed_max/7 0.000000000
 P acf/_fixed_max/8 0.000000000
 P acf/_fixed_max/count 9
 P acf/_fixed_name/0 Avionics
-P acf/_fixed_name/1 Battery 1
-P acf/_fixed_name/2 Battery 2
+P acf/_fixed_name/1 Battery
 P acf/_fixed_name/3 Dome
 P acf/_fixed_name/4 Servo 1
 P acf/_fixed_name/5 Servo 2
@@ -33172,11 +33171,11 @@ P acf/_fixed_ref/0,0 0.000000000
 P acf/_fixed_ref/0,1 0.000000000
 P acf/_fixed_ref/0,2 1.250000000
 P acf/_fixed_ref/1,0 0.000000000
-P acf/_fixed_ref/1,1 0.000000000
-P acf/_fixed_ref/1,2 0.409999996
+P acf/_fixed_ref/1,1 0.010000000
+P acf/_fixed_ref/1,2 0.600000024
 P acf/_fixed_ref/2,0 0.000000000
 P acf/_fixed_ref/2,1 0.000000000
-P acf/_fixed_ref/2,2 0.779999971
+P acf/_fixed_ref/2,2 0.000000000
 P acf/_fixed_ref/3,0 0.000000000
 P acf/_fixed_ref/3,1 0.000000000
 P acf/_fixed_ref/3,2 -0.200000003

@@ -349,7 +349,7 @@ class MotorHub:
 
         for var in os.environ:
             if var.startswith('UAVCAN__'):
-                os.environ.pop(var, None)
+                os.environ.pop(var)
         for var, value in _registry.environment_variables.items():
             assert isinstance(value, bytes)
             os.environ[var] = value.decode('utf-8')
@@ -732,7 +732,7 @@ class SensorHub:
         
         for var in os.environ:
             if var.startswith('UAVCAN__'):
-                os.environ.pop(var, None)
+                os.environ.pop(var)
         for var, value in _registry.environment_variables.items():
             assert isinstance(value, bytes)
             os.environ[var] = value.decode('utf-8')
@@ -918,7 +918,7 @@ class GPS:
         
         for var in os.environ:
             if var.startswith('UAVCAN__'):
-                os.environ.pop(var, None)
+                os.environ.pop(var)
         for var, value in _registry.environment_variables.items():
             assert isinstance(value, bytes)
             os.environ[var] = value.decode('utf-8')
@@ -1085,7 +1085,7 @@ class Clock:
         
         for var in os.environ:
             if var.startswith('UAVCAN__'):
-                os.environ.pop(var, None)
+                os.environ.pop(var)
         for var, value in _registry.environment_variables.items():
             assert isinstance(value, bytes)
             os.environ[var] = value.decode('utf-8')

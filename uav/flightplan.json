@@ -5,6 +5,6 @@
         {"lat": 40.7128, "long": -74.0060, "alt_m_agl": 0}
     ],
 
-    "hover_alt_m_agl": 100,
-    "cruise_ias": 70
+    "hover_alt_m_agl": 50,
+    "cruise_kias": 70
 }

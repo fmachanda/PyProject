@@ -25,7 +25,7 @@ os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
 sys.path.append(os.getcwd())
 for var in os.environ:
     if var.startswith('UAVCAN__'):
-        os.environ.pop(var, None)
+        os.environ.pop(var)
 os.environ['CYPHAL_PATH'] = './common/public_regulated_data_types'
 os.environ['PYCYPHAL_PATH'] = './common/pycyphal_generated'
 os.environ['UAVCAN__DIAGNOSTIC__SEVERITY'] = '2'
@@ -89,6 +89,7 @@ DEFAULT_FREQ = 50
 HEARTBEAT_TIMEOUT = 2.0
 
 RPM_TO_RADS = math.pi/30
+KT_TO_MS = 0.514444
 
 DEBUG_SKIP = -1 # TODO: remove this!!
 
@@ -760,7 +761,7 @@ class UAVCANManager:
         
         for var in os.environ:
             if var.startswith('UAVCAN__'):
-                os.environ.pop(var, None)
+                os.environ.pop(var)
         for var, value in _registry.environment_variables.items():
             assert isinstance(value, bytes)
             os.environ[var] = value.decode('utf-8')
@@ -1105,15 +1106,21 @@ class Navigator:
         """Perform boot-related tasks."""
         # TODO: do boot stuff here, calibrate gps etc
         await self.main.io.node_manager.gps.active.wait()
-        self.append_wpt(Navigator.Waypoint(self.main.rxdata.gps.latitude, self.main.rxdata.gps.longitude, self.main.rxdata.gps.altitude, name='Start'))
+        self.append_wpt(Navigator.Waypoint(self.main.rxdata.gps.latitude, self.main.rxdata.gps.longitude, 0.0, name='Start'))
         logger.debug(f"Navigator aligning at {self._waypoint_list[0].latitude}, {self._waypoint_list[0].longitude}")
 
-        with open('uav/flightplan.json', 'r') as fpl_file:
-            self._fpl = json.load(fpl_file)
-        waypoints = self._fpl['waypoints']
-        self.append_wpt(*[Navigator.Waypoint(wpt['lat'], wpt['long'], wpt['alt_m_agl']) for wpt in waypoints])
-        self.hover_alt = self._fpl['hover_alt_m_agl']
-        self.cruise_ias = self._fpl['cruise_ias']
+        try:
+            with open('uav/flightplan.json', 'r') as fpl_file:
+                self._fpl = json.load(fpl_file)
+        except FileNotFoundError:
+            self.hover_alt = 75
+            self.cruise_ias = 70 * KT_TO_MS
+        else:
+            waypoints = self._fpl['waypoints']
+            self.append_wpt(*[Navigator.Waypoint(wpt['lat'], wpt['long'], wpt['alt_m_agl']) for wpt in waypoints])
+            self.hover_alt = self._fpl['hover_alt_m_agl']
+            self.cruise_ias = self._fpl['cruise_kias'] * KT_TO_MS
+
         self.landing_wpt = self._waypoint_list[-1]
 
         self.boot.set()
@@ -1130,7 +1137,7 @@ class Navigator:
     def next_wpt(self) -> None:
         """Increment flight plan wpt."""
         if len(self._waypoint_list)>1:
-            self._waypoint_list.pop(0, None)
+            self._waypoint_list.pop(0)
     
     def _calc_altitude(self) -> float:
         """Determine the desired altitude from the next waypoint."""
@@ -1142,8 +1149,9 @@ class Navigator:
         return self.commanded_altitude
     
     def _detect_change(self) -> None:
-        if self.distance<10 and self.main.state.custom_submode==g.CUSTOM_SUBMODE_FLIGHT_NORMAL:
-            self.next_wpt
+        if self.distance<100 and self.main.state.custom_submode==g.CUSTOM_SUBMODE_FLIGHT_NORMAL:
+            self.next_wpt()
+            self.main.afcs.auto_sp = True
 
     @async_loop_decorator(close=False)
     async def _navigator_run_loop(self) -> None:
@@ -1159,6 +1167,7 @@ class Navigator:
         )
         self.commanded_heading = math.radians(hdg)
         self._calc_altitude()
+        self._detect_change()
         # check for next wpt, if yes make sure to reset afcs.auto_sp
         await asyncio.sleep(0.1)
 
@@ -1268,7 +1277,7 @@ class AFCS:
 
         # self._pid{f or v}_{from}_{to}
 
-        self._pidf_alt_vpa = PID(kp=0.007, ti=0.01, td=0.1, integral_limit=0.05, maximum=0.05, minimum=-0.05)
+        self._pidf_alt_vpa = PID(kp=0.007, ti=0.006, td=0.1, integral_limit=0.05, maximum=0.05, minimum=-0.05)
         self._pidf_vpa_aoa = PID(kp=0.7, ti=3.0, td=0.05, integral_limit=0.2, maximum=math.pi/8, minimum=-0.05)
         self._pidf_aoa_out = PID(kp=-0.07, ti=-0.008, td=0.02, integral_limit=1, maximum=0.0, minimum=-math.pi/12)
         self._pidf_dyw_rol = PID(kp=-0.75, ti=-8.0, td=0.002, integral_limit=0.1, maximum=math.pi/6, minimum=-math.pi/6)
@@ -1277,12 +1286,12 @@ class AFCS:
         self._pidf_ias_thr = PID(kp=0.1, ti=0.0, td=0.0, integral_limit=1.0, maximum=1.00, minimum=0.02) # TODO
 
         self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
-        self._pidv_xsp_rol = PID(kp=0.1, ti=0.5, td=0.0, integral_limit=0.3, minimum=-math.pi/12, maximum=math.pi/12) # TODO
+        self._pidv_xsp_rol = PID(kp=-0.1, ti=0.5, td=0.0, integral_limit=0.3, minimum=-math.pi/12, maximum=math.pi/12) # TODO
         self._pidv_rol_rls = PID(kp=1.0, ti=1.0, td=0.05, integral_limit=0.08, minimum=-math.pi/6, maximum=math.pi/6)
         self._pidv_rls_out = PID(kp=0.021, ti=0.05, td=0.04, integral_limit=0.3, minimum=-0.08, maximum=0.08)
 
         self._pidv_ydp_ysp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
-        self._pidv_ysp_pit = PID(kp=-0.35, ti=0.6, td=0.0, integral_limit=0.3, minimum=-math.pi/9, maximum=math.pi/12)
+        self._pidv_ysp_pit = PID(kp=-0.35, ti=0.6, td=0.0, integral_limit=0.3, minimum=-math.pi/8, maximum=math.pi/12)
         self._pidv_pit_pts = PID(kp=0.7, ti=0.8, td=0.0, integral_limit=0.1, minimum=-math.pi/6, maximum=math.pi/6)
         self._pidv_pts_out = PID(kp=0.027, ti=0.03, td=0.06, integral_limit=1.0, minimum=-0.1, maximum=0.1)
 
@@ -1395,7 +1404,7 @@ class AFCS:
             self.main.rxdata.gps.dt = 0.0
 
         if (att:=self.main.rxdata.att).dt > 0.0:
-            if self.main.state.custom_submode==g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
+            if self.main.state.custom_submode in [g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT, g.CUSTOM_SUBMODE_TAKEOFF_DEPART]:
                 self._spv_yspeed = 30
 
                 if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
@@ -1427,7 +1436,7 @@ class AFCS:
                 self._ftilt = 0.0
                 self._rtilt = 0.0
 
-            if self.main.state.custom_submode in [g.CUSTOM_SUBMODE_TAKEOFF_HOVER, g.CUSTOM_SUBMODE_LANDING_HOVER]:
+            if self.main.state.custom_submode==g.CUSTOM_SUBMODE_LANDING_HOVER:
                 self._spv_vs = 0.0
     
             self._outv_throttle = self._pidv_vsp_out.cycle(att.zspeed, self._spv_vs, att.dt)
@@ -1480,7 +1489,7 @@ class AFCS:
         # Setpoints
         if self.auto_sp:
             match self.main.state.custom_submode:
-                case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT | g.CUSTOM_SUBMODE_TAKEOFF_HOVER | g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT | g.CUSTOM_SUBMODE_LANDING_TRANSIT | g.CUSTOM_SUBMODE_LANDING_HOVER:
+                case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT | g.CUSTOM_SUBMODE_TAKEOFF_DEPART | g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT | g.CUSTOM_SUBMODE_LANDING_TRANSIT | g.CUSTOM_SUBMODE_LANDING_HOVER:
                     self._sp_altitude = self.main.navigator.hover_alt
                     self._sp_heading = self.main.navigator.commanded_heading
                     self._spf_ias = self.main.navigator.cruise_ias
@@ -1493,7 +1502,7 @@ class AFCS:
 
         # Controls
         match self.main.state.custom_submode:
-            case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT | g.CUSTOM_SUBMODE_TAKEOFF_HOVER | g.CUSTOM_SUBMODE_LANDING_DESCENT | g.CUSTOM_SUBMODE_LANDING_HOVER:
+            case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT | g.CUSTOM_SUBMODE_TAKEOFF_DEPART | g.CUSTOM_SUBMODE_LANDING_DESCENT | g.CUSTOM_SUBMODE_LANDING_HOVER:
                 # VTOL
                 self._servos, self._throttles = self._vtol_calc()
             case g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
@@ -1528,11 +1537,11 @@ class AFCS:
             case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT:
                 if self.main.rxdata.alt.altitude > self.main.navigator.hover_alt-3:
                     self.main.state.inc_mode()
-            case g.CUSTOM_SUBMODE_TAKEOFF_HOVER:
-                if self.main.rxdata.att.yspeed > 3:
+            case g.CUSTOM_SUBMODE_TAKEOFF_DEPART:
+                if self.main.rxdata.att.yspeed > 5:
                     self.main.state.inc_mode()
             case g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
-                if self._vtol_ratio==0 and self.ftilt==0 and self.rtilt==0:
+                if self._vtol_ratio==0 and self._ftilt==0 and self._rtilt==0:
                     self.main.state.inc_mode()
             case g.CUSTOM_SUBMODE_LANDING_TRANSIT:
                 # TODO
@@ -1765,6 +1774,7 @@ class CommManager:
                 # DO_CHANGE_ALTITUDE
                 case m.MAV_CMD_DO_CHANGE_ALTITUDE:
                     try:
+                        self.main.afcs.auto_sp = False
                         self.main.afcs.sp_altitude = msg.param1 # TODO add checks!
                         self._mavlogger.log(MAVLOG_RX, f"GCS commanded altitude setpoint to {msg.param1}")
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
@@ -1773,6 +1783,7 @@ class CommManager:
                 # DO_CHANGE_SPEED
                 case m.MAV_CMD_DO_CHANGE_SPEED:
                     try:
+                        self.main.afcs.auto_sp = False
                         self.main.afcs._spf_ias = msg.param2 # TODO add checks!
                         self._mavlogger.log(MAVLOG_RX, f"GCS commanded speed setpoint to {msg.param2}")
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_SPEED, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
@@ -2280,7 +2291,7 @@ if __name__ == '__main__':
     parser.add_argument("-s", "--skip", nargs='?', default='-1', const='0', help="Skip number of modes on startup")
     args = parser.parse_args()
 
-    whitelisted = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+    whitelisted = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-[]")
     if args.graph:
         assert all(char in whitelisted for char in args.graph) and '__' not in args.graph
     if args.print:
