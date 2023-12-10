@@ -8,7 +8,7 @@
 * [Installation](#installation)
 * [Important Files](#important-files)
 * [Usage with X-Plane 12](#usage-with-x-plane-12)
-* [GCS Command Line Interface](#gcs-command-line-interface)
+* [GCS Graphical User Interface](#gcs-graphical-user-interface)
 * [Credits](#credits)
 
 ## Overview
@@ -72,10 +72,12 @@ python -m pip install -r requirements.txt --upgrade
         └── gcs.command
     ├── uav
         ├── uav.py
-        └── xpio.py
+        ├── xpio.py
+        └── flightplan.json # Make your own flight plan
     ├── gcs
-        ├── gui.py
-        └── gcs.py # Can only be used in a python terminal
+        ├── gui_v2.py # Newer version (easier to use)
+        ├── gui.py # Older version (more stable)
+        └── gcs.py # Can only be used in a python terminal (error prone)
     ├── common
         ├── public_regulated_data_types # Initialize this submodule!
         ├── config.ini # Controllable settings for UAV
@@ -92,16 +94,17 @@ python -m pip install -r requirements.txt --upgrade
 
 `uav/uav.py` runs the UAV  
 `uav/xpio.py` runs the connection with X-Plane 12 and simulates UAV components 
+`uav/flightplan.json` contains customizable waypoints, altitudes, and speeds data that is followed by the autopilot during flight
 
-`gcs/gui.py` runs a GCS window  
+`gcs/gui_v2.py` runs a GCS window
 `gcs/gcs.py` can be used as a [CLI](#gcs-command-line-interface) if imported in a python terminal
 
 `fmuas-xp` contains the X-Plane aircraft files
 
-`common/config.ini` contains changeable settings for UAV and GCS instances  
+`common/config.ini` contains changeable settings for the UAV and GCS  
 
 `common/key.py` contains the shared custom key used by MAVLINK connections
-> The `KEY = ...` line in `key.py` can be changed to any desired MAVLINK key (must be length 25). If using separate folders for GCS and UAV instances, ensure that this key is the same for both.  
+> The `KEY = ...` line in `key.py` can be changed to any desired MAVLINK key (must be length 25). If using separate files for GCS and UAV, ensure that this key is the same for both.  
 
 **Important:** `common/public_regulated_data_types/` is a git [submodule][prdt-link] that must be initialized for scripts to work
 
@@ -117,42 +120,16 @@ To use with X-Plane 12:
 
     > The flight will remain paused until `xpio.py` starts running
 
-4. Run the following scripts from the terminal:
-    * `gcs/gui.py`
+4. Either double-click on `scripts/run.bat` (Windows) or `scripts/run.command` (MacOS) or run the following scripts manually:
+    * `gcs/gui_v2.py`
     * `uav/uav.py`
     * `uav/xpio.py`
 
-5. Use the [GCS Interface](#gcs-command-line-interface) to boot and control the UAV.  
+5. Use the [GCS Interface](#gcs-graphical-user-interface) to boot and control the UAV.  
 
-## GCS Command Line Interface
+## GCS Graphical User Interface
 
-The `gcs.py` script provides a very simple interface that can be used to connect with a UAV running `uav.py`. To use the provided commands, open a python terminal and type: -->
-
-```python
-import gcs
-```
-
-To connect to a UAV, you need to know the System ID of the UAV's MAVLINK node. This can be found in the UAV's terminal. Connect to the UAV with:
-
-```python
-uav1 = gcs.Connect(<systemid>) # Replace <systemid> with the UAV's System ID
-```
-
-If you don't get a "Connected to ..." message, ensure that the CONFIG.ini files in the `uav` and `gcs` files are setting up compatible mavlink nodes.
-
-To boot the UAV, run:
-
-```python
-uav1.boot()
-```
-
-To close the connection with the UAV, run:
-
-```python
-uav1.close()
-```
-
-Refer to the `gcs.py` script for further documentation.
+Documentation coming soon!
 
 ---
 ### Credits

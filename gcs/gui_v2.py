@@ -42,7 +42,7 @@ class GCSUI:
         self.sp_menu = tk.Menu(self.autopilot_menu, tearoff=0)
         self.nav_menu = tk.Menu(self.autopilot_menu, tearoff=0)
         self.cam_menu = tk.Menu(self.menubar, tearoff=0)
-        self.dev_menu = tk.Menu(self.menubar, tearoff=1)
+        self.dev_menu = tk.Menu(self.menubar, tearoff=0)
 
         self.menubar.add_cascade(label="Connection", menu=self.connect_menu)
         self.menubar.add_cascade(label="Mode", menu=self.mode_menu, state=tk.DISABLED)
