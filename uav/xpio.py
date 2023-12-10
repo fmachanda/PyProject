@@ -577,6 +577,7 @@ class MotorHub:
                 await self._pub_esc4_status.publish(reg.udral.service.actuator.common.Status_0())
                 self._status_publish_time = now
         except pycyphal.presentation._port._error.PortClosedError:
+            print("----------------- line 580 -----------------")
             pass
 
         await asyncio.sleep(1 / self._freq)
@@ -600,6 +601,7 @@ class MotorHub:
             self._pub_elevon1_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
             self._pub_elevon1_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
         except pycyphal.presentation._port._error.PortClosedError:
+            print("----------------- line 604 -----------------")
             pass
         else:
             self._elevon1_publish_time = time.monotonic()
@@ -616,6 +618,7 @@ class MotorHub:
             self._pub_elevon2_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
             self._pub_elevon2_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
         except pycyphal.presentation._port._error.PortClosedError:
+            print("----------------- line 621 -----------------")
             pass
         else:
             self._elevon2_publish_time = time.monotonic()
@@ -632,6 +635,7 @@ class MotorHub:
             self._pub_tilt_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
             self._pub_tilt_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
         except pycyphal.presentation._port._error.PortClosedError:
+            print("----------------- line 638 -----------------")
             pass
         else:
             self._tilt_publish_time = time.monotonic()
@@ -648,6 +652,7 @@ class MotorHub:
             self._pub_esc1_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
             self._pub_esc1_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
         except pycyphal.presentation._port._error.PortClosedError:
+            print("----------------- line 655 -----------------")
             pass
         else:
             self._esc1_publish_time = time.monotonic()
@@ -664,6 +669,7 @@ class MotorHub:
             self._pub_esc2_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
             self._pub_esc2_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
         except pycyphal.presentation._port._error.PortClosedError:
+            print("----------------- line 672 -----------------")
             pass
         else:
             self._esc2_publish_time = time.monotonic()
@@ -680,6 +686,7 @@ class MotorHub:
             self._pub_esc3_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
             self._pub_esc3_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
         except pycyphal.presentation._port._error.PortClosedError:
+            print("----------------- line 689 -----------------")
             pass
         else:
             self._esc3_publish_time = time.monotonic()
@@ -696,6 +703,7 @@ class MotorHub:
             self._pub_esc4_power.publish_soon(reg.udral.physics.electricity.PowerTs_0())
             self._pub_esc4_dynamics.publish_soon(reg.udral.physics.dynamics.rotation.PlanarTs_0())
         except pycyphal.presentation._port._error.PortClosedError:
+            print("----------------- line 706 -----------------")
             pass
         else:
             self._esc4_publish_time = time.monotonic()
@@ -873,6 +881,7 @@ class SensorHub:
             await self._pub_alt.publish(uavcan.si.unit.length.WideScalar_1(rx_data[b'fmuas/radalt/altitude']))
             await self._pub_aoa.publish(uavcan.si.unit.angle.Scalar_1(rx_data[b'fmuas/adc/aoa']))
         except pycyphal.presentation._port._error.PortClosedError:
+            print("----------------- line 884 -----------------")
             pass
 
         await asyncio.sleep(1 / self._freq)
@@ -1050,6 +1059,7 @@ class GPS:
 
             await self._pub_gps_sync_time.publish(uavcan.time.SynchronizedTimestamp_1(self._gnss_time))
         except pycyphal.presentation._port._error.PortClosedError:
+            print("----------------- line 1062 -----------------")
             pass
         
         await asyncio.sleep(1 / self._freq)
@@ -1179,6 +1189,7 @@ class Clock:
 
             await self._pub_sync_time.publish(uavcan.time.SynchronizedTimestamp_1(int(self._sync_time))) # Current timestamp
         except pycyphal.presentation._port._error.PortClosedError:
+            print("----------------- line 1192 -----------------")
             pass
         await asyncio.sleep(0)
 
@@ -1586,6 +1597,7 @@ async def main():
     try:
         await asyncio.gather(*close_tasks)
     except pycyphal.presentation._port._error.PortClosedError:
+        print("----------------- line 1600 -----------------")
         pass
     except asyncio.exceptions.CancelledError:
         logger.error("Instance closed prematurely")

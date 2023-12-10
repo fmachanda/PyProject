@@ -9,7 +9,7 @@ import sys
 
 os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
 sys.path.append(os.getcwd())
-templates: np.ndarray = np.load('./common/templates.npy')
+templates: np.ndarray = np.load('./common/train_data.npy')
 
 CONFIDENCE_THRESHOLD = 0.3
 ROI_MIN_WIDTH = 15

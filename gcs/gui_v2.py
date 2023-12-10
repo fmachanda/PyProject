@@ -1,5 +1,5 @@
-# import asyncio
-import re
+import os
+import sys
 import threading
 import time
 import tkinter as tk
@@ -12,6 +12,9 @@ from gcs import Connect
 stop = threading.Event()
 
 HEARTBEAT_TIMEOUT = 2.0
+
+os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
+sys.path.append(os.getcwd())
 
 
 class GCSUI:
@@ -26,11 +29,11 @@ class GCSUI:
         self.status_label = tk.Label(root, text="Status: Booting...", bd=1, relief=tk.SUNKEN, anchor=tk.W)
         self.status_label.pack(side=tk.BOTTOM, fill=tk.X)
 
-        self.log_text = tk.Text(root, height=10, width=40)
-        self.log_text.pack(padx=10, pady=10)
+        self.log_text = tk.Text(root, height=10, width=40, state=tk.DISABLED)
+        self.log_text.pack(padx=10, pady=(10, 8))
 
         self.map_button = tk.Button(root, text="Open Map", command=self.open_map)
-        self.map_button.pack(pady=10)
+        self.map_button.pack(pady=(0, 10))
 
         # Create a menu bar
         self.menubar = tk.Menu(root)
@@ -50,19 +53,15 @@ class GCSUI:
         self.menubar.add_cascade(label="Camera", menu=self.cam_menu, state=tk.DISABLED)
         self.menubar.add_cascade(label="DEV", menu=self.dev_menu, state=tk.DISABLED)
 
-        self.autopilot_menu.add_cascade(label="Navigation", menu=self.nav_menu)
-        self.autopilot_menu.add_cascade(label="Setpoints", menu=self.sp_menu)
-
         self.connect_menu.add_command(label="Connect", command=self.connect)
         self.connect_menu.add_command(label="Close", command=self.close)
 
         self.mode_menu.add_command(label="Boot", command=self.boot)
         self.mode_menu.add_command(label="Set mode", command=self.show_set_mode_dialog)
 
-        self.sp_menu.add_command(label="Set altitude", command=self.show_set_alt_dialog)
-        self.sp_menu.add_command(label="Set speed", command=self.show_set_speed_dialog)
-
-        self.nav_menu.add_command(label="Direct to", command=self.show_direct_to_dialog)
+        self.autopilot_menu.add_command(label="Set altitude", command=self.show_set_alt_dialog)
+        self.autopilot_menu.add_command(label="Set speed", command=self.show_set_speed_dialog)
+        self.autopilot_menu.add_command(label="Direct to", command=self.show_direct_to_dialog)
 
         self.cam_menu.add_command(label="Take image", command=self.cam_take_image)
         self.cam_menu.add_command(label="Pitch/yaw", command=self.show_pitchyaw_dialog)
@@ -74,8 +73,16 @@ class GCSUI:
 
         self.connect_instance: Connect | None = None
         self.heartbeat = None
+        from utilities import pid_tune_map as p; self.pid_defaults = p
 
         self.update_status()
+
+        heart = threading.Thread(target=self.heartbeat, daemon=True)
+        heart.start()
+        listener = threading.Thread(target=self.listen, daemon=True)
+        listener.start()
+
+        self.connect()
 
     def enable_menus(self):
         if self.connect_instance is None:
@@ -123,6 +130,7 @@ class GCSUI:
             finally:
                 self.map_marker = None
 
+    #region Dialogs
     def show_set_mode_dialog(self):
         if self.connect_instance is not None:
             try:
@@ -195,6 +203,10 @@ class GCSUI:
             self.connect_instance.gimbal_roi(lat=lat, lon=lon, alt=alt)
             self.log("ROI")
 
+    def show_pid_tuner_dialog(self):
+        self.init_pid_window()
+    #endregion
+
     def cam_take_image(self):
         if self.connect_instance is not None:
             self.connect_instance.img()
@@ -210,19 +222,10 @@ class GCSUI:
             self.connect_instance.gimbal_pitchyaw(-180, 0)
             self.log("Stow")
 
-    def show_pid_tuner_dialog(self):
-        if self.connect_instance is not None:
-            try:
-                a, b, c, d = (value if value is not None else 0 for value in MultiEntryDialog(self.root, ["kp", "ti", "td", "sp"]).result)
-            except TypeError:
-                return
-            self.connect_instance.pid(a, b, c, d)
-            self.log("PID")
-
     def connect(self):
         try:
             target_id = int(MultiEntryDialog(self.root, ["Target ID"]).result[0])
-        except ValueError:
+        except (TypeError, ValueError):
             self.log("Error: ID must be UINT8")
             return
 
@@ -270,45 +273,116 @@ class GCSUI:
         self.root.destroy()
 
     def log(self, message):
+        self.log_text.config(state=tk.NORMAL)
         self.log_text.insert(tk.END, message + '\n')
         self.log_text.see(tk.END)
+        self.log_text.config(state=tk.DISABLED)
 
+    def heartbeat(self) -> None:
+        """Publish heartbeat message periodically in background."""
+        try:
+            while not stop.is_set():
+                if self.connect_instance is not None:
+                    self.connect_instance.heartbeat()
+                time.sleep(1)
+        except KeyboardInterrupt:
+            return
 
-def heartbeat(app: GCSUI) -> None:
-    """Publish heartbeat message periodically in background."""
-    try:
-        while not stop.is_set():
-            if app.connect_instance is not None:
-                app.connect_instance.heartbeat()
-            time.sleep(1)
-    except KeyboardInterrupt:
-        return
+    def listen(self) -> None:
+        try:
+            last_heartbeat = 0.0
+            while not stop.is_set():
+                if self.connect_instance is not None:
+                    if self.connect_instance.listen():
+                        last_heartbeat = time.time()
+                    if time.time() - last_heartbeat > HEARTBEAT_TIMEOUT:
+                        self.log(f"Heartbeat timeout from #{self.connect_instance.target}")
+                        self.close(because_heartbeat=True)
+                time.sleep(0)
+        except KeyboardInterrupt:
+            return
 
+    #region PID Tuner
+    def apply_tuning(self, event=None):
+        if self.connect_instance is not None:
+            selected_pid = self.pid_var.get()
+            kp = float(self.kp_entry.get()) if self.kp_entry.get() else None
+            ti = float(self.ti_entry.get()) if self.ti_entry.get() else None
+            td = float(self.td_entry.get()) if self.td_entry.get() else None
+            sp = float(self.sp_entry.get()) if self.sp_entry.get() else None
 
-def listen(app: GCSUI) -> None:
-    try:
-        last_heartbeat = 0.0
-        while not stop.is_set():
-            if app.connect_instance is not None:
-                if app.connect_instance.listen():
-                    last_heartbeat = time.time()
-                if time.time() - last_heartbeat > HEARTBEAT_TIMEOUT:
-                    app.log(f"Heartbeat timeout from #{app.connect_instance.target}")
-                    app.close(because_heartbeat=True)
-            time.sleep(0)
-    except KeyboardInterrupt:
-        return
+            self.pid_defaults[selected_pid].kp = kp
+            self.pid_defaults[selected_pid].ti = ti
+            self.pid_defaults[selected_pid].td = td
+            self.pid_defaults[selected_pid].sp = sp
+            id = self.pid_defaults[selected_pid].id
+
+            kp = 0.0 if kp is None else kp
+            ti = 0.0 if ti is None else ti
+            td = 0.0 if td is None else td
+            sp = 0.0 if sp is None else sp
+
+            self.connect_instance.pid(id, kp, ti, td, sp)
+            self.log(f"{selected_pid}, {kp}, {ti}, {td} @ {sp}")
+
+    def init_pid_window(self):
+        self.pid_tuner_window = tk.Toplevel(self.root)
+        self.pid_tuner_window.title("PID Tuner")
+
+        self.pid_var = tk.StringVar(self.pid_tuner_window)
+        self.pid_var.set(next(iter(self.pid_defaults.keys())))
+
+        self.pid_dropdown = tk.OptionMenu(self.pid_tuner_window, self.pid_var, *self.pid_defaults.keys())
+        self.pid_dropdown.pack(pady=10)
+
+        self.kp_entry = tk.Entry(self.pid_tuner_window)
+        self.ti_entry = tk.Entry(self.pid_tuner_window)
+        self.td_entry = tk.Entry(self.pid_tuner_window)
+        self.sp_entry = tk.Entry(self.pid_tuner_window)
+
+        tk.Label(self.pid_tuner_window, text="KP:").pack()
+        self.kp_entry.pack()
+
+        tk.Label(self.pid_tuner_window, text="TI:").pack()
+        self.ti_entry.pack()
+
+        tk.Label(self.pid_tuner_window, text="TD:").pack()
+        self.td_entry.pack()
+
+        tk.Label(self.pid_tuner_window, text="Setpoint (SP):").pack()
+        self.sp_entry.pack()
+
+        self.apply_button = tk.Button(self.pid_tuner_window, text="Apply Tuning", command=self.apply_tuning)
+        self.apply_button.pack(pady=10)
+
+        self.pid_var.trace("w", self.update_entries)
+
+        self.pid_tuner_window.bind("<Return>", self.apply_tuning)
+        self.pid_tuner_window.bind("<Escape>", self.close_pid_tuner)
+
+        self.update_entries()
+
+    def update_entries(self, *args):
+        selected_pid = self.pid_var.get()
+        default_pid = self.pid_defaults[selected_pid]
+
+        self.kp_entry.delete(0, tk.END)
+        self.ti_entry.delete(0, tk.END)
+        self.td_entry.delete(0, tk.END)
+        self.sp_entry.delete(0, tk.END)
+
+        self.kp_entry.insert(0, "" if default_pid.kp is None else str(default_pid.kp))
+        self.ti_entry.insert(0, "" if default_pid.ti is None else str(default_pid.ti))
+        self.td_entry.insert(0, "" if default_pid.td is None else str(default_pid.td))
+        self.sp_entry.insert(0, "" if default_pid.sp is None else str(default_pid.sp))
+
+    def close_pid_tuner(self, event=None):
+        self.pid_tuner_window.destroy()
+    #endregion
 
 
 def main() -> None:
     app = GCSUI(tk.Tk())
-
-    # Run the Tkinter mainloop in a separate thread
-    heart = threading.Thread(target=heartbeat, args=(app,), daemon=True)
-    heart.start()
-
-    listener = threading.Thread(target=listen, args=(app,), daemon=True)
-    listener.start()
 
     try:
         app.root.mainloop()

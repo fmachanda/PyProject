@@ -358,9 +358,9 @@ class Connect:
         alt = 0.0 if alt is None else alt
         asyncio.run(self._command_int('DO_SET_ROI_LOCATION', id, 0, 0, 0, int(lat*1e7), int(lon*1e7), int(alt*FT_TO_M), acknowledge=False))
 
-    def pid(self, kp: float, ti: float, td: float, setpoint: float):
+    def pid(self, id: int, kp: float, ti: float, td: float, setpoint: float):
         """DEVELOPMENT ONLY - send new PID parameters."""
-        asyncio.run(self._command_int('PID',kp, ti, td, setpoint, 0.0, 0.0, 0.0, acknowledge=False))
+        asyncio.run(self._command_int('PID', kp, ti, td, setpoint, id, 0, 0, acknowledge=False))
 
     def img(self, interval: float = 1, num: float = 1, sequence: float = 0):
         """DEVELOPMENT ONLY - send screenshot command."""

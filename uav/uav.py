@@ -987,6 +987,7 @@ class UAVCANManager:
             await self._pub_esc3_sp.publish(self.main.txdata.esc3)
             await self._pub_esc4_sp.publish(self.main.txdata.esc4)
         except pycyphal.presentation._port._error.PortClosedError:
+            print("***************** line 990 *****************")
             pass
 
         await asyncio.sleep(1 / self._freq)
@@ -1837,15 +1838,18 @@ class CommManager:
                 # TEMPORARY PID
                 case 0:
                     # PID TUNER GOTO
-                    # self.main.afcs._pidv_rls_out.reset()
-                    # self.main.afcs._pidv_pts_out.reset()
-                    # self.main.afcs._pidv_rol_rls.reset()
-                    # self.main.afcs._pidv_pit_pts.reset()
-                    # self.main.afcs._pidv_dyw_yws.reset()
-                    self.main.afcs._pidv_vsp_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
-                    # self.main.afcs._pidv_rol_rls.set(kp=msg.param4)#, td=msg.param2)
-                    self.main.afcs._spv_vs=msg.param4
-                    logger.info(f"New PID state: {msg.param1:.4f}, {msg.param2:.4f}, {msg.param3:.4f} @ {msg.param4:.4f}")
+                    if msg.x==0:
+                        # Wildcard
+                        self.main.afcs._pidv_vsp_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                        self.main.afcs._spv_vs=msg.param4
+                    else:
+                        from utilities import pid_tune_map_names as p, pid_tune_map_sps as s
+                        getattr(self.main.afcs, '_'+p[msg.x]).set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                        logger.info(f"Setting PID {'_'+p[msg.x]}")
+                        if s[msg.x]:
+                            setattr(self.main.afcs, s[msg.x], msg.param4)
+                            logger.info(f"Setting SP {s[msg.x]}")
+                    logger.info(f"PID state: {msg.param1:.4f}, {msg.param2:.4f}, {msg.param3:.4f} @ {msg.param4:.4f}")
                 # TEMPORARY SCREENSHOT
                 case 1:
                     logger.info("Commanding camera...")
@@ -2270,6 +2274,7 @@ class Main:
         try:
             await asyncio.gather(*close_tasks)
         except pycyphal.presentation._port._error.PortClosedError:
+            print("***************** line 2274 *****************")
             pass
         except asyncio.exceptions.CancelledError:
             logger.error("Instance closed prematurely")
