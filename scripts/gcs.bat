@@ -9,4 +9,4 @@ if %errorlevel% equ 0 (
     set "PYTHON=python3"
 )
 
-start "gcs" "%PYTHON%" "%PROJ_DIR%\gcs\gui.py"
+start "gcs" "%PYTHON%" "%PROJ_DIR%\gcs\gui_v2.py"

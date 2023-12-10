@@ -31,6 +31,7 @@ MAVLOG_LOG = logging.INFO + 1
 from pymavlink import mavutil
 
 import common.key as key
+from common.states import GlobalStates as g
 
 m = mavutil.mavlink
 
@@ -291,9 +292,19 @@ class Connect:
         logger.info("Calling boot()")
         asyncio.run(self._command('DO_SET_MODE', m.MAV_MODE_PREFLIGHT, 1, 10))
 
-    def set_mode(self, mode: int, custom_mode: int, custom_submode: int) -> None:
+    def set_mode(self, custom_submode: int | str, mode: int | None = None, custom_mode: int | None = None) -> None:
         """Set UAV mode."""
         logger.info("Calling set_mode()")
+        try:
+            custom_submode = int(custom_submode)
+        except ValueError:
+            try:
+                custom_submode = getattr(g, f"CUSTOM_SUBMODE_{custom_submode.upper()}")
+            except AttributeError:
+                logger.warning("Unrecognized submode requested")
+                return
+        mode = g.ALLOWED_MODES.get(custom_submode)[0] if mode is None else mode
+        custom_mode = g.ALLOWED_CUSTOM_MODES.get(custom_submode)[0] if custom_mode is None else custom_mode
         asyncio.run(self._command('DO_SET_MODE', mode, custom_mode, custom_submode))
 
     def set_alt(self, alt: float) -> None:
@@ -306,17 +317,13 @@ class Connect:
         logger.info("Calling set_speed()")
         asyncio.run(self._command('DO_CHANGE_SPEED', m.SPEED_TYPE_AIRSPEED, airspeed*KT_TO_MS, -1))
 
-    def reposition(self, lat: float | None = None, lon: float | None = None, alt: float = 0.0, speed: float = -1, radius: float = 0, yaw: float = 1):
+    def reposition(self, lat: float | None = None, lon: float | None = None, alt: float | None = None, speed: float = -1, radius: float = 0, yaw: float = 1):
         """Change UAV current waypoint."""
         logger.info("Calling reposition()")
         lat = self.map_pos[0] if lat is None else lat
         lon = self.map_pos[1] if lon is None else lon
+        alt = 50.0 if alt is None else alt
         asyncio.run(self._command_int('DO_REPOSITION', speed, 0, radius, yaw, int(lat*1e7), int(lon*1e7), int(alt*FT_TO_M), acknowledge=False))
-
-    def f_takeoff(self, latitude: float, longitude: float, altitude: float, yaw: float = float('nan'), pitch: float = 10):
-        """Command UAV conventional takeoff."""
-        logger.info("Calling f_takeoff()")
-        asyncio.run(self._command_int('NAV_TAKEOFF', pitch, 0,0, yaw, int(latitude), int(longitude), int(altitude)))
 
     def v_takeoff(self, latitude: float, longitude: float, altitude: float, transit_heading: float = m.VTOL_TRANSITION_HEADING_TAKEOFF, yaw: float = float('nan')):
         """Command UAV vertical takeoff."""
@@ -343,11 +350,12 @@ class Connect:
         logger.info("Calling gimbal_roi_clear()")
         asyncio.run(self._command('DO_SET_ROI_NONE', id, acknowledge=False))
 
-    def gimbal_roi(self, lat: float | None = None, lon: float | None = None, alt: float = 0.0, id: int = 0):
+    def gimbal_roi(self, lat: float | None = None, lon: float | None = None, alt: float | None = None, id: int = 0):
         """Command gimbal to roi."""
         logger.info("Calling gimbal_roi()")
         lat = self.map_pos[0] if lat is None else lat
         lon = self.map_pos[1] if lon is None else lon
+        alt = 0.0 if alt is None else alt
         asyncio.run(self._command_int('DO_SET_ROI_LOCATION', id, 0, 0, 0, int(lat*1e7), int(lon*1e7), int(alt*FT_TO_M), acknowledge=False))
 
     def pid(self, kp: float, ti: float, td: float, setpoint: float):

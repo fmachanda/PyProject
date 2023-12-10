@@ -1286,12 +1286,12 @@ class AFCS:
         self._pidf_ias_thr = PID(kp=0.1, ti=0.0, td=0.0, integral_limit=1.0, maximum=1.00, minimum=0.02) # TODO
 
         self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
-        self._pidv_xsp_rol = PID(kp=-0.1, ti=0.5, td=0.0, integral_limit=0.3, minimum=-math.pi/12, maximum=math.pi/12) # TODO
+        self._pidv_xsp_rol = PID(kp=-0.1, ti=-0.5, td=0.1, integral_limit=0.3, minimum=-math.pi/12, maximum=math.pi/12) # TODO
         self._pidv_rol_rls = PID(kp=1.0, ti=1.0, td=0.05, integral_limit=0.08, minimum=-math.pi/6, maximum=math.pi/6)
         self._pidv_rls_out = PID(kp=0.021, ti=0.05, td=0.04, integral_limit=0.3, minimum=-0.08, maximum=0.08)
 
         self._pidv_ydp_ysp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
-        self._pidv_ysp_pit = PID(kp=-0.35, ti=0.6, td=0.0, integral_limit=0.3, minimum=-math.pi/8, maximum=math.pi/12)
+        self._pidv_ysp_pit = PID(kp=-0.35, ti=-1.5, td=0.0, integral_limit=0.3, minimum=-math.pi/8, maximum=math.pi/12)
         self._pidv_pit_pts = PID(kp=0.7, ti=0.8, td=0.0, integral_limit=0.1, minimum=-math.pi/6, maximum=math.pi/6)
         self._pidv_pts_out = PID(kp=0.027, ti=0.03, td=0.06, integral_limit=1.0, minimum=-0.1, maximum=0.1)
 
@@ -1369,7 +1369,7 @@ class AFCS:
     def _vtol_calc(self) -> np.ndarray:
         """Calculate VTOL throttle commands from sensors."""
         if (alt:=self.main.rxdata.alt).dt > 0.0:
-            self._spv_vs = self._pidv_alt_vsp.cycle(alt.altitude, self._sp_altitude, alt.dt)
+            # self._spv_vs = self._pidv_alt_vsp.cycle(alt.altitude, self._sp_altitude, alt.dt)
             self._outv_thr_mode = 1
             if alt.altitude < 0.5:
                 if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_ASCENT:
@@ -1378,7 +1378,7 @@ class AFCS:
                     self._outv_thr_mode = 0
 
             if alt.altitude < 0.05:
-                self._pidv_pts_out._integral = 0.02
+                self._pidv_pts_out._integral = -0.04
                 self._pidv_xdp_xsp._integral = 0.0
                 self._pidv_xsp_rol._integral = 0.0
                 self._pidv_rol_rls._integral = 0.0
@@ -1447,7 +1447,7 @@ class AFCS:
             self._outv_roll = self._pidv_rls_out.cycle(att.rollspeed, self._spv_rollspeed, att.dt)
             self._outv_pitch = self._pidv_pts_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt)
 
-            self._dyaw = calc_dyaw(att.yaw, self._sp_heading)
+            self._dyaw = calc_dyaw(att.yaw, self._sp_heading) if self.main.rxdata.alt.altitude>3 else 0.0
             self._spv_yawspeed = self._pidv_dyw_yws.cycle(self._dyaw, 0.0, att.dt)
             self._outv_yaw = self._pidv_yws_out.cycle(att.yawspeed, self._spv_yawspeed, att.dt)
             self.main.rxdata.att.dt = 0.0
@@ -1458,7 +1458,7 @@ class AFCS:
             case 1:
                 pass
             case 2:
-                self._outv_throttle = 0.63
+                self._outv_throttle = 0.58
                 self._pidv_vsp_out._integral = 3.2
 
         t1 = self._outv_pitch + self._outv_throttle
@@ -1534,11 +1534,11 @@ class AFCS:
 
         # Mode increments
         match self.main.state.custom_submode:
-            case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT:
-                if self.main.rxdata.alt.altitude > self.main.navigator.hover_alt-3:
-                    self.main.state.inc_mode()
+            # case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT:
+            #     if self.main.rxdata.alt.altitude > self.main.navigator.hover_alt-3:
+            #         self.main.state.inc_mode()
             case g.CUSTOM_SUBMODE_TAKEOFF_DEPART:
-                if self.main.rxdata.att.yspeed > 5:
+                if self.main.rxdata.ias.ias > 5:
                     self.main.state.inc_mode()
             case g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
                 if self._vtol_ratio==0 and self._ftilt==0 and self._rtilt==0:
@@ -1750,7 +1750,7 @@ class CommManager:
                     self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 3)
             elif msg.control_request == 1 and msg.passkey==key.KEY:# and self._gcs_id is not None:
                 # Accepted (released)
-                self._mavlogger.log(MAVLOG_RX, f"Releasing from GCS ({self._gcs_id})")
+                self._mavlogger.log(MAVLOG_LOG, f"Releasing from GCS ({self._gcs_id})")
                 self._gcs_id = None
                 self._mav_conn_gcs.mav.change_operator_control_ack_send(msg.get_srcSystem(), msg.control_request, 0)
             else:
@@ -1767,7 +1767,6 @@ class CommManager:
                     self._mavlogger.log(MAVLOG_RX, "Mode change requested")
                         
                     if self.main.state.set_mode(msg.param1, msg.param2, msg.param3):
-                        logger.warning(f"Mode changed: {g.CUSTOM_SUBMODE_NAMES[self.main.state.custom_submode]}")
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_SET_MODE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
                     else:
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_SET_MODE, m.MAV_RESULT_DENIED, 255, 0, 0, 0)
@@ -1843,9 +1842,9 @@ class CommManager:
                     # self.main.afcs._pidv_rol_rls.reset()
                     # self.main.afcs._pidv_pit_pts.reset()
                     # self.main.afcs._pidv_dyw_yws.reset()
-                    self.main.afcs._pidt_arr_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                    self.main.afcs._pidv_vsp_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
                     # self.main.afcs._pidv_rol_rls.set(kp=msg.param4)#, td=msg.param2)
-                    # self.main.afcs._rtilt=math.radians(msg.param2)
+                    self.main.afcs._spv_vs=msg.param4
                     logger.info(f"New PID state: {msg.param1:.4f}, {msg.param2:.4f}, {msg.param3:.4f} @ {msg.param4:.4f}")
                 # TEMPORARY SCREENSHOT
                 case 1:

@@ -124,7 +124,6 @@ class GCSUI:
                 'set_alt': self.connect_instance.set_alt,
                 'set_speed': self.connect_instance.set_speed,
                 'reposition': self.connect_instance.reposition,
-                'f_takeoff': self.connect_instance.f_takeoff,
                 'v_takeoff': self.connect_instance.v_takeoff,
                 'f_land': self.connect_instance.f_land,
                 'v_land': self.connect_instance.v_land,

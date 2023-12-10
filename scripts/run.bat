@@ -10,4 +10,4 @@ if %errorlevel% equ 0 (
 )
 
 start "uav" "%PYTHON%" "%PROJ_DIR%\uav\run.py"
-"%PYTHON%" "%PROJ_DIR%\gcs\gui.py"
+"%PYTHON%" "%PROJ_DIR%\gcs\gui_v2.py"
