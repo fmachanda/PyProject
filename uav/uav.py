@@ -1666,7 +1666,10 @@ class CommManager:
         import common.key as key
         self._mav_conn_gcs.setup_signing(key.KEY.encode('utf-8'))
         self._cam_id = self.main.config.getint('mavlink_ids', 'cam_id')
-        asyncio.create_task(self._establish_cam(key=key.CAMKEY.encode('utf-8')))
+
+    async def boot_proc(self):
+        import common.key as key
+        await self._establish_cam(key=key.CAMKEY.encode('utf-8'))
 
     class PreExistingConnection(Exception):
         """Exception subclass to prevent repeated MAVLINK Connection."""
@@ -1850,28 +1853,28 @@ class CommManager:
                             setattr(self.main.afcs, s[msg.x], msg.param4)
                             logger.info(f"Setting SP {s[msg.x]}")
                     logger.info(f"PID state: {msg.param1:.4f}, {msg.param2:.4f}, {msg.param3:.4f} @ {msg.param4:.4f}")
-                # TEMPORARY SCREENSHOT
-                case 1:
+                # IMAGE
+                case m.MAV_CMD_IMAGE_START_CAPTURE:
                     logger.info("Commanding camera...")
                     self._cam_conn.mav.command_long_send(
                         self._cam_id,
                         m.MAV_COMP_ID_CAMERA,
                         m.MAV_CMD_IMAGE_START_CAPTURE,
                         0,
-                        0, # param1: Camera ID
-                        msg.param1, # param2: Interval (seconds)
-                        msg.param2, # param3: Number images
-                        msg.param3, # param4: Single image sequence number
+                        msg.param1, # param1: Camera ID
+                        msg.param2, # param2: Interval (seconds)
+                        msg.param3, # param3: Number images
+                        msg.param4, # param4: Single image sequence number
                         0,
                         0,
                         float('nan')
                     )
-                # NAV_TAKEOFF
-                case m.MAV_CMD_NAV_TAKEOFF:
-                    pass # TODO
                 # NAV_VTOL_TAKEOFF
                 case m.MAV_CMD_NAV_VTOL_TAKEOFF:
-                    pass # TODO
+                    if self.main.state.set_mode(m.MAV_MODE_GUIDED_ARMED, g.CUSTOM_MODE_TAKEOFF, g.CUSTOM_SUBMODE_TAKEOFF_ASCENT):
+                        self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_NAV_VTOL_TAKEOFF, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
+                    else:
+                        self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_NAV_VTOL_TAKEOFF, m.MAV_RESULT_DENIED, 255, 0, 0, 0)
                 # NAV_LAND
                 case m.MAV_CMD_NAV_LAND:
                     pass # TODO
@@ -1962,6 +1965,24 @@ class CommManager:
                 else:
                     self.main.rxdata.cam.dump(0.0, 0.0, self.main.rxdata.time.time)
                     logger.info(f"None detected in {msg.file_url}.")
+
+                self._mav_conn_gcs.camera_image_captured_send(
+                    int(self.main.rxdata.time.time*1e3),
+                    0, # UTC
+                    0, # depr
+                    int(self.main.rxdata.gps.latitude*1e7), # lat 1e7
+                    int(self.main.rxdata.gps.longitude*1e7), # lon 1e7
+                    int(self.main.rxdata.gps.altitude*1e3), # alt mm
+                    int(self.main.rxdata.alt.altitude*1e3), # alt mm
+                    euler_to_quaternion(
+                        self.main.rxdata.att.roll,
+                        self.main.rxdata.att.pitch,
+                        self.main.rxdata.att.yaw,
+                    ),
+                    0, # index
+                    1, # success
+                    b''
+                )
 
         if self._last_cam_beat:
             if self.main.rxdata.time.time-self._last_cam_beat > HEARTBEAT_TIMEOUT*1e6:
@@ -2226,6 +2247,7 @@ class Main:
         logger.warning(f"Booting instance #{self.systemid}...")
 
         boot_tasks = [
+            asyncio.create_task(self.comm.boot_proc()),
             asyncio.create_task(self.afcs.boot_proc()),
             asyncio.create_task(self.navigator.boot_proc()),
             asyncio.create_task(self.io.boot_proc()),

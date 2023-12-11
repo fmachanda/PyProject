@@ -149,7 +149,7 @@ class Connect:
         except KeyboardInterrupt:
             self.close()
     
-    async def _command(self, name: str, *params, acknowledge: bool = True, period: float = 1, timeout_cycles: int = 5) -> None:
+    async def _command(self, name: str, *params, acknowledge: bool = False, period: float = 1, timeout_cycles: int = 5) -> None:
         """Send a COMMAND_LONG message."""
         params_full = (list(params)+[0]*7)[:7]
         command = eval(f'm.MAV_CMD_{name}')
@@ -214,7 +214,7 @@ class Connect:
         except KeyboardInterrupt:
             self.close()
 
-    async def _command_int(self, name: str, *params, acknowledge: bool = True, period: float = 1, timeout_cycles: int = 5, frame: int = m.MAV_FRAME_GLOBAL) -> None:
+    async def _command_int(self, name: str, *params, acknowledge: bool = False, period: float = 1, timeout_cycles: int = 5, frame: int = m.MAV_FRAME_GLOBAL) -> None:
         """Send a COMMAND_INT message."""
         params_full = (list(params)+[0]*7)[:7]
         match name:
@@ -308,9 +308,9 @@ class Connect:
         asyncio.run(self._command('DO_SET_MODE', mode, custom_mode, custom_submode))
 
     def set_alt(self, alt: float) -> None:
-        """Change UAV altitude setpoint."""
+        """Change UAV alt setpoint."""
         logger.info("Calling set_alt()")
-        asyncio.run(self._command('DO_CHANGE_ALTITUDE', alt, m.MAV_FRAME_GLOBAL_TERRAIN_ALT))
+        asyncio.run(self._command('DO_CHANGE_alt', alt, m.MAV_FRAME_GLOBAL_TERRAIN_ALT))
 
     def set_speed(self, airspeed: float) -> None:
         """Change UAV speed setpoint."""
@@ -325,20 +325,25 @@ class Connect:
         alt = 50.0 if alt is None else alt
         asyncio.run(self._command_int('DO_REPOSITION', speed, 0, radius, yaw, int(lat*1e7), int(lon*1e7), int(alt*FT_TO_M), acknowledge=False))
 
-    def v_takeoff(self, latitude: float, longitude: float, altitude: float, transit_heading: float = m.VTOL_TRANSITION_HEADING_TAKEOFF, yaw: float = float('nan')):
+    def v_takeoff(self, lat: float, lon: float, alt: float, transit_heading: float = m.VTOL_TRANSITION_HEADING_NEXT_WAYPOINT, yaw: float = float('nan')):
         """Command UAV vertical takeoff."""
         logger.info("Calling v_takeoff()")
-        asyncio.run(self._command_int('NAV_VTOL_TAKEOFF', 0, transit_heading, 0, yaw, int(latitude), int(longitude), int(altitude)))
+        asyncio.run(self._command_int('NAV_VTOL_TAKEOFF', 0, transit_heading, 0, yaw, int(lat), int(lon), int(alt)))
     
-    def f_land(self, latitude: float, longitude: float, altitude: float, abort_alt: float = 0, yaw: float = float('nan')):
+    def f_land(self, lat: float, lon: float, alt: float, abort_alt: float = 0, yaw: float = float('nan')):
         """Command UAV conventional landing."""
-        logger.info("Calling f_land()")
-        asyncio.run(self._command_int('NAV_LAND', abort_alt, m.PRECISION_LAND_MODE_DISABLED, 0, yaw, int(latitude), int(longitude), int(altitude)))
+        lat = self.map_pos[0] if lat is None else lat
+        lon = self.map_pos[1] if lon is None else lon
+        alt = 0.0 if alt is None else alt
+        asyncio.run(self._command_int('NAV_LAND', abort_alt, m.PRECISION_LAND_MODE_DISABLED, 0, yaw, int(lat), int(lon), int(alt)))
 
-    def v_land(self, latitude: float, longitude: float, altitude: float, approch_alt: float = float('nan'), yaw: float = float('nan')):
+    def v_land(self, lat: float, lon: float, alt: float, approch_alt: float = float('nan'), yaw: float = float('nan')):
         """Command UAV vertical landing."""
         logger.info("Calling v_land()")
-        asyncio.run(self._command_int('NAV_VTOL_LAND', m.NAV_VTOL_LAND_OPTIONS_DEFAULT, 0, approch_alt, yaw, int(latitude), int(longitude), int(altitude)))
+        lat = self.map_pos[0] if lat is None else lat
+        lon = self.map_pos[1] if lon is None else lon
+        alt = 0.0 if alt is None else alt
+        asyncio.run(self._command_int('NAV_VTOL_LAND', m.NAV_VTOL_LAND_OPTIONS_DEFAULT, 0, approch_alt, yaw, int(lat), int(lon), int(alt)))
 
     def gimbal_pitchyaw(self, pitch: float, yaw: float, pitchrate: float = 0.0, yawrate: float = 0.0, flags: int = m.GIMBAL_MANAGER_FLAGS_NEUTRAL, id: int = 0):
         """Command gimbal attitude."""
@@ -362,9 +367,9 @@ class Connect:
         """DEVELOPMENT ONLY - send new PID parameters."""
         asyncio.run(self._command_int('PID', kp, ti, td, setpoint, id, 0, 0, acknowledge=False))
 
-    def img(self, interval: float = 1, num: float = 1, sequence: float = 0):
+    def img(self, id: float = 0, interval: float = 1, num: float = 1, sequence: float = 0):
         """DEVELOPMENT ONLY - send screenshot command."""
-        asyncio.run(self._command_int('IMG',interval, num, sequence, 0.0, int(0), int(0), int(0), acknowledge=False))
+        asyncio.run(self._command_int('IMAGE_START_CAPTURE', id, interval, num, sequence, int(0), int(0), int(0), acknowledge=False))
     # endregion
 
     def heartbeat(self) -> None:

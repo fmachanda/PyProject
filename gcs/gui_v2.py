@@ -35,6 +35,8 @@ class GCSUI:
         self.map_button = tk.Button(root, text="Open Map", command=self.open_map)
         self.map_button.pack(pady=(0, 10))
 
+        self.root.bind('<Return>', self.return_key)
+
         # Create a menu bar
         self.menubar = tk.Menu(root)
         self.root.config(menu=self.menubar)
@@ -56,14 +58,21 @@ class GCSUI:
         self.connect_menu.add_command(label="Connect", command=self.connect)
         self.connect_menu.add_command(label="Close", command=self.close)
 
-        self.mode_menu.add_command(label="Boot", command=self.boot)
         self.mode_menu.add_command(label="Set mode", command=self.show_set_mode_dialog)
+        self.mode_menu.add_command(label="Boot", command=self.mode_boot)
+        self.mode_menu.add_command(label="Arm", command=self.mode_arm)
+        self.mode_menu.add_command(label="Disarm", command=self.mode_disarm)
+        self.mode_menu.add_separator()
+        self.mode_menu.add_command(label="Emergency Abort", command=self.show_emergency_abort_dialog, state=tk.DISABLED)
 
         self.autopilot_menu.add_command(label="Set altitude", command=self.show_set_alt_dialog)
         self.autopilot_menu.add_command(label="Set speed", command=self.show_set_speed_dialog)
         self.autopilot_menu.add_command(label="Direct to", command=self.show_direct_to_dialog)
+        self.autopilot_menu.add_command(label="Takeoff", command=self.show_takeoff_dialog)
+        self.autopilot_menu.add_command(label="Land", command=self.show_landing_dialog)
 
-        self.cam_menu.add_command(label="Take image", command=self.cam_take_image)
+        self.cam_menu.add_command(label="Take single image", command=self.cam_take_single_image)
+        self.cam_menu.add_command(label="Take images", command=self.show_take_image_dialog)
         self.cam_menu.add_command(label="Pitch/yaw", command=self.show_pitchyaw_dialog)
         self.cam_menu.add_command(label="ROI", command=self.show_roi_dialog)
         self.cam_menu.add_command(label="ROI Clear", command=self.cam_roi_clear)
@@ -81,8 +90,6 @@ class GCSUI:
         heart.start()
         listener = threading.Thread(target=self.listen, daemon=True)
         listener.start()
-
-        self.connect()
 
     def enable_menus(self):
         if self.connect_instance is None:
@@ -131,6 +138,49 @@ class GCSUI:
                 self.map_marker = None
 
     #region Dialogs
+    def show_takeoff_dialog(self):
+        if self.connect_instance is not None and ConfirmationDialog(self.root, "Confirm takeoff?").result:
+            # TODO: lat/lon/alt alignment
+            self.connect_instance.v_takeoff(0.0, 0.0, 0.0)
+            self.log("Takeoff")
+
+    def show_landing_dialog(self):
+        if self.connect_instance is not None:
+            try:
+                self.connect_instance.map_pos = list(self.map_marker.position)
+            except AttributeError:
+                self.connect_instance.map_pos = [0.0, 0.0]
+
+            try:
+                lat, lon, alt = MultiEntryDialog(self.root, ["Lat", "Lon", "Alt"]).result
+                alt = float(alt) if alt is not None else alt
+            except (TypeError, ValueError):
+                return
+
+            if ConfirmationDialog(self.root, "Confirm landing?").result:
+                self.connect_instance.v_land(lat=lat, lon=lon, alt=alt)
+                self.log("Landing")
+
+    def show_emergency_abort_dialog(self):
+        if self.connect_instance is not None:
+            try:
+                self.connect_instance.map_pos = list(self.map_marker.position)
+            except AttributeError:
+                self.connect_instance.map_pos = [0.0, 0.0]
+
+            try:
+                lat, lon, alt = MultiEntryDialog(self.root, ["Lat", "Lon", "Alt"]).result
+                alt = float(alt) if alt is not None else alt
+            except (TypeError, ValueError):
+                return
+
+            if not ConfirmationDialog(self.root, "Confirm emergency abort?").result:
+                return
+            
+            if ConfirmationDialog(self.root, "WARNING!\n\nThis action will command a crash landing.\n\nEnsure persons and property on\n ground will not be endangered.").result:
+                self.connect_instance.f_land(lat=lat, lon=lon, alt=alt)
+                self.log("EMERGENCY LANDING")
+
     def show_set_mode_dialog(self):
         if self.connect_instance is not None:
             try:
@@ -203,14 +253,27 @@ class GCSUI:
             self.connect_instance.gimbal_roi(lat=lat, lon=lon, alt=alt)
             self.log("ROI")
 
+    def show_take_image_dialog(self):
+        if self.connect_instance is not None:
+            try:
+                id, interval, num, sequence = MultiEntryDialog(self.root, ["ID", "Interval", "Number", "Sequence"]).result
+                id = 0 if id is None else id
+                interval = 1 if interval is None else interval
+                num = 1 if num is None else num
+                sequence = 0 if sequence is None else sequence
+            except (TypeError, ValueError):
+                return
+            self.connect_instance.img(id=id, sequence=sequence, num=num, interval=interval)
+            self.log("Take images")
+
     def show_pid_tuner_dialog(self):
         self.init_pid_window()
     #endregion
 
-    def cam_take_image(self):
+    def cam_take_single_image(self):
         if self.connect_instance is not None:
             self.connect_instance.img()
-            self.log("Take image")
+            self.log("Take single image")
 
     def cam_roi_clear(self):
         if self.connect_instance is not None:
@@ -221,6 +284,10 @@ class GCSUI:
         if self.connect_instance is not None:
             self.connect_instance.gimbal_pitchyaw(-180, 0)
             self.log("Stow")
+
+    def return_key(self, event=None):
+        if self.connect_instance is None:
+            self.connect()
 
     def connect(self):
         try:
@@ -247,10 +314,20 @@ class GCSUI:
 
         self.update_status()
 
-    def boot(self):
+    def mode_boot(self):
         if self.connect_instance is not None:
             self.connect_instance.boot()
             self.log("Boot")
+
+    def mode_arm(self):
+        if self.connect_instance is not None:
+            self.connect_instance.set_mode("GROUND_ARMED")
+            self.log("Set mode")
+
+    def mode_disarm(self):
+        if self.connect_instance is not None:
+            self.connect_instance.set_mode("GROUND_DISARMED")
+            self.log("Set mode")
 
     def update_status(self):
         message = "Unconnected" if self.connect_instance is None else f"Connected to UAV{self.connect_instance.target}"
@@ -381,15 +458,6 @@ class GCSUI:
     #endregion
 
 
-def main() -> None:
-    app = GCSUI(tk.Tk())
-
-    try:
-        app.root.mainloop()
-    except KeyboardInterrupt:
-        pass
-
-
 class MultiEntryDialog(simpledialog.Dialog):
     def __init__(self, parent, entry_names=None, **kwargs):
         self.entry_names = entry_names or []
@@ -425,10 +493,10 @@ class MultiEntryDialog(simpledialog.Dialog):
 
 
 class ConfirmationDialog(simpledialog.Dialog):
-    def __init__(self, parent, title, text, **kwargs):
+    def __init__(self, parent, text, **kwargs):
         self.text = text
         self.ok_pressed = False
-        super().__init__(parent, title=title, **kwargs)
+        super().__init__(parent, **kwargs)
 
     def body(self, master):
         tk.Label(master, text=self.text).pack(padx=10, pady=10)
@@ -444,6 +512,23 @@ class ConfirmationDialog(simpledialog.Dialog):
         self.bind("<Escape>", self.cancel)
 
         box.pack()
+
+    def ok(self, event=None):
+        self.ok_pressed = True
+        super().ok()
+
+    def cancel(self, event=None):
+        self.result = self.ok_pressed
+        super().cancel()
+
+
+def main() -> None:
+    app = GCSUI(tk.Tk())
+
+    try:
+        app.root.mainloop()
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == '__main__':

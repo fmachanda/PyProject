@@ -1393,7 +1393,9 @@ class TestCamera:
         self._cam_id = config.getint('mavlink_ids', 'cam_id')
         self._uav_id = None
 
-        self.xp_path = r'/Users/fletcher/Documents/GitHub/fmuas-main/stored_images'
+        self.xp_path = r'/Users/fletcher/Documents/GitHub/fmuas-main/common/test_images'
+        self.xp_path = r'C:\X-Plane 12\Aircraft\fmuas-main\common\test_images' if not os.path.isdir(self.xp_path) else self.xp_path
+
 
         self.stop = asyncio.Event()
         
