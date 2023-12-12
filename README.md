@@ -31,7 +31,7 @@ The software is designed to be simulated using the [X-Plane 12][xplane-link] fli
 Clone this repo into the desired directory. If you plan to use this project with the X-Plane flight simulator, ensure the files are cloned into the `X-Plane 12/Aircraft/` directory. Replace `<directory>` below with the correct path.
 
 ```bash
-git clone https://github.com/fmachanda/fmuas-main.git <directory>
+git clone https://github.com/fmachanda/fmuas-main.git <directory> --depth 1
 ```
 
 Navigate to the `scripts` folder, and double-click on `install.bat` (for Windows) or `install.command` (for MacOS). You should see a terminal window open.
