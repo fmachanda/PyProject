@@ -2,11 +2,13 @@
 
 DEVELOPER ONLY
 """
-
-import logging
-import os
-import shutil
-import time
+if __name__=='__main__':
+    import cv2
+    import logging
+    import numpy as np
+    import os
+    import shutil
+    import time
 
 
 class PIDValues:
@@ -46,6 +48,37 @@ pid_tune_map = {
 
 pid_tune_map_names = {pid.id: name for name, pid in pid_tune_map.items()}
 pid_tune_map_sps = {pid.id: pid.sp_name for pid in pid_tune_map.values()}
+
+
+def template_generator():
+    templates: np.ndarray = np.load('./common/train_data_v3.npy')
+    new: np.ndarray = np.load('./common/output_data.npy')
+
+    assert templates[0].shape == new.shape
+    new = new.astype(np.float64)
+
+    out = np.zeros((18, 224, 224), dtype=np.float64)
+    out[0] = new
+        
+    height, width = new.shape[:2]
+
+    for i in range(1, 18):
+        angle = i*10
+
+        rotation_matrix = cv2.getRotationMatrix2D((width / 2, height / 2), angle, 1)
+        rotated_image = cv2.warpAffine(new, rotation_matrix, (width, height))
+
+        out[i] = rotated_image
+
+    concatenated_matrix = np.concatenate([templates, out], axis=0)
+    
+    for img in concatenated_matrix:
+        cv2.imshow('out', img)
+        if cv2.waitKey():
+            cv2.destroyAllWindows()
+
+    if input(f"Proceed to create train_data - {(stamp:=str(int(time.time()))[-5:])}? ").lower() in ['yes', 'y']:
+        np.save(f'./common/train_data - {stamp}.npy', concatenated_matrix)
 
 
 def watcher() -> None:
@@ -93,3 +126,6 @@ def watcher() -> None:
                         pass
     except KeyboardInterrupt:
         logging.warning("Closed watcher cycle")
+
+if __name__=='__main__':
+    template_generator()
