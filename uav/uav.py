@@ -1966,8 +1966,8 @@ class CommManager:
                     self.main.rxdata.cam.dump(0.0, 0.0, self.main.rxdata.time.time)
                     logger.info(f"None detected in {msg.file_url}.")
 
-                self._mav_conn_gcs.camera_image_captured_send(
-                    int(self.main.rxdata.time.time*1e3),
+                self._mav_conn_gcs.mav.camera_image_captured_send(
+                    int(self.main.rxdata.time.time*1e-3),
                     0, # UTC
                     0, # depr
                     int(self.main.rxdata.gps.latitude*1e7), # lat 1e7
