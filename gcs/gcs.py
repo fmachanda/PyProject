@@ -310,12 +310,12 @@ class Connect:
     def set_alt(self, alt: float) -> None:
         """Change UAV alt setpoint."""
         logger.info("Calling set_alt()")
-        asyncio.run(self._command('DO_CHANGE_alt', alt, m.MAV_FRAME_GLOBAL_TERRAIN_ALT))
+        asyncio.run(self._command('DO_CHANGE_ALTITUDE', alt, m.MAV_FRAME_GLOBAL_TERRAIN_ALT))
 
     def set_speed(self, airspeed: float) -> None:
         """Change UAV speed setpoint."""
         logger.info("Calling set_speed()")
-        asyncio.run(self._command('DO_CHANGE_SPEED', m.SPEED_TYPE_AIRSPEED, airspeed*KT_TO_MS, -1))
+        asyncio.run(self._command('DO_CHANGE_SPEED', 0, airspeed*KT_TO_MS, -1))
 
     def reposition(self, lat: float | None = None, lon: float | None = None, alt: float | None = None, speed: float = -1, radius: float = 0, yaw: float = 1):
         """Change UAV current waypoint."""

@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import sys
+import threading
 import time
 
 os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
@@ -20,6 +21,7 @@ ANNOTATION_COLOR = (200, 0, 200)
 ROI_RESCALE_WIDTH, ROI_RESCALE_HEIGHT = templates.shape[1:]
 
 last_time = 0
+threaded_output = False
 
 async def find_contour(image: str | cv2.typing.MatLike) -> tuple[np.ndarray] | bool:
     """Find contours in image for landing UAV.
@@ -127,6 +129,8 @@ async def find_h(img: str | cv2.typing.MatLike, display: bool = False, confidenc
     """
 
     global invtemplates
+    global threaded_output
+
     global last_time
     now = time.perf_counter_ns()
     print(f"[IMG] Starting find_h...")
@@ -167,7 +171,7 @@ async def find_h(img: str | cv2.typing.MatLike, display: bool = False, confidenc
         ]
         await asyncio.sleep(0)
         rois = np.stack(rois, axis=0)
-        print(f"[IMG] Loop time: ************ {((time.perf_counter_ns() - s_time)/1e6):.2f}")
+        print(f"[IMG] Loop time: ************ {((time.perf_counter_ns() - s_time)/1e3):.2f}")
         await asyncio.sleep(0)
 
         posmatches = templates * rois[:, np.newaxis, :, :]
@@ -266,7 +270,7 @@ async def find_h(img: str | cv2.typing.MatLike, display: bool = False, confidenc
 
             strengths[n] = (templates.shape[1]*templates.shape[2]) * (posstrength - negstrength - posinvstrength) / np.sum(roi)
             await asyncio.sleep(0)
-        print(f"[IMG] Loop time: ************ {(t_time/1e6):.2f}")
+        print(f"[IMG] Loop time: ************ {(t_time/1e3):.2f}")
     
     confidence = np.max(strengths)
     await asyncio.sleep(0)
@@ -286,14 +290,14 @@ async def find_h(img: str | cv2.typing.MatLike, display: bool = False, confidenc
     xc = (x + w//2) - image.shape[1]//2
     await asyncio.sleep(0)
 
+    cv2.rectangle(image, (x, y), (x+w, y+h), color=ANNOTATION_COLOR, thickness=2)
+    cv2.circle(image, (x + w//2, y + h//2), radius=2, color=ANNOTATION_COLOR, thickness=-1)
+    await asyncio.sleep(0)
+
     if __name__=='__main__':
         print(f"'H' detected in {img} at ({xc},{yc}) with a confidence of {confidence:.2f}.")
         print(index)
     if display:
-        cv2.rectangle(image, (x, y), (x+w, y+h), color=ANNOTATION_COLOR, thickness=2)
-        cv2.circle(image, (x + w//2, y + h//2), radius=2, color=ANNOTATION_COLOR, thickness=-1)
-        await asyncio.sleep(0)
-
         plt.figure()
         if VECTORIZE:
             plt.imshow(rois[index[0][0]])
@@ -306,7 +310,24 @@ async def find_h(img: str | cv2.typing.MatLike, display: bool = False, confidenc
     now = time.perf_counter_ns()
     print(f"[IMG] Ending find_h           {((now - last_time)/1e3):.2f}")
     last_time = now
+    threaded_output = (xc, yc, confidence, image)
     return xc, yc, confidence, image
+
+def find_h_sync(*args, **kwargs) -> tuple | bool:
+    return asyncio.run(find_h(*args, **kwargs))
+
+async def detect(*args, **kwargs) -> tuple | bool:
+    global threaded_output
+    threaded_output = False
+
+    task = threading.Thread(target=find_h_sync, args=args, kwargs=kwargs)
+    await asyncio.sleep(0)
+    task.start()
+    await asyncio.sleep(0)
+    task.join()
+    await asyncio.sleep(0)
+
+    return threaded_output
 
 
 async def _test(file):

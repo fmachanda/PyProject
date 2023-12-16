@@ -244,7 +244,7 @@ class RxBuffer:
             _nspeed, _espeed, _dspeed = msg.value.twist.value.linear.meter_per_second
 
             self.yspeed = _nspeed*math.cos(self.yaw) + _espeed*math.sin(self.yaw)
-            self.xspeed = _nspeed*math.sin(self.yaw) + _espeed*math.cos(self.yaw)
+            self.xspeed = -_nspeed*math.sin(self.yaw) + _espeed*math.cos(self.yaw)
             self.zspeed = -1*_dspeed
             self.dt = self.time - self._last_time
 
@@ -1134,6 +1134,7 @@ class Navigator:
     def direct_wpt(self, wpt: Waypoint) -> None:
         """Direct to a waypoint."""
         self._waypoint_list.insert(1, wpt)
+        self.main.afcs.auto_sp = True
 
     def next_wpt(self) -> None:
         """Increment flight plan wpt."""
@@ -1287,7 +1288,7 @@ class AFCS:
         self._pidf_ias_thr = PID(kp=0.1, ti=0.0, td=0.0, integral_limit=1.0, maximum=1.00, minimum=0.02) # TODO
 
         self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
-        self._pidv_xsp_rol = PID(kp=-0.1, ti=-0.5, td=0.1, integral_limit=0.3, minimum=-math.pi/12, maximum=math.pi/12) # TODO
+        self._pidv_xsp_rol = PID(kp=0.1, ti=0.9, td=0.1, integral_limit=0.3, minimum=-math.pi/12, maximum=math.pi/12) # TODO
         self._pidv_rol_rls = PID(kp=1.0, ti=1.0, td=0.05, integral_limit=0.08, minimum=-math.pi/6, maximum=math.pi/6)
         self._pidv_rls_out = PID(kp=0.021, ti=0.05, td=0.04, integral_limit=0.3, minimum=-0.08, maximum=0.08)
 
@@ -1370,7 +1371,7 @@ class AFCS:
     def _vtol_calc(self) -> np.ndarray:
         """Calculate VTOL throttle commands from sensors."""
         if (alt:=self.main.rxdata.alt).dt > 0.0:
-            # self._spv_vs = self._pidv_alt_vsp.cycle(alt.altitude, self._sp_altitude, alt.dt)
+            self._spv_vs = self._pidv_alt_vsp.cycle(alt.altitude, self._sp_altitude, alt.dt)
             self._outv_thr_mode = 1
             if alt.altitude < 0.5:
                 if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_ASCENT:
@@ -1379,7 +1380,7 @@ class AFCS:
                     self._outv_thr_mode = 0
 
             if alt.altitude < 0.05:
-                self._pidv_pts_out._integral = -0.04
+                self._pidv_pts_out._integral = 0.21
                 self._pidv_xdp_xsp._integral = 0.0
                 self._pidv_xsp_rol._integral = 0.0
                 self._pidv_rol_rls._integral = 0.0
@@ -1393,7 +1394,7 @@ class AFCS:
                 self._pidv_yws_out._integral = 0.0
                 self._pidv_vsp_out.minimum = 0.0
             else:
-                self._pidv_vsp_out.minimum = 0.55
+                self._pidv_vsp_out.minimum = 0.50
             self.main.rxdata.alt.dt = 0.0
 
         if (cam:=self.main.rxdata.cam).dt > 0.0:
@@ -1488,18 +1489,23 @@ class AFCS:
         self._ias_scalar = min(self._ias_scalar, 10.0)
 
         # Setpoints
-        if self.auto_sp:
-            match self.main.state.custom_submode:
-                case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT | g.CUSTOM_SUBMODE_TAKEOFF_DEPART | g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT | g.CUSTOM_SUBMODE_LANDING_TRANSIT | g.CUSTOM_SUBMODE_LANDING_HOVER:
-                    self._sp_altitude = self.main.navigator.hover_alt
-                    self._sp_heading = self.main.navigator.commanded_heading
-                    self._spf_ias = self.main.navigator.cruise_ias
-                case g.CUSTOM_SUBMODE_FLIGHT_NORMAL:
+        match self.main.state.custom_submode:
+            case g.CUSTOM_SUBMODE_LANDING_DESCENT:
+                self._sp_altitude = 0.0
+                self._sp_heading = self.main.navigator.commanded_heading
+            case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT | g.CUSTOM_SUBMODE_TAKEOFF_DEPART | g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT | g.CUSTOM_SUBMODE_LANDING_TRANSIT | g.CUSTOM_SUBMODE_LANDING_HOVER:
+                self._sp_altitude = self.main.navigator.hover_alt
+                self._spf_ias = self.main.navigator.cruise_ias
+
+                self._sp_heading = self.main.navigator.commanded_heading
+            case g.CUSTOM_SUBMODE_FLIGHT_NORMAL:
+                if self.auto_sp:
                     self._sp_altitude = self.main.navigator.commanded_altitude
-                    self._sp_heading = self.main.navigator.commanded_heading
                     self._spf_ias = self.main.navigator.cruise_ias
-                case _:
-                    self._sp_altitude = 0.0
+
+                self._sp_heading = self.main.navigator.commanded_heading
+            case _:
+                self._sp_altitude = 0.0
 
         # Controls
         match self.main.state.custom_submode:
@@ -1535,11 +1541,11 @@ class AFCS:
 
         # Mode increments
         match self.main.state.custom_submode:
-            # case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT:
-            #     if self.main.rxdata.alt.altitude > self.main.navigator.hover_alt-3:
-            #         self.main.state.inc_mode()
+            case g.CUSTOM_SUBMODE_TAKEOFF_ASCENT:
+                if self.main.rxdata.alt.altitude > self.main.navigator.hover_alt-3:
+                    self.main.state.inc_mode()
             case g.CUSTOM_SUBMODE_TAKEOFF_DEPART:
-                if self.main.rxdata.ias.ias > 5:
+                if self.main.rxdata.ias.ias > 3:
                     self.main.state.inc_mode()
             case g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
                 if self._vtol_ratio==0 and self._ftilt==0 and self._rtilt==0:
@@ -1856,19 +1862,23 @@ class CommManager:
                 # IMAGE
                 case m.MAV_CMD_IMAGE_START_CAPTURE:
                     logger.info("Commanding camera...")
-                    self._cam_conn.mav.command_long_send(
-                        self._cam_id,
-                        m.MAV_COMP_ID_CAMERA,
-                        m.MAV_CMD_IMAGE_START_CAPTURE,
-                        0,
-                        msg.param1, # param1: Camera ID
-                        msg.param2, # param2: Interval (seconds)
-                        msg.param3, # param3: Number images
-                        msg.param4, # param4: Single image sequence number
-                        0,
-                        0,
-                        float('nan')
-                    )
+                    try:
+                        self._cam_conn.mav.command_long_send(
+                            self._cam_id,
+                            m.MAV_COMP_ID_CAMERA,
+                            m.MAV_CMD_IMAGE_START_CAPTURE,
+                            0,
+                            msg.param1, # param1: Camera ID
+                            msg.param2, # param2: Interval (seconds)
+                            msg.param3, # param3: Number images
+                            msg.param4, # param4: Single image sequence number
+                            0,
+                            0,
+                            float('nan')
+                        )
+                        self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_IMAGE_START_CAPTURE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
+                    except AttributeError:
+                        self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_IMAGE_START_CAPTURE, m.MAV_RESULT_DENIED, 255, 0, 0, 0)
                 # NAV_VTOL_TAKEOFF
                 case m.MAV_CMD_NAV_VTOL_TAKEOFF:
                     if self.main.state.set_mode(m.MAV_MODE_GUIDED_ARMED, g.CUSTOM_MODE_TAKEOFF, g.CUSTOM_SUBMODE_TAKEOFF_ASCENT):
@@ -1957,11 +1967,11 @@ class CommManager:
             elif msg.get_type() == 'CAMERA_IMAGE_CAPTURED' and msg.get_srcSystem()==self._cam_id:
                 logger.info(f"Proccesing image {msg.file_url}")
 
-                if out := await img.find_h(msg.file_url, display=False):
+                if out := await asyncio.create_task(img.detect(msg.file_url)):
                     dx, dy, confidence, image = out
                     logger.info(f"'H' detected in {msg.file_url} at ({dx},{dy}) with a confidence of {confidence:.2f}.")
                     self.main.rxdata.cam.dump(dx, dy, self.main.rxdata.time.time)
-                    await grapher.imshow(image)
+                    # await grapher.imshow(image)
                 else:
                     self.main.rxdata.cam.dump(0.0, 0.0, self.main.rxdata.time.time)
                     logger.info(f"None detected in {msg.file_url}.")
@@ -2027,7 +2037,7 @@ class CommManager:
                         *self._roi
                     )
                     y = calc_dyaw(self.main.rxdata.att.yaw, math.radians(y))
-                    p = self.main.rxdata.att.pitch-math.radians(p)
+                    p = math.radians(p)-self.main.rxdata.att.pitch
                     quat = euler_to_quaternion(0.0, p, y)
                     self._cam_conn.mav.gimbal_device_set_attitude_send(
                         self._cam_id,

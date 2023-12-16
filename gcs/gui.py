@@ -11,7 +11,7 @@ from gcs import Connect
 
 stop = threading.Event()
 
-HEARTBEAT_TIMEOUT = 2.0
+HEARTBEAT_TIMEOUT = 5.0
 
 os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
 sys.path.append(os.getcwd())

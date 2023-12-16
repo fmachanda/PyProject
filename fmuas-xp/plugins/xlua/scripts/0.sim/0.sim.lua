@@ -54,6 +54,7 @@ simSET_throttle_axis = create_dataref("fmuas/config/joystick/throttle_axis_index
 
 simCMD_pause = find_command("sim/operation/pause_toggle")
 simCMD_screenshot = find_command("sim/operation/screenshot")
+simCMD_circle = find_command("sim/view/circle")
 simDR_pause = find_dataref("sim/time/paused")
 
 ROLL = find_dataref("sim/flightmodel/position/phi")
@@ -103,6 +104,11 @@ end
 
 cmd_handler = create_command("fmuas/commands/override_python", "Toggle override python lockout", override_python)
 
+capture_start = os.clock()
+reset_start = os.clock()
+arm_capture = 0
+arm_reset = 0
+
 function image_capture(phase, duration)
 	if phase == 0 then
 		print("Commanding FLIR image")
@@ -110,27 +116,13 @@ function image_capture(phase, duration)
 			old_cockpit_data[i] = simDR_cockpit_data[i]
 		end
 
-		rp_to_py()
-
-		calc_phi = (uasDR_CAM_roll_actual*(1 - math.abs(uasDR_CAM_eff_yaw/90)) + uasDR_CAM_eff_yaw)
-		if (calc_phi<-90) or (calc_phi>90) then
-			simDR_view_phi = (180+calc_phi)%360
-		else
-			simDR_view_phi = calc_phi
-		end
-		simDR_view_psi = uasDR_CAM_eff_yaw
-		simDR_view_the = uasDR_CAM_eff_pitch
-		simDR_view_x = 0.0
-		simDR_view_y = 0.0
-		simDR_view_z = -0.22
-
 		for i=0,199 do
 			simDR_cockpit_data[i] = 0
 		end
 
-		simCMD_screenshot:once()
-		uasCMD_image_reset:once()
-		print("Successful FLIR image")
+		uasDR_flir_view_on = 1
+		arm_capture = 1
+		capture_start = os.clock()
 	end
 end
 
@@ -139,6 +131,9 @@ function image_capture_reset(phase, duration)
 		for i=0,199 do
 			simDR_cockpit_data[i] = old_cockpit_data[i]
 		end
+		uasDR_flir_view_on = 0
+		simCMD_circle:once()
+		arm_reset = 0
 	end
 end
 
@@ -303,6 +298,22 @@ function before_physics()
 		simDR_view_x = 0.0
 		simDR_view_y = 0.0
 		simDR_view_z = -0.22
+	end
+
+	if arm_capture == 1 then
+		if os.clock() > capture_start+0.5 then
+			simCMD_screenshot:once()
+			print("Successful FLIR image")
+			reset_start = os.clock()
+			arm_reset = 1
+			arm_capture = 0
+		end
+	end
+
+	if arm_reset == 1 then
+		if os.clock() > reset_start+0.5 then
+			uasCMD_image_reset:once()
+		end
 	end
 
 end

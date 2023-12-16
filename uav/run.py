@@ -39,3 +39,5 @@ if __name__ == '__main__':
         asyncio.run(main(args.graph, args.print))
     except KeyboardInterrupt:
         pass
+
+    input("Close? ")
