@@ -1437,9 +1437,6 @@ class AFCS:
                 self._outt_pitch = 0.0
                 self._ftilt = 0.0
                 self._rtilt = 0.0
-
-            if self.main.state.custom_submode==g.CUSTOM_SUBMODE_LANDING_HOVER:
-                self._spv_vs = 0.0
     
             self._outv_throttle = self._pidv_vsp_out.cycle(att.zspeed, self._spv_vs, att.dt)
             self._spv_roll = self._pidv_xsp_rol.cycle(att.xspeed, self._spv_xspeed, att.dt)
@@ -1457,6 +1454,7 @@ class AFCS:
         match self._outv_thr_mode:
             case 0:
                 self._outv_throttle = 0.0
+                self.main.state.set_mode(g.CUSTOM_SUBMODE_GROUND_DISARMED)
             case 1:
                 pass
             case 2:

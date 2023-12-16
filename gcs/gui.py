@@ -111,7 +111,7 @@ class GCSUI:
             self.map.title("Map")
             self.map_widget = tkmap.TkinterMapView(self.map, width=800, height=600, corner_radius=0)
             self.map_widget.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
-            self.map_widget.set_position(41.688306, -83.716114)
+            self.map_widget.set_position(20.8890093 -156.4338805)
             self.map_widget.set_zoom(10)
             self.map_widget.add_right_click_menu_command(label="Add Marker", command=self.add_map_marker, pass_coords=True)
             self.map_widget.add_right_click_menu_command(label="Remove Marker", command=self.delete_map_marker, pass_coords=True)
@@ -152,7 +152,7 @@ class GCSUI:
                 self.connect_instance.map_pos = [0.0, 0.0]
 
             try:
-                lat, lon, alt = MultiEntryDialog(self.root, ["Lat", "Lon", "Alt"]).result
+                lat, lon, alt = MultiEntryDialog(self.root, ["Lat (deg)", "Lon (deg)", "Ft AGL"]).result
                 alt = float(alt) if alt is not None else alt
             except (TypeError, ValueError):
                 return
@@ -169,7 +169,7 @@ class GCSUI:
                 self.connect_instance.map_pos = [0.0, 0.0]
 
             try:
-                lat, lon, alt = MultiEntryDialog(self.root, ["Lat", "Lon", "Alt"]).result
+                lat, lon, alt = MultiEntryDialog(self.root, ["Lat (deg)", "Lon (deg)", "Ft AGL"]).result
                 alt = float(alt) if alt is not None else alt
             except (TypeError, ValueError):
                 return
@@ -200,7 +200,7 @@ class GCSUI:
                 self.connect_instance.map_pos = [0.0, 0.0]
 
             try:
-                lat, lon, alt = MultiEntryDialog(self.root, ["Lat", "Lon", "Alt"]).result
+                lat, lon, alt = MultiEntryDialog(self.root, ["Lat (deg)", "Lon (deg)", "Ft AGL"]).result
                 alt = float(alt) if alt is not None else alt
             except (TypeError, ValueError):
                 return
@@ -210,7 +210,7 @@ class GCSUI:
     def show_set_alt_dialog(self):
         if self.connect_instance is not None:
             try:
-                alt = float(MultiEntryDialog(self.root, ["Altitude (ft)"]).result[0])
+                alt = float(MultiEntryDialog(self.root, ["Ft AGL"]).result[0])
             except TypeError:
                 return
             if alt is not None:
@@ -246,7 +246,7 @@ class GCSUI:
                 self.connect_instance.map_pos = [0.0, 0.0]
 
             try:
-                lat, lon, alt = MultiEntryDialog(self.root, ["Lat", "Lon", "Alt"]).result
+                lat, lon, alt = MultiEntryDialog(self.root, ["Lat (deg)", "Lon (deg)", "Ft AGL"]).result
                 alt = float(alt) if alt is not None else alt
             except (TypeError, ValueError):
                 return
