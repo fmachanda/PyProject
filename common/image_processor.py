@@ -161,13 +161,13 @@ async def find_h(img: str | cv2.typing.MatLike, display: bool = False, confidenc
             cv2.resize(
                 cv2.drawContours(
                     np.zeros_like(processed), 
-                    contours, 
-                    n, 
+                    [contour], 
+                    0, 
                     (1.0), 
                     thickness=cv2.FILLED
-                )[(r:=cv2.boundingRect(contours[n]))[1]:r[1]+r[3], r[0]:r[0]+r[2]], 
+                )[(r:=cv2.boundingRect(contour))[1]:r[1]+r[3], r[0]:r[0]+r[2]], 
                 (ROI_RESCALE_WIDTH, ROI_RESCALE_HEIGHT)
-            ) for n in range(len(contours))
+            ) for contour in contours
         ]
         await asyncio.sleep(0)
         rois = np.stack(rois, axis=0)
@@ -285,7 +285,6 @@ async def find_h(img: str | cv2.typing.MatLike, display: bool = False, confidenc
     await asyncio.sleep(0)
     
     x, y, w, h = cv2.boundingRect(contours[index[0][0]])
-    print(w, h)
     yc = image.shape[0]//2 - (y + h//2)
     xc = (x + w//2) - image.shape[1]//2
     await asyncio.sleep(0)
@@ -296,7 +295,6 @@ async def find_h(img: str | cv2.typing.MatLike, display: bool = False, confidenc
 
     if __name__=='__main__':
         print(f"'H' detected in {img} at ({xc},{yc}) with a confidence of {confidence:.2f}.")
-        print(index)
     if display:
         plt.figure()
         if VECTORIZE:
@@ -372,7 +370,7 @@ if __name__ == '__main__':
     # names.append('Cessna_172SP - 2023-11-05 10.38.00')
 
     # names.append('Cessna_172SP - 2023-11-05 08.57.50')
-    names.append('image3')
+    names.append('fmuas - 2023-12-06 02.28.57')
 
     for name in names:
         asyncio.run(_test(f'./common/test_images/{name}.png'))

@@ -56,10 +56,7 @@ simCMD_pause = find_command("sim/operation/pause_toggle")
 simCMD_screenshot = find_command("sim/operation/screenshot")
 simCMD_circle = find_command("sim/view/circle")
 simDR_pause = find_dataref("sim/time/paused")
-
-ROLL = find_dataref("sim/flightmodel/position/phi")
-HDG = find_dataref("sim/flightmodel/position/psi")
-
+simDR_verite = find_dataref("sim/graphics/view/cinema_verite")
 
 function python_change()
 	simCMD_pause:once()
@@ -292,7 +289,8 @@ function before_physics()
 	rp_to_py()
 
 	if uasDR_flir_view_on==1 then
-		simDR_view_phi = (uasDR_CAM_roll_actual*(1 - math.abs(uasDR_CAM_eff_yaw/90)) + uasDR_CAM_eff_yaw)
+		simDR_verite = 1
+		simDR_view_phi = (uasDR_CAM_roll_actual*(1 - math.abs(uasDR_CAM_eff_yaw/90)) + uasDR_CAM_eff_yaw + 90)%180 - 90
 		simDR_view_psi = uasDR_CAM_eff_yaw
 		simDR_view_the = uasDR_CAM_eff_pitch
 		simDR_view_x = 0.0
@@ -301,7 +299,7 @@ function before_physics()
 	end
 
 	if arm_capture == 1 then
-		if os.clock() > capture_start+0.5 then
+		if os.clock() > capture_start+(SIM_PERIOD*2) then
 			simCMD_screenshot:once()
 			print("Successful FLIR image")
 			reset_start = os.clock()
@@ -311,7 +309,7 @@ function before_physics()
 	end
 
 	if arm_reset == 1 then
-		if os.clock() > reset_start+0.5 then
+		if os.clock() > reset_start+(SIM_PERIOD*2) then
 			uasCMD_image_reset:once()
 		end
 	end

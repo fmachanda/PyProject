@@ -16,6 +16,7 @@ HEARTBEAT_TIMEOUT = 5.0
 os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
 sys.path.append(os.getcwd())
 
+from common.states import GlobalStates as g
 
 class GCSUI:
     def __init__(self, root: tk.Tk):
@@ -25,9 +26,13 @@ class GCSUI:
 
         self.map_open = False
         self.map_marker = None
+        self.pos_marker = None
 
         self.status_label = tk.Label(root, text="Status: Booting...", bd=1, relief=tk.SUNKEN, anchor=tk.W)
         self.status_label.pack(side=tk.BOTTOM, fill=tk.X)
+
+        self.telem_label = tk.Label(root, text="MODE: nan    BATT: nan    KIAS: nan    FT AGL: nan    VS: nan    ", bd=1, relief=tk.SUNKEN, anchor=tk.W)
+        self.telem_label.pack(side=tk.BOTTOM, fill=tk.X)
 
         self.log_text = tk.Text(root, height=10, width=40, state=tk.DISABLED)
         self.log_text.pack(padx=10, pady=(10, 8))
@@ -111,8 +116,8 @@ class GCSUI:
             self.map.title("Map")
             self.map_widget = tkmap.TkinterMapView(self.map, width=800, height=600, corner_radius=0)
             self.map_widget.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
-            self.map_widget.set_position(20.8890093 -156.4338805)
-            self.map_widget.set_zoom(10)
+            self.map_widget.set_position(20.8890093, -156.4338805)
+            self.map_widget.set_zoom(9)
             self.map_widget.add_right_click_menu_command(label="Add Marker", command=self.add_map_marker, pass_coords=True)
             self.map_widget.add_right_click_menu_command(label="Remove Marker", command=self.delete_map_marker, pass_coords=True)
             self.map.protocol("WM_DELETE_WINDOW", self.close_map)
@@ -370,11 +375,31 @@ class GCSUI:
             last_heartbeat = 0.0
             while not stop.is_set():
                 if self.connect_instance is not None:
-                    if self.connect_instance.listen():
+                    result=self.connect_instance.listen()
+                    if result == 'HEARTBEAT':
                         last_heartbeat = time.time()
                     if time.time() - last_heartbeat > HEARTBEAT_TIMEOUT:
                         self.log(f"Heartbeat timeout from #{self.connect_instance.target}")
                         self.close(because_heartbeat=True)
+
+                    if result == 'HIGH_LATENCY2':
+                        self.telem_label.config(text=f"MODE: {g.CUSTOM_SUBMODE_NAMES.get(self.connect_instance.hl_data.custom0, "Unknown")}    BATT: {self.connect_instance.hl_data.battery}%    KIAS: {int(self.connect_instance.hl_data.airspeed*0.388768)}    FT AGL: {int(self.connect_instance.hl_data.custom1*32.8084)}    VS: {int(1968.5*self.connect_instance.hl_data.climb_rate)}    ")
+                        try:
+                            if not hasattr(self, 'map_widget'):
+                                continue
+                            if self.pos_marker:
+                                self.pos_marker.delete()
+                            self.pos_marker = None
+                            self.pos_marker = self.map_widget.set_marker(
+                                self.connect_instance.hl_data.latitude * 1e-7,
+                                self.connect_instance.hl_data.longitude * 1e-7,
+                                text = f"UAV{self.connect_instance.target}",
+                                text_color = "#151f29",
+                                marker_color_circle = "#293847",
+                                marker_color_outside = "#485a6e",
+                            )
+                        except tk.TclError:
+                            pass
                 time.sleep(0)
         except KeyboardInterrupt:
             return

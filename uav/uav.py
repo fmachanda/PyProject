@@ -987,7 +987,6 @@ class UAVCANManager:
             await self._pub_esc3_sp.publish(self.main.txdata.esc3)
             await self._pub_esc4_sp.publish(self.main.txdata.esc4)
         except pycyphal.presentation._port._error.PortClosedError:
-            print("***************** line 990 *****************")
             pass
 
         await asyncio.sleep(1 / self._freq)
@@ -1114,6 +1113,7 @@ class Navigator:
             with open('uav/flightplan.json', 'r') as fpl_file:
                 self._fpl = json.load(fpl_file)
         except FileNotFoundError:
+            logger.error("Could not open flightplan.json")
             self.hover_alt = 75
             self.cruise_ias = 70 * KT_TO_MS
         else:
@@ -1121,6 +1121,7 @@ class Navigator:
             self.append_wpt(*[Navigator.Waypoint(wpt['lat'], wpt['long'], wpt['alt_m_agl']) for wpt in waypoints])
             self.hover_alt = self._fpl['hover_alt_m_agl']
             self.cruise_ias = self._fpl['cruise_kias'] * KT_TO_MS
+            logger.info(f"Navigator loaded flightplan.json with wpts: {len(waypoints)}, hover: {self.hover_alt} m, ias: {self.cruise_ias:.0f} m/s")
 
         self.landing_wpt = self._waypoint_list[-1]
 
@@ -1138,7 +1139,7 @@ class Navigator:
 
     def next_wpt(self) -> None:
         """Increment flight plan wpt."""
-        if len(self._waypoint_list)>1:
+        if len(self._waypoint_list)>2:
             self._waypoint_list.pop(0)
     
     def _calc_altitude(self) -> float:
@@ -2062,10 +2063,78 @@ class CommManager:
             int(self.main.state.custom_mode),
             int(self.main.state.state)
         ]
+
         try:
             self._mav_conn_gcs.mav.heartbeat_send(*msg)
         except AttributeError:
             pass
+
+        print(
+            int(self.main.rxdata.time.time * 1e-3),
+            m.MAV_TYPE_VTOL_RESERVED4,
+            m.MAV_AUTOPILOT_GENERIC_WAYPOINTS_AND_SIMPLE_NAVIGATION_ONLY,
+            self.main.state.custom_mode,
+            int(self.main.rxdata.gps.latitude * 1e7),
+            int(self.main.rxdata.gps.longitude * 1e7),
+            int(self.main.rxdata.gps.altitude),
+            int(self.main.afcs._sp_altitude),
+            int(max(math.degrees(self.main.rxdata.att.yaw) * 0.5, 0)),
+            int(max(math.degrees(self.main.afcs._sp_heading) * 0.5, 0)),
+            int(min(self.main.navigator.distance * 1e-1, 65535)),
+            int(min(2.387324 * self.main.txdata.esc1.kinematics.angular_velocity.radian_per_second
+                               + self.main.txdata.esc2.kinematics.angular_velocity.radian_per_second
+                               + self.main.txdata.esc3.kinematics.angular_velocity.radian_per_second
+                               + self.main.txdata.esc4.kinematics.angular_velocity.radian_per_second / self.main.afcs.MAX_THROTTLE, 255)),
+            int(max(self.main.rxdata.ias.ias * 5, 0)),
+            int(max(self.main.afcs._spf_ias * 5, 0)),
+            int(max(self.main.rxdata.gps.yspeed * 5, 0)),
+            0, # windspeed
+            0, # wind heading
+            0, # h error
+            0, # v error
+            0, # air temp
+            int(-self.main.rxdata.gps.dspeed * 1e-1),
+            100, # battery! TODO
+            1, # waypoint number TODO
+            0, # failure flags TODO
+            self.main.state.custom_submode, 
+            int(min(self.main.rxdata.alt.altitude * 0.1, 255)), 
+            0 # custom placeholder
+        )
+        
+        self._mav_conn_gcs.mav.high_latency2_send(
+            int(self.main.rxdata.time.time * 1e-3),
+            m.MAV_TYPE_VTOL_RESERVED4,
+            m.MAV_AUTOPILOT_GENERIC_WAYPOINTS_AND_SIMPLE_NAVIGATION_ONLY,
+            self.main.state.custom_mode,
+            int(self.main.rxdata.gps.latitude * 1e7),
+            int(self.main.rxdata.gps.longitude * 1e7),
+            int(self.main.rxdata.gps.altitude),
+            int(self.main.afcs._sp_altitude),
+            int(max(math.degrees(self.main.rxdata.att.yaw) * 0.5, 0)),
+            int(max(math.degrees(self.main.afcs._sp_heading) * 0.5, 0)),
+            int(min(self.main.navigator.distance * 1e-1, 65535)),
+            int(min(2.387324 * self.main.txdata.esc1.kinematics.angular_velocity.radian_per_second
+                               + self.main.txdata.esc2.kinematics.angular_velocity.radian_per_second
+                               + self.main.txdata.esc3.kinematics.angular_velocity.radian_per_second
+                               + self.main.txdata.esc4.kinematics.angular_velocity.radian_per_second / self.main.afcs.MAX_THROTTLE, 255)),
+            int(max(self.main.rxdata.ias.ias * 5, 0)),
+            int(max(self.main.afcs._spf_ias * 5, 0)),
+            int(max(self.main.rxdata.gps.yspeed * 5, 0)),
+            0, # windspeed
+            0, # wind heading
+            0, # h error
+            0, # v error
+            0, # air temp
+            int(-self.main.rxdata.gps.dspeed * 1e-1),
+            100, # battery! TODO
+            1, # waypoint number TODO
+            0, # failure flags TODO
+            self.main.state.custom_submode, 
+            int(min(self.main.rxdata.alt.altitude * 0.1, 255)), 
+            0 # custom placeholder
+        )
+
         try:
             self._cam_conn.mav.heartbeat_send(*msg)
             if self.main.state.custom_submode in [g.CUSTOM_SUBMODE_TAKEOFF_ASCENT, g.CUSTOM_SUBMODE_LANDING_HOVER, g.CUSTOM_SUBMODE_LANDING_DESCENT]:
@@ -2076,6 +2145,17 @@ class CommManager:
                     euler_to_quaternion(0.0, math.radians(-90), math.radians(0)),
                     0.0, 0.0, 0.0 # angular velocities
                 )
+                if not self._count%5:
+                    self._cam_conn.mav.command_long_send(
+                        self._cam_id,
+                        m.MAV_COMP_ID_CAMERA,
+                        m.MAV_CMD_IMAGE_START_CAPTURE,
+                        0,
+                        0, 1, 1, 0,
+                        0, 0, 0
+                    )
+                self._count += 1
+                print("SENDING CAM CMD")
         except AttributeError:
             pass
 
@@ -2085,6 +2165,7 @@ class CommManager:
     async def _heartbeat(self) -> None:
         """Periodically publish a heartbeat message."""
         logger.debug("Starting CommManager (Heartbeat)")
+        self._count = 1
         await self._comm_heartbeat_loop()
 
     async def close(self) -> None:
@@ -2303,9 +2384,6 @@ class Main:
 
         try:
             await asyncio.gather(*close_tasks)
-        except pycyphal.presentation._port._error.PortClosedError:
-            print("***************** line 2274 *****************")
-            pass
         except asyncio.exceptions.CancelledError:
             logger.error("Instance closed prematurely")
         else:

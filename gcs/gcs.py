@@ -106,6 +106,7 @@ class Connect:
         assert 0<target<256 and isinstance(target, int) and target!=systemid, "System ID target must be unique UINT8"
 
         self.map_pos = [0.0, 0.0]
+        self.hl_data = None
         
         self._heart_inhibit = False
 
@@ -368,7 +369,7 @@ class Connect:
         asyncio.run(self._command_int('PID', kp, ti, td, setpoint, id, 0, 0, acknowledge=False))
 
     def img(self, id: float = 0, interval: float = 1, num: float = 1, sequence: float = 0):
-        """DEVELOPMENT ONLY - send screenshot command."""
+        """Send image command."""
         asyncio.run(self._command_int('IMAGE_START_CAPTURE', id, interval, num, sequence, int(0), int(0), int(0), acknowledge=False))
     # endregion
 
@@ -395,6 +396,9 @@ class Connect:
         if msg is not None:
             if msg.get_type() == 'HEARTBEAT':
                 mavlogger.log(MAVLOG_DEBUG, f"Heartbeat message from link #{msg.get_srcSystem()}")
+            if msg.get_type() == 'HIGH_LATENCY2':
+                mavlogger.log(MAVLOG_DEBUG, f"HL2 message from link #{msg.get_srcSystem()}")
+                self.hl_data = msg
             return msg.get_type()
         return False
 
