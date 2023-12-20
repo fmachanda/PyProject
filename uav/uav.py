@@ -1281,8 +1281,8 @@ class AFCS:
         # self._pid{f or v}_{from}_{to}
 
         self._pidf_alt_vpa = PID(kp=0.007, ti=0.006, td=0.1, integral_limit=0.05, maximum=0.05, minimum=-0.05)
-        self._pidf_vpa_aoa = PID(kp=0.7, ti=3.0, td=0.05, integral_limit=0.2, maximum=math.pi/8, minimum=-0.05)
-        self._pidf_aoa_out = PID(kp=-0.07, ti=-0.008, td=0.02, integral_limit=1, maximum=0.0, minimum=-math.pi/12)
+        self._pidf_vpa_aoa = PID(kp=0.7, ti=3.0, td=0.05, integral_limit=0.2, maximum=math.pi/8, minimum=0.02)
+        self._pidf_aoa_out = PID(kp=-0.15, ti=-0.008, td=0.02, integral_limit=1, maximum=0.1, minimum=-0.1)
         self._pidf_dyw_rol = PID(kp=-0.75, ti=-8.0, td=0.002, integral_limit=0.1, maximum=math.pi/6, minimum=-math.pi/6)
         self._pidf_rol_rls = PID(kp=1.5, ti=6.0, td=0.02, integral_limit=0.2, maximum=2.0, minimum=-2.0)
         self._pidf_rls_out = PID(kp=0.005, ti=0.003, td=0.005, integral_limit=0.1, maximum=0.1, minimum=-0.1)
@@ -1455,7 +1455,7 @@ class AFCS:
         match self._outv_thr_mode:
             case 0:
                 self._outv_throttle = 0.0
-                self.main.state.set_mode(g.CUSTOM_SUBMODE_GROUND_DISARMED)
+                self.main.state.set_mode(m.MAV_MODE_GUIDED_ARMED, g.CUSTOM_MODE_GROUND, g.CUSTOM_SUBMODE_GROUND_DISARMED)
             case 1:
                 pass
             case 2:
@@ -1966,7 +1966,7 @@ class CommManager:
             elif msg.get_type() == 'CAMERA_IMAGE_CAPTURED' and msg.get_srcSystem()==self._cam_id:
                 logger.info(f"Proccesing image {msg.file_url}")
 
-                if out := await asyncio.create_task(img.detect(msg.file_url)):
+                if out := await asyncio.to_thread(img.sync_proc, msg.file_url):
                     dx, dy, confidence, image = out
                     logger.info(f"'H' detected in {msg.file_url} at ({dx},{dy}) with a confidence of {confidence:.2f}.")
                     self.main.rxdata.cam.dump(dx, dy, self.main.rxdata.time.time)
@@ -2069,39 +2069,9 @@ class CommManager:
         except AttributeError:
             pass
 
-        print(
-            int(self.main.rxdata.time.time * 1e-3),
-            m.MAV_TYPE_VTOL_RESERVED4,
-            m.MAV_AUTOPILOT_GENERIC_WAYPOINTS_AND_SIMPLE_NAVIGATION_ONLY,
-            self.main.state.custom_mode,
-            int(self.main.rxdata.gps.latitude * 1e7),
-            int(self.main.rxdata.gps.longitude * 1e7),
-            int(self.main.rxdata.gps.altitude),
-            int(self.main.afcs._sp_altitude),
-            int(max(math.degrees(self.main.rxdata.att.yaw) * 0.5, 0)),
-            int(max(math.degrees(self.main.afcs._sp_heading) * 0.5, 0)),
-            int(min(self.main.navigator.distance * 1e-1, 65535)),
-            int(min(2.387324 * self.main.txdata.esc1.kinematics.angular_velocity.radian_per_second
-                               + self.main.txdata.esc2.kinematics.angular_velocity.radian_per_second
-                               + self.main.txdata.esc3.kinematics.angular_velocity.radian_per_second
-                               + self.main.txdata.esc4.kinematics.angular_velocity.radian_per_second / self.main.afcs.MAX_THROTTLE, 255)),
-            int(max(self.main.rxdata.ias.ias * 5, 0)),
-            int(max(self.main.afcs._spf_ias * 5, 0)),
-            int(max(self.main.rxdata.gps.yspeed * 5, 0)),
-            0, # windspeed
-            0, # wind heading
-            0, # h error
-            0, # v error
-            0, # air temp
-            int(-self.main.rxdata.gps.dspeed * 1e-1),
-            100, # battery! TODO
-            1, # waypoint number TODO
-            0, # failure flags TODO
-            self.main.state.custom_submode, 
-            int(min(self.main.rxdata.alt.altitude * 0.1, 255)), 
-            0 # custom placeholder
-        )
-        
+        def uint8(num):
+            return int(min(max(num, 0), 255))
+
         self._mav_conn_gcs.mav.high_latency2_send(
             int(self.main.rxdata.time.time * 1e-3),
             m.MAV_TYPE_VTOL_RESERVED4,
@@ -2111,27 +2081,27 @@ class CommManager:
             int(self.main.rxdata.gps.longitude * 1e7),
             int(self.main.rxdata.gps.altitude),
             int(self.main.afcs._sp_altitude),
-            int(max(math.degrees(self.main.rxdata.att.yaw) * 0.5, 0)),
-            int(max(math.degrees(self.main.afcs._sp_heading) * 0.5, 0)),
+            uint8(math.degrees(self.main.rxdata.att.yaw) * 0.5),
+            uint8(math.degrees(self.main.afcs._sp_heading) * 0.5),
             int(min(self.main.navigator.distance * 1e-1, 65535)),
-            int(min(2.387324 * self.main.txdata.esc1.kinematics.angular_velocity.radian_per_second
+            uint8(2.387324 * self.main.txdata.esc1.kinematics.angular_velocity.radian_per_second
                                + self.main.txdata.esc2.kinematics.angular_velocity.radian_per_second
                                + self.main.txdata.esc3.kinematics.angular_velocity.radian_per_second
-                               + self.main.txdata.esc4.kinematics.angular_velocity.radian_per_second / self.main.afcs.MAX_THROTTLE, 255)),
-            int(max(self.main.rxdata.ias.ias * 5, 0)),
-            int(max(self.main.afcs._spf_ias * 5, 0)),
-            int(max(self.main.rxdata.gps.yspeed * 5, 0)),
+                               + self.main.txdata.esc4.kinematics.angular_velocity.radian_per_second / self.main.afcs.MAX_THROTTLE),
+            uint8(self.main.rxdata.ias.ias * 5),
+            uint8(self.main.afcs._spf_ias * 5),
+            uint8(self.main.rxdata.gps.yspeed * 5),
             0, # windspeed
             0, # wind heading
             0, # h error
             0, # v error
             0, # air temp
-            int(-self.main.rxdata.gps.dspeed * 1e-1),
+            int(min(max(-self.main.rxdata.gps.dspeed * 1e-1, -255), 255)),
             100, # battery! TODO
             1, # waypoint number TODO
             0, # failure flags TODO
             self.main.state.custom_submode, 
-            int(min(self.main.rxdata.alt.altitude * 0.1, 255)), 
+            uint8(self.main.rxdata.alt.altitude * 0.1), 
             0 # custom placeholder
         )
 
@@ -2155,7 +2125,6 @@ class CommManager:
                         0, 0, 0
                     )
                 self._count += 1
-                print("SENDING CAM CMD")
         except AttributeError:
             pass
 

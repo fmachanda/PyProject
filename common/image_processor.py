@@ -311,6 +311,248 @@ async def find_h(img: str | cv2.typing.MatLike, display: bool = False, confidenc
     threaded_output = (xc, yc, confidence, image)
     return xc, yc, confidence, image
 
+
+def sync_proc(img: str | cv2.typing.MatLike, display: bool = False, confidence_threshold: float = CONFIDENCE_THRESHOLD) -> tuple | bool:
+    """Find 'H' in image for landing UAV.
+    
+    Parameters
+    ----------
+    image : str | cv2.typing.MatLike
+        Image or image path.
+    radius : int
+        Mask radius to account for landing light.
+    display : bool
+        Should I display any found Hs?
+    confidence_threshold : float
+        Zero to one of required confidence.
+
+    Returns
+    -------
+    tuple[int, int, float]
+        Hx, Hy, Confidence of calculated image.
+    bool
+        False if nothing exciting happens.
+    """
+
+    global last_time
+    now = time.perf_counter_ns()
+    print(f"[IMG] Starting find_h...")
+    last_time = now
+
+    
+    if isinstance(img, str):
+        image = cv2.imread(img)
+        if image is None:
+            return False
+
+    image = cv2.resize(image, (1024, int(image.shape[0] * (1024/image.shape[1]))))
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.GaussianBlur(image, (9, 9), 0)
+
+    normed = cv2.normalize(image, None, 0, 1.0, cv2.NORM_MINMAX, dtype=cv2.CV_32F)
+
+    sobel_x = cv2.Sobel(normed, cv2.CV_32F, 1, 0, ksize=3)
+    sobel_y = cv2.Sobel(normed, cv2.CV_32F, 0, 1, ksize=3)
+    magnitude = np.sqrt(sobel_x**2 + sobel_y**2)
+    magnitude = cv2.normalize(magnitude, None, 0, 1.0, cv2.NORM_MINMAX, dtype=cv2.CV_32F)
+
+    # filtered = cv2.cvtColor(normed, cv2.COLOR_RGB2HSV)
+    # lowerb = np.array([40, 0, 0], dtype=np.uint8)
+    # upperb = np.array([60, 1.0, 1.0], dtype=np.uint8)
+    # mask = cv2.inRange(filtered, lowerb, upperb)
+    # filtered = cv2.bitwise_and(filtered, filtered, mask=mask)
+    # filtered = cv2.cvtColor(filtered, cv2.COLOR_HSV2RGB)
+    # filtered = cv2.cvtColor(filtered, cv2.COLOR_RGB2GRAY)
+
+    processed = cv2.cvtColor(magnitude, cv2.COLOR_RGB2GRAY)
+    _, processed = cv2.threshold(processed, 0.25, 1.0, cv2.THRESH_BINARY)
+    processed = cv2.GaussianBlur(processed, (5,5), 0)
+    _, processed = cv2.threshold(processed, 0.25, 1.0, cv2.THRESH_BINARY)
+
+    contours, _ = cv2.findContours(processed.astype(np.uint8), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    contours = [contour for contour in contours if min((rect:=cv2.boundingRect(contour))[2], rect[3]) >= ROI_MIN_DIM]
+
+    # contoured = np.zeros_like(processed)
+    # cv2.drawContours(contoured, contours, -1, ANNOTATION_COLOR)
+    # # plt.figure()
+    # plt.imshow(image)
+    # plt.show()
+    # # plt.imshow(normed)
+    # # plt.show()
+    # plt.imshow(magnitude, cmap='gray')
+    # plt.show()
+    # plt.imshow(processed)
+    # plt.show()
+    # plt.imshow(contoured)
+    # plt.show()
+
+    print(f"[IMG] {len(contours)} contours detected")
+    now = time.perf_counter_ns()
+    print(f"[IMG] Ending find_contour     {((now - last_time)/1e3):.2f}")
+    last_time = now
+
+    if not contours:
+        return False
+
+    strengths = np.zeros((len(contours), len(templates)))
+
+    if VECTORIZE:
+        print(f"[IMG] Starting numpy loop...")
+        s_time = time.perf_counter_ns()
+        rois = [
+            cv2.resize(
+                cv2.drawContours(
+                    np.zeros_like(processed), 
+                    [contour], 
+                    0, 
+                    (1.0), 
+                    thickness=cv2.FILLED
+                )[(r:=cv2.boundingRect(contour))[1]:r[1]+r[3], r[0]:r[0]+r[2]], 
+                (ROI_RESCALE_WIDTH, ROI_RESCALE_HEIGHT)
+            ) for contour in contours
+        ]
+        rois = np.stack(rois, axis=0)
+        print(f"[IMG] Loop time: ************ {((time.perf_counter_ns() - s_time)/1e3):.2f}")
+
+        posmatches = templates * rois[:, np.newaxis, :, :]
+        negmatches = invtemplates * rois[:, np.newaxis, :, :]
+        posinvmatches = templates * (1-rois)[:, np.newaxis, :, :]
+
+        sum_templates = np.sum(templates, axis=(1, 2))
+        sum_templates = sum_templates[np.newaxis, :]
+
+        sum_roi = np.sum(rois, axis=(1, 2))[:, np.newaxis]
+        
+        sum_posmatches = np.sum(posmatches, axis=(2, 3))
+        sum_negmatches = np.sum(negmatches, axis=(2, 3))
+        sum_posinvmatches = np.sum(posinvmatches, axis=(2, 3))
+
+        strengths = ((templates.shape[1]*templates.shape[2])*(sum_posmatches - sum_negmatches - sum_posinvmatches)) / (sum_templates*sum_roi)
+    else:
+        print(f"[IMG] Starting 'for' loop...")
+        t_time = 0.0
+        for n, contour in enumerate(contours):
+            s_time = time.perf_counter_ns()
+            x, y, w, h = cv2.boundingRect(contour)
+            if not ((1/3) < (w/h) < (3/1)):
+                continue
+
+            roi = np.zeros_like(processed)
+            roi = cv2.drawContours(roi, [contour], 0, (1.0), thickness=cv2.FILLED)
+
+            roi: np.ndarray = roi[y:y+h, x:x+w]
+
+
+            roi = cv2.resize(roi, (ROI_RESCALE_WIDTH, ROI_RESCALE_HEIGHT))
+            t_time += time.perf_counter_ns() - s_time
+
+            posmatches = np.multiply(templates, roi) # i should be defined and i am defined
+            negmatches = np.multiply(invtemplates, roi) # i shouldnt be defined but i am
+            posinvmatches = np.multiply(templates, 1-roi) # i should be defined but im not
+            # if True:
+            #     print(f"**** {n} ****")
+            #     plt.figure()
+            #     plt.title("ROI")
+            #     plt.imshow(roi)
+            #     plt.show()
+            #     for i in range(18, 36): #range(27, 30):
+            #         # print(np.sum(templates[i]))
+            #         # plt.imshow(templates[i])
+            #         # plt.show()
+            #         # print(np.sum(invtemplates[i]))
+            #         # plt.imshow(invtemplates[i])
+            #         # plt.show()
+            #         print(f"---- {i} ----")
+            #         print(np.sum(posmatches[i]/np.sum(templates[i])))
+            #         # plt.title("POS +")
+            #         # plt.imshow(posmatches[i]/np.sum(templates[i]))
+            #         # plt.show()
+
+            #         print(np.sum(negmatches[i]/np.sum(templates[i])))
+            #         # plt.title("NEG -")
+            #         # plt.imshow(negmatches[i]/np.sum(templates[i]))
+            #         # plt.show()
+
+            #         print(np.sum(posinvmatches[i]/np.sum(templates[i])))
+            #         # plt.title("POSINV -")
+            #         # plt.imshow(posinvmatches[i]/np.sum(templates[i]))
+            #         # plt.show()
+
+            #         # print(np.sum(neginvmatches[i]/np.sum(invtemplates[i])))
+            #         # plt.title("NEGINV +")
+            #         # plt.imshow(neginvmatches[i]/np.sum(invtemplates[i]))
+            #         # plt.show()
+
+            #         print((templates.shape[1]*templates.shape[2]) * np.sum(posmatches[i]/np.sum(templates[i]) - negmatches[i]/np.sum(templates[i]) - posinvmatches[i]/np.sum(templates[i])) / np.sum(roi))
+            #         plt.title("ALL")
+            #         plt.imshow(posmatches[i]/np.sum(templates[i]) - negmatches[i]/np.sum(templates[i]) - posinvmatches[i]/np.sum(templates[i]))
+            #         plt.show()
+
+            posstrength = np.sum(posmatches, axis=(1,2)) / np.sum(templates, axis=(1,2))
+            negstrength = np.sum(negmatches, axis=(1,2)) / np.sum(templates, axis=(1,2))
+            posinvstrength = np.sum(posinvmatches, axis=(1,2)) / np.sum(templates, axis=(1,2))
+
+            strengths[n] = (templates.shape[1]*templates.shape[2]) * (posstrength - negstrength - posinvstrength) / np.sum(roi)
+        print(f"[IMG] Loop time: ************ {(t_time/1e3):.2f}")
+    
+    confidence = np.max(strengths)
+
+    if confidence < confidence_threshold:
+        now = time.perf_counter_ns()
+        print(f"[IMG] Ending find_h           {((now - last_time)/1e3):.2f}")
+        last_time = now
+        return False
+
+    index = np.where(strengths==confidence)
+    
+    x, y, w, h = cv2.boundingRect(contours[index[0][0]])
+    yc = image.shape[0]//2 - (y + h//2)
+    xc = (x + w//2) - image.shape[1]//2
+
+    cv2.rectangle(image, (x, y), (x+w, y+h), color=ANNOTATION_COLOR, thickness=2)
+    cv2.circle(image, (x + w//2, y + h//2), radius=2, color=ANNOTATION_COLOR, thickness=-1)
+
+    if __name__=='__main__':
+        print(f"'H' detected in {img} at ({xc},{yc}) with a confidence of {confidence:.2f}.")
+    if display:
+        plt.figure()
+        if VECTORIZE:
+            plt.imshow(rois[index[0][0]])
+            # np.save('./common/output_data.npy', rois[index[0][0]])
+            plt.show()
+        plt.imshow(image)
+        plt.show()
+
+    now = time.perf_counter_ns()
+    print(f"[IMG] Ending find_h           {((now - last_time)/1e3):.2f}")
+    last_time = now
+    threaded_output = (xc, yc, confidence, image)
+    return xc, yc, confidence, image
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def find_h_sync(*args, **kwargs) -> tuple | bool:
     return asyncio.run(find_h(*args, **kwargs))
 

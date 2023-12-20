@@ -213,10 +213,10 @@ function SERVOS_flight_start()
     simDR_wing_tilt_actual = 1.0
     uasDR_SERVOS_direct_mode = 1
 
-    if simDR_radalt<.5 then
+    if simDR_radalt<5 then
         simDR_gear = 1.0
     else
-        simDR_gear = 0.0
+        simDR_gear = simDR_wing_tilt_actual
     end
 
 end
@@ -298,7 +298,7 @@ function SERVOS_after_physics()
     if simDR_radalt<5 then
         simDR_gear = 1.0
     else
-        simDR_gear = 0.0
+        simDR_gear = simDR_wing_tilt_actual
     end
 
 end
