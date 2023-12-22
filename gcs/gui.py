@@ -116,7 +116,7 @@ class GCSUI:
             self.map.title("Map")
             self.map_widget = tkmap.TkinterMapView(self.map, width=800, height=600, corner_radius=0)
             self.map_widget.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
-            self.map_widget.set_position(20.8890093, -156.4338805)
+            self.map_widget.set_position(18.5622536, -72.2842880)
             self.map_widget.set_zoom(9)
             self.map_widget.add_right_click_menu_command(label="Add Marker", command=self.add_map_marker, pass_coords=True)
             self.map_widget.add_right_click_menu_command(label="Remove Marker", command=self.delete_map_marker, pass_coords=True)
@@ -383,7 +383,7 @@ class GCSUI:
                         self.close(because_heartbeat=True)
 
                     if result == 'HIGH_LATENCY2':
-                        self.telem_label.config(text=f"MODE: {g.CUSTOM_SUBMODE_NAMES.get(self.connect_instance.hl_data.custom0, "Unknown")}    BATT: {self.connect_instance.hl_data.battery}%    KIAS: {int(self.connect_instance.hl_data.airspeed*0.388768)}    FT AGL: {int(self.connect_instance.hl_data.custom1*32.8084)}    VS: {int(1968.5*self.connect_instance.hl_data.climb_rate)}    ")
+                        self.telem_label.config(text=f"MODE: {g.CUSTOM_SUBMODE_NAMES.get(self.connect_instance.hl_data.custom0, "Unknown")}    BATT: {self.connect_instance.hl_data.battery}%    KIAS: {int(self.connect_instance.hl_data.airspeed*0.388768)}    FT AGL: {int((self.connect_instance.hl_data.custom1+128)*32.8084)}    VS: {int(19.685*self.connect_instance.hl_data.climb_rate)}    ")
                         try:
                             if not hasattr(self, 'map_widget'):
                                 continue

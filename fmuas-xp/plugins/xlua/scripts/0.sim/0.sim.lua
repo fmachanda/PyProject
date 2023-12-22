@@ -52,6 +52,9 @@ simSET_roll_axis = create_dataref("fmuas/config/joystick/roll_axis_index", "numb
 simSET_yaw_axis = create_dataref("fmuas/config/joystick/yaw_axis_index", "number")
 simSET_throttle_axis = create_dataref("fmuas/config/joystick/throttle_axis_index", "number")
 
+simDR_pitch = find_dataref("sim/flightmodel/position/theta")
+simDR_roll = find_dataref("sim/flightmodel/position/phi")
+
 simCMD_pause = find_command("sim/operation/pause_toggle")
 simCMD_screenshot = find_command("sim/operation/screenshot")
 simCMD_circle = find_command("sim/view/circle")
@@ -74,10 +77,7 @@ function override_python(phase, duration)
 	end
 end
 
-function rp_to_py()
-	Rd = uasDR_CAM_roll_actual
-	Pd = uasDR_CAM_pitch_actual
-
+function rp_to_py(Rd, Pd)
     Rd = math.pi * Rd / 180
     Pd = math.pi * Pd / 180
 
@@ -95,8 +95,7 @@ function rp_to_py()
 	Pc = 180 * Pc / math.pi
 	Yc = 180 * Yc / math.pi
 
-    uasDR_CAM_eff_pitch = Pc
-	uasDR_CAM_eff_yaw = Yc
+	return Pc, Yc
 end
 
 cmd_handler = create_command("fmuas/commands/override_python", "Toggle override python lockout", override_python)
@@ -286,7 +285,7 @@ function before_physics()
 	uasDR_CAM_pitch_actual = math.max(math.min(uasDR_CAM_pitch_cmd, uasDR_CAM_pitch_actual+(uasDR_CAM_rate_limit*SIM_PERIOD)), uasDR_CAM_pitch_actual-(uasDR_CAM_rate_limit*SIM_PERIOD))
 	uasDR_CAM_roll_actual = math.max(math.min(uasDR_CAM_roll_cmd, uasDR_CAM_roll_actual+(uasDR_CAM_rate_limit*SIM_PERIOD)), uasDR_CAM_roll_actual-(uasDR_CAM_rate_limit*SIM_PERIOD))
 
-	rp_to_py()
+	uasDR_CAM_eff_pitch, uasDR_CAM_eff_yaw = rp_to_py(uasDR_CAM_roll_actual, uasDR_CAM_pitch_actual)
 
 	if uasDR_flir_view_on==1 then
 		simDR_verite = 1

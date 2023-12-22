@@ -1280,13 +1280,14 @@ class AFCS:
 
         # self._pid{f or v}_{from}_{to}
 
-        self._pidf_alt_vpa = PID(kp=0.007, ti=0.006, td=0.1, integral_limit=0.05, maximum=0.05, minimum=-0.05)
-        self._pidf_vpa_aoa = PID(kp=0.7, ti=3.0, td=0.05, integral_limit=0.2, maximum=math.pi/8, minimum=0.02)
-        self._pidf_aoa_out = PID(kp=-0.15, ti=-0.008, td=0.02, integral_limit=1, maximum=0.1, minimum=-0.1)
+        self._pidf_alt_vpa = PID(kp=0.007, ti=0.006, td=0.1, integral_limit=0.05, maximum=0.075, minimum=-0.15)
+        self._pidf_vpa_aoa = PID(kp=0.7, ti=3.0, td=0.05, integral_limit=0.2, maximum=math.pi/6, minimum=0.02)
+        self._pidf_vpa_thr = PID(kp=0.35, ti=0.003, td=0.0, integral_limit=0.25, maximum=0.25, minimum=0.0)
+        self._pidf_aoa_out = PID(kp=-0.10, ti=-0.008, td=0.02, integral_limit=1, maximum=0.2, minimum=-0.2)
         self._pidf_dyw_rol = PID(kp=-0.75, ti=-8.0, td=0.002, integral_limit=0.1, maximum=math.pi/6, minimum=-math.pi/6)
         self._pidf_rol_rls = PID(kp=1.5, ti=6.0, td=0.02, integral_limit=0.2, maximum=2.0, minimum=-2.0)
         self._pidf_rls_out = PID(kp=0.005, ti=0.003, td=0.005, integral_limit=0.1, maximum=0.1, minimum=-0.1)
-        self._pidf_ias_thr = PID(kp=0.1, ti=0.0, td=0.0, integral_limit=1.0, maximum=1.00, minimum=0.02) # TODO
+        self._pidf_ias_thr = PID(kp=0.08, ti=4.0, td=0.1, integral_limit=None, maximum=0.45, minimum=0.0) # TODO
 
         self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
         self._pidv_xsp_rol = PID(kp=0.1, ti=0.9, td=0.1, integral_limit=0.3, minimum=-math.pi/12, maximum=math.pi/12) # TODO
@@ -1329,7 +1330,7 @@ class AFCS:
 
             self._vpath = att.pitch - math.cos(att.roll) * aoa.aoa
             self._spf_aoa = self._pidf_vpa_aoa.cycle(self._vpath, self._spf_vpath, dt)
-            self._throttle_vpa_corr = 4*(self._spf_vpath-self._vpath) if self._vpath<self._spf_vpath-0.05 else 0.0
+            self._throttle_vpa_corr = self._pidf_vpa_thr.cycle(self._vpath, self._spf_vpath, dt)
 
         if (att:=self.main.rxdata.att).dt > 0.0:
             self._dyaw = calc_dyaw(att.yaw, self._sp_heading)
@@ -1347,7 +1348,7 @@ class AFCS:
             self.main.rxdata.aoa.dt = 0.0 if wipe else aoa.dt
 
         if (ias:=self.main.rxdata.ias).dt > 0.0:
-            self._outf_throttle_ias = self._pidf_ias_thr.cycle(ias.ias, self._spf_ias, ias.dt)
+            self._outf_throttle_ias = 0.55+(1+3*self._throttle_roll_corr)*self._pidf_ias_thr.cycle(ias.ias, self._spf_ias, ias.dt)
             self.main.rxdata.ias.dt = 0.0 if wipe else ias.dt
 
         self._fservos[0] = self._outf_pitch + self._outf_roll
@@ -1358,7 +1359,7 @@ class AFCS:
         self._throttle_roll_corr = min(self._throttle_roll_corr, 1.0)
         self._throttle_vpa_corr = min(self._throttle_vpa_corr, 1.0)
 
-        self._fthrottles.fill(self._outf_throttle_ias + self._throttle_vpa_corr + self._throttle_roll_corr)
+        self._fthrottles.fill(self._outf_throttle_ias + 0*self._throttle_vpa_corr)
         self._fthrottles = self._fthrottles.clip(0.0, 1.0)
         self._fthrottles *= AFCS.MAX_THROTTLE
 
@@ -1848,8 +1849,9 @@ class CommManager:
                     # PID TUNER GOTO
                     if msg.x==0:
                         # Wildcard
-                        self.main.afcs._pidv_vsp_out.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
-                        self.main.afcs._spv_vs=msg.param4
+                        self.main.afcs._pidf_ias_thr.set(kp=msg.param1, ti=msg.param2, td=msg.param3)
+                        self.main.afcs._pidf_ias_thr.reset()
+                        # self.main.afcs._spv_vs=msg.param4
                     else:
                         from utilities import pid_tune_map_names as p, pid_tune_map_sps as s
                         getattr(self.main.afcs, '_'+p[msg.x]).set(kp=msg.param1, ti=msg.param2, td=msg.param3)
@@ -1964,6 +1966,7 @@ class CommManager:
                 self._mavlogger.log(MAVLOG_DEBUG, f"Heartbeat message from camera #{msg.get_srcSystem()}")
                 self._last_cam_beat = self.main.rxdata.time.time
             elif msg.get_type() == 'CAMERA_IMAGE_CAPTURED' and msg.get_srcSystem()==self._cam_id:
+                return
                 logger.info(f"Proccesing image {msg.file_url}")
 
                 if out := await asyncio.to_thread(img.sync_proc, msg.file_url):
@@ -2096,12 +2099,12 @@ class CommManager:
             0, # h error
             0, # v error
             0, # air temp
-            int(min(max(-self.main.rxdata.gps.dspeed * 1e-1, -255), 255)),
+            int(min(max(-self.main.rxdata.gps.dspeed * 1e1, -128), 127)),
             100, # battery! TODO
             1, # waypoint number TODO
             0, # failure flags TODO
             self.main.state.custom_submode, 
-            uint8(self.main.rxdata.alt.altitude * 0.1), 
+            int(min(max(self.main.rxdata.alt.altitude * 0.1 - 128, -128), 127)), 
             0 # custom placeholder
         )
 

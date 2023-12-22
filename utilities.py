@@ -30,7 +30,7 @@ pid_tune_map = {
     'pidf_rol_rls': PIDValues(5, '_spf_roll'),
     'pidf_rls_out': PIDValues(6, '_spf_rollspeed'),
     'pidf_ias_thr': PIDValues(7, '_spf_ias'),
-    'pidv_xdp_xsp': PIDValues(8, '_spf_vpath'),
+    'pidv_xdp_xsp': PIDValues(8),
     'pidv_xsp_rol': PIDValues(9, '_spv_xspeed'),
     'pidv_rol_rls': PIDValues(10, '_spv_roll'),
     'pidv_rls_out': PIDValues(11, '_spv_rollspeed'),
@@ -44,6 +44,7 @@ pid_tune_map = {
     'pidv_yws_out': PIDValues(19, '_spv_yawspeed'),
     'pidt_dep_out': PIDValues(20),
     'pidt_arr_out': PIDValues(21),
+    'pidf_vpa_thr': PIDValues(22),
 }
 
 pid_tune_map_names = {pid.id: name for name, pid in pid_tune_map.items()}
