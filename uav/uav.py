@@ -1214,6 +1214,7 @@ class AFCS:
     """
 
     MAX_THROTTLE = 14000
+    BASE_THROTTLE_PCT = 0.36
 
     def __init__(self, main: 'Main') -> None:
         """Initialize the AFCS class.
@@ -1280,14 +1281,14 @@ class AFCS:
 
         # self._pid{f or v}_{from}_{to}
 
-        self._pidf_alt_vpa = PID(kp=0.007, ti=0.006, td=0.1, integral_limit=0.05, maximum=0.075, minimum=-0.15)
+        self._pidf_alt_vpa = PID(kp=0.007, ti=0.006, td=0.1, integral_limit=0.05, maximum=0.1, minimum=-0.15)
         self._pidf_vpa_aoa = PID(kp=0.7, ti=3.0, td=0.05, integral_limit=0.2, maximum=math.pi/6, minimum=0.02)
         self._pidf_vpa_thr = PID(kp=0.35, ti=0.003, td=0.0, integral_limit=0.25, maximum=0.25, minimum=0.0)
         self._pidf_aoa_out = PID(kp=-0.10, ti=-0.008, td=0.02, integral_limit=1, maximum=0.2, minimum=-0.2)
         self._pidf_dyw_rol = PID(kp=-0.75, ti=-8.0, td=0.002, integral_limit=0.1, maximum=math.pi/6, minimum=-math.pi/6)
         self._pidf_rol_rls = PID(kp=1.5, ti=6.0, td=0.02, integral_limit=0.2, maximum=2.0, minimum=-2.0)
         self._pidf_rls_out = PID(kp=0.005, ti=0.003, td=0.005, integral_limit=0.1, maximum=0.1, minimum=-0.1)
-        self._pidf_ias_thr = PID(kp=0.08, ti=4.0, td=0.1, integral_limit=None, maximum=0.45, minimum=0.0) # TODO
+        self._pidf_ias_thr = PID(kp=0.08, ti=4.0, td=0.1, integral_limit=None, maximum=(1-AFCS.BASE_THROTTLE_PCT), minimum=0.0) # TODO
 
         self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
         self._pidv_xsp_rol = PID(kp=0.1, ti=0.9, td=0.1, integral_limit=0.3, minimum=-math.pi/12, maximum=math.pi/12) # TODO
@@ -1348,7 +1349,7 @@ class AFCS:
             self.main.rxdata.aoa.dt = 0.0 if wipe else aoa.dt
 
         if (ias:=self.main.rxdata.ias).dt > 0.0:
-            self._outf_throttle_ias = 0.55+(1+3*self._throttle_roll_corr)*self._pidf_ias_thr.cycle(ias.ias, self._spf_ias, ias.dt)
+            self._outf_throttle_ias = AFCS.BASE_THROTTLE_PCT+(1+3*self._throttle_roll_corr)*self._pidf_ias_thr.cycle(ias.ias, self._spf_ias, ias.dt)
             self.main.rxdata.ias.dt = 0.0 if wipe else ias.dt
 
         self._fservos[0] = self._outf_pitch + self._outf_roll
@@ -1479,9 +1480,9 @@ class AFCS:
 
     @async_loop_decorator()
     async def _afcs_run_loop(self) -> None:
-        self._vtol_ratio = 1 - (self.main.rxdata.ias.ias/30) # 1 is VTOL
+        self._vtol_ratio = 1 - (self.main.rxdata.ias.ias/25) # 1 is VTOL
         try:
-            self._ias_scalar = 1296 / (self.main.rxdata.ias.ias**2)
+            self._ias_scalar = 850 / (self.main.rxdata.ias.ias**2) # ~30**2 / ias**2
         except ZeroDivisionError:
             self._ias_scalar = 1.0
 
@@ -1784,7 +1785,7 @@ class CommManager:
                 case m.MAV_CMD_DO_CHANGE_ALTITUDE:
                     try:
                         self.main.afcs.auto_sp = False
-                        self.main.afcs.sp_altitude = msg.param1 # TODO add checks!
+                        self.main.afcs._sp_altitude = msg.param1 # TODO add checks!
                         self._mavlogger.log(MAVLOG_RX, f"GCS commanded altitude setpoint to {msg.param1}")
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
                     except AttributeError:

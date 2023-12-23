@@ -8669,7 +8669,7 @@ P _body/0/_locked/9,9 0
 P _body/0/_locked/i_count 20
 P _body/0/_locked/j_count 18
 P _body/0/_part_area_rule 1.000000000
-P _body/0/_part_cd 0.227899998
+P _body/0/_part_cd 0.357600003
 P _body/0/_part_phi 0.000000000
 P _body/0/_part_psi 0.000000000
 P _body/0/_part_rad 0.159999996
@@ -29886,7 +29886,7 @@ P acf/_dump_press_wow 0
 P acf/_eagle_shock_to_tire_def_rat 0.000000000
 P acf/_elec_drive_eta 0.822000027
 P acf/_elec_fuelP 30.000000000
-P acf/_elec_regen_eta 0.050000001
+P acf/_elec_regen_eta 0.000000000
 P acf/_elec_regen_rat 0.250000000
 P acf/_elev1_cratR 0.000000000
 P acf/_elev1_cratT 0.000000000
