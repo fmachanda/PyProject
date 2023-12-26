@@ -156,7 +156,8 @@ end
 
 cmd_handler = create_command("fmuas/commands/recharge_batt", "Recharge battery", recharge)
 
-simDR_watts = find_dataref("sim/cockpit2/engine/indicators/power_watts")
+simDR_amp = find_dataref("sim/cockpit2/electrical/battery_amps[0]")
+simDR_volt = find_dataref("sim/cockpit2/electrical/battery_voltage_actual_volts[0]")
 simDR_tas = find_dataref("sim/cockpit2/gauges/indicators/true_airspeed_kts_pilot")
 
 uasDR_watthour_per_nm = create_dataref("fmuas/watthour_per_nm", "number")
@@ -338,7 +339,7 @@ function after_physics()
 	simDR_brake = 1.0
 
 	if simDR_tas > 0.1 then
-		uasDR_watthour_per_nm = (simDR_watts[0]+simDR_watts[1]+simDR_watts[2]+simDR_watts[3]) / simDR_tas
+		uasDR_watthour_per_nm = -(simDR_amp * simDR_volt) / simDR_tas
 	else
 		uasDR_watthour_per_nm = 0.0
 	end

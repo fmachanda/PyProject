@@ -1,15 +1,18 @@
-[![status](https://img.shields.io/badge/status-Development-orange)](https://trello.com/b/E168SpHn/fmuas)
+[![Status](https://img.shields.io/badge/status-Development-orange)](https://trello.com/b/E168SpHn/fmuas)
 
 # fmuas-main
+![Logo](https://github.com/fmachanda/fmuas-main/blob/master/fmuas_logo.png?raw=true)
+
 
 **Table of Contents**
 * [Overview](#overview)
 * [Requirements](#requirements)
 * [Installation](#installation)
-* [Important Files](#important-files)
 * [Usage with X-Plane 12](#usage-with-x-plane-12)
-* [GCS Graphical User Interface](#gcs-graphical-user-interface)
+* [Important Files](#important-files)
 * [Credits](#credits)
+
+> See the [Operations Manual][flight-manual-link] for more documentation!
 
 ## Overview
 This project provides the software for a humanitarian remote-sensing UAV system.  
@@ -28,19 +31,15 @@ The software is designed to be simulated using the [X-Plane 12][xplane-link] fli
 
 > Ensure you have **python**/**python3** and **git** on your system path.
 
-Clone this repo into the desired directory. If you plan to use this project with the X-Plane flight simulator, ensure the files are cloned into the `X-Plane 12/Aircraft/` directory. Replace `<directory>` below with the correct path.
+Download `install.py` and place it into the desired directory. If you plan to use this project with the X-Plane flight simulator, ensure it's placed into the `X-Plane 12/Aircraft/` directory.
 
-```bash
-git clone https://github.com/fmachanda/fmuas-main.git <directory> --depth 1
-```
-
-Navigate to the `scripts` folder, and double-click on `install.bat` (for Windows) or `install.command` (for MacOS). You should see a terminal window open.
+Run `install.py`. You should see a terminal window open. If you've cloned the entire repository instead of just `install.py`, run `scripts/setup.py` instead
 
 In the event you receive an error message, please retry installation manually.
 
 ### Manual Installation
 
-If you do not wish to run `scripts/install.command` or `scripts/install.bat`, follow the steps below.
+If you do not wish to run `install.py` or `setup.py` (or received an error) follow the steps below.
 
 Clone this repo into the desired directory. This project contains the [public_regulated_data_types][prdt-link] submodule, so you must use `--recurse-submodules`.
 
@@ -57,6 +56,27 @@ Install and update required python modules with [pip](https://pip.pypa.io/en/sta
 ```bash
 python -m pip install -r requirements.txt --upgrade
 ```
+
+## Usage with X-Plane 12
+
+To use with X-Plane 12:
+
+1. Ensure that the `fmuas-main` folder is in `/X-Plane 12/Aircraft`
+
+2. Launch X-Plane 12 ([free demo][xplane-link] will work)
+
+3. Start a new flight with the FMUAS aircraft
+
+    > You may have to refresh the lua scripts with Plugins > fmuas-xp > Reload Scripts
+
+    > The flight will remain paused until `xpio.py` starts running
+
+4. Either double-click on `scripts/run.bat` (Windows) or `scripts/run.command` (MacOS) or run the following scripts manually:
+    * `gcs/gcs.py`
+    * `uav/uav.py`
+    * `uav/xpio.py`
+
+5. Use the GCS Interface to boot and control the UAV.
 
 ## Important Files
 
@@ -75,9 +95,7 @@ python -m pip install -r requirements.txt --upgrade
         ├── xpio.py
         └── flightplan.json # Make your own flight plan
     ├── gcs
-        ├── gui_v2.py # Newer version (easier to use)
-        ├── gui.py # Older version (more stable)
-        └── gcs.py # Can only be used in a python terminal (error prone)
+        └── gcs.py
     ├── common
         ├── public_regulated_data_types # Initialize this submodule!
         ├── config.ini # Controllable settings for UAV
@@ -92,12 +110,11 @@ python -m pip install -r requirements.txt --upgrade
 
 `scripts/gcs.bat` (Windows) or `scripts/gcs.command` (MacOS) is an easy to run a GCS window.
 
-`uav/uav.py` runs the UAV  
-`uav/xpio.py` runs the connection with X-Plane 12 and simulates UAV components 
+`uav/uav.py` runs the UAV's main flight computer
+`uav/xpio.py` runs the connection with X-Plane 12 and simulates UAV components
 `uav/flightplan.json` contains customizable waypoints, altitudes, and speeds data that is followed by the autopilot during flight
 
-`gcs/gui_v2.py` runs a GCS window
-`gcs/gcs.py` can be used as a [CLI](#gcs-command-line-interface) if imported in a python terminal
+`gcs/gcs.py` runs a Ground Control window, or it can be used as a CLI if imported in a python terminal
 
 `fmuas-xp` contains the X-Plane aircraft files
 
@@ -108,31 +125,10 @@ python -m pip install -r requirements.txt --upgrade
 
 **Important:** `common/public_regulated_data_types/` is a git [submodule][prdt-link] that must be initialized for scripts to work
 
-## Usage with X-Plane 12
-
-To use with X-Plane 12:
-
-1. Ensure that the `fmuas-main` folder is in `/X-Plane 12/Aircraft`
-
-2. Launch X-Plane 12 ([free demo][xplane-link] will work)
-
-3. Start a new flight with the FMUAS aircraft
-
-    > The flight will remain paused until `xpio.py` starts running
-
-4. Either double-click on `scripts/run.bat` (Windows) or `scripts/run.command` (MacOS) or run the following scripts manually:
-    * `gcs/gui_v2.py`
-    * `uav/uav.py`
-    * `uav/xpio.py`
-
-5. Use the [GCS Interface](#gcs-graphical-user-interface) to boot and control the UAV.  
-
-## GCS Graphical User Interface
-
-Documentation coming soon!
-
 ---
 ### Credits
+
+Thanks to Austin Meyers & Laminar Research, Peter Buckner, Katherine Picchione, and Andrew Weinert for information and resources.
 
 `common/public_regulated_data_types/` cloned from [OpenCyphal/public_regulated_data_types][prdt-link]
 
@@ -156,3 +152,4 @@ Documentation coming soon!
 [prdt-link]: https://github.com/OpenCyphal/public_regulated_data_types
 [xplane-link]: https://www.x-plane.com/desktop/try-it/
 [fmuas-xp-link]: https://github.com/fmachanda/fmuas-xp
+[flight-manual-link]: https://drive.google.com/file/d/10-qno50bdPXd9zrQrpF1-gox775YPN9c/view

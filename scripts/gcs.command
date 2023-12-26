@@ -8,4 +8,4 @@ else
     PYTHON="python"
 fi
 
-"$PYTHON" "$PROJ_DIR/gcs/gui.py" &
+"$PYTHON" "$PROJ_DIR/gcs/gcs.py" &

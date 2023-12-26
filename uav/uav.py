@@ -1033,41 +1033,41 @@ class UAVCANManager:
         """Close the instance."""
         logger.info("Closing UAVCANManager...") # TODO: Change to logger.debug()
 
-        cln_clock_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.clock.id)
-        clock_response = await cln_clock_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
-        if clock_response is None:
-            logger.error("CLOCK failed to respond to power off request")
-        elif clock_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
-            logger.error("CLOCK failed to respond to power off request")
-        else:
-            logger.debug("CLOCK powered off")
+        # cln_clock_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.clock.id)
+        # clock_response = await cln_clock_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
+        # if clock_response is None:
+        #     logger.error("CLOCK failed to respond to power off request")
+        # elif clock_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+        #     logger.error("CLOCK failed to respond to power off request")
+        # else:
+        #     logger.debug("CLOCK powered off")
 
-        cln_sensorhub_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.sensorhub.id)
-        sensorhub_response = await cln_sensorhub_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
-        if sensorhub_response is None:
-            logger.error("SENSORHUB failed to respond to power off request")
-        elif sensorhub_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
-            logger.error("SENSORHUB failed to respond to power off request")
-        else:
-            logger.debug("SENSORHUB powered off")
+        # cln_sensorhub_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.sensorhub.id)
+        # sensorhub_response = await cln_sensorhub_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
+        # if sensorhub_response is None:
+        #     logger.error("SENSORHUB failed to respond to power off request")
+        # elif sensorhub_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+        #     logger.error("SENSORHUB failed to respond to power off request")
+        # else:
+        #     logger.debug("SENSORHUB powered off")
 
-        cln_motorhub_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.motorhub.id)
-        motorhub_response = await cln_motorhub_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
-        if motorhub_response is None:
-            logger.error("MOTORHUB failed to respond to power off request")
-        elif motorhub_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
-            logger.error("MOTORHUB failed to respond to power off request")
-        else:
-            logger.debug("MOTORHUB powered off")
+        # cln_motorhub_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.motorhub.id)
+        # motorhub_response = await cln_motorhub_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
+        # if motorhub_response is None:
+        #     logger.error("MOTORHUB failed to respond to power off request")
+        # elif motorhub_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+        #     logger.error("MOTORHUB failed to respond to power off request")
+        # else:
+        #     logger.debug("MOTORHUB powered off")
 
-        cln_gps_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.gps.id)
-        gps_response = await cln_gps_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
-        if gps_response is None:
-            logger.error("GPS failed to respond to power off request")
-        elif gps_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
-            logger.error("GPS failed to respond to power off request")
-        else:
-            logger.debug("GPS powered off")
+        # cln_gps_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.gps.id)
+        # gps_response = await cln_gps_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
+        # if gps_response is None:
+        #     logger.error("GPS failed to respond to power off request")
+        # elif gps_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+        #     logger.error("GPS failed to respond to power off request")
+        # else:
+        #     logger.debug("GPS powered off")
 
         self._node.close()
 
@@ -1135,7 +1135,7 @@ class Navigator:
     def direct_wpt(self, wpt: Waypoint) -> None:
         """Direct to a waypoint."""
         self._waypoint_list.insert(1, wpt)
-        self.main.afcs.auto_sp = True
+        self.auto_alt = True
 
     def next_wpt(self) -> None:
         """Increment flight plan wpt."""
@@ -1154,7 +1154,6 @@ class Navigator:
     def _detect_change(self) -> None:
         if self.distance<100 and self.main.state.custom_submode==g.CUSTOM_SUBMODE_FLIGHT_NORMAL:
             self.next_wpt()
-            self.main.afcs.auto_sp = True
 
     @async_loop_decorator(close=False)
     async def _navigator_run_loop(self) -> None:
@@ -1171,7 +1170,6 @@ class Navigator:
         self.commanded_heading = math.radians(hdg)
         self._calc_altitude()
         self._detect_change()
-        # check for next wpt, if yes make sure to reset afcs.auto_sp
         await asyncio.sleep(0.1)
 
     async def run(self) -> None:
@@ -1242,7 +1240,8 @@ class AFCS:
         self._fthrottles = np.zeros(4, dtype=np.float16) # throttles*4
         self._vthrottles = np.zeros(4, dtype=np.float16)
 
-        self.auto_sp = True
+        self.auto_alt = True
+        self.auto_ias = True
 
         self._spf_ias = 40.0
         self._sp_altitude = 100.0
@@ -1500,8 +1499,9 @@ class AFCS:
 
                 self._sp_heading = self.main.navigator.commanded_heading
             case g.CUSTOM_SUBMODE_FLIGHT_NORMAL:
-                if self.auto_sp:
+                if self.auto_alt:
                     self._sp_altitude = self.main.navigator.commanded_altitude
+                if self.auto_ias:
                     self._spf_ias = self.main.navigator.cruise_ias
 
                 self._sp_heading = self.main.navigator.commanded_heading
@@ -1784,18 +1784,26 @@ class CommManager:
                 # DO_CHANGE_ALTITUDE
                 case m.MAV_CMD_DO_CHANGE_ALTITUDE:
                     try:
-                        self.main.afcs.auto_sp = False
-                        self.main.afcs._sp_altitude = msg.param1 # TODO add checks!
-                        self._mavlogger.log(MAVLOG_RX, f"GCS commanded altitude setpoint to {msg.param1}")
+                        if msg.param1 >= 0:
+                            self.main.afcs.auto_alt = False
+                            self.main.afcs._sp_altitude = msg.param1 # TODO add checks!
+                            self._mavlogger.log(MAVLOG_RX, f"GCS commanded altitude setpoint to {msg.param1}")
+                        else:
+                            self.main.afcs.auto_alt = True
+                            self._mavlogger.log(MAVLOG_RX, f"GCS commanded altitude setpoint to flight plan")
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
                     except AttributeError:
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_ALTITUDE, m.MAV_RESULT_TEMPORARILY_REJECTED, 255, 0, 0, 0)
                 # DO_CHANGE_SPEED
                 case m.MAV_CMD_DO_CHANGE_SPEED:
                     try:
-                        self.main.afcs.auto_sp = False
-                        self.main.afcs._spf_ias = msg.param2 # TODO add checks!
-                        self._mavlogger.log(MAVLOG_RX, f"GCS commanded speed setpoint to {msg.param2}")
+                        if msg.param2 >= 0:
+                            self.main.afcs.auto_ias = False
+                            self.main.afcs._spf_ias = msg.param2 # TODO add checks!
+                            self._mavlogger.log(MAVLOG_RX, f"GCS commanded speed setpoint to {msg.param2}")
+                        else:
+                            self.main.afcs.auto_ias = True
+                            self._mavlogger.log(MAVLOG_RX, f"GCS commanded speed setpoint to flight plan")
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_SPEED, m.MAV_RESULT_ACCEPTED, 255, 0, 0, 0)
                     except AttributeError:
                         self._mav_conn_gcs.mav.command_ack_send(m.MAV_CMD_DO_CHANGE_SPEED, m.MAV_RESULT_TEMPORARILY_REJECTED, 255, 0, 0, 0)
