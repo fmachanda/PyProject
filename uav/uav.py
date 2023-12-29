@@ -943,32 +943,40 @@ class UAVCANManager:
         logger.info("All components discovered")
 
         cln_clock_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.clock.id)
-        clock_response, _ = await cln_clock_cmd.call(uavcan.node.ExecuteCommand_1.Request(NodeCommands.BOOT))
-        if clock_response.status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
-            logger.error("CLOCK failed to respond to boot request.")
+        clock_response = await cln_clock_cmd.call(uavcan.node.ExecuteCommand_1.Request(NodeCommands.BOOT))
+        if clock_response is None:
+            logger.error("CLOCK failed to respond to boot command")
+        elif clock_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+            logger.error("CLOCK failed to respond to boot command")
         else:
-            logger.debug("CLOCK booted")
+            logger.debug("CLOCK powered off")
 
         cln_sensorhub_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.sensorhub.id)
-        sensorhub_response, _ = await cln_sensorhub_cmd.call(uavcan.node.ExecuteCommand_1.Request(NodeCommands.BOOT))
-        if sensorhub_response.status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
-            logger.error("SENSORHUB failed to respond to boot request.")
+        sensorhub_response = await cln_sensorhub_cmd.call(uavcan.node.ExecuteCommand_1.Request(NodeCommands.BOOT))
+        if sensorhub_response is None:
+            logger.error("SENSORHUB failed to respond to boot command")
+        elif sensorhub_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+            logger.error("SENSORHUB failed to respond to boot command")
         else:
-            logger.debug("SENSORHUB booted")
+            logger.debug("SENSORHUB powered off")
 
         cln_motorhub_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.motorhub.id)
-        motorhub_response, _ = await cln_motorhub_cmd.call(uavcan.node.ExecuteCommand_1.Request(NodeCommands.BOOT))
-        if motorhub_response.status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
-            logger.error("MOTORHUB failed to respond to boot request.")
+        motorhub_response = await cln_motorhub_cmd.call(uavcan.node.ExecuteCommand_1.Request(NodeCommands.BOOT))
+        if motorhub_response is None:
+            logger.error("MOTORHUB failed to respond to boot command")
+        elif motorhub_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+            logger.error("MOTORHUB failed to respond to boot command")
         else:
-            logger.debug("MOTORHUB booted")
+            logger.debug("MOTORHUB powered off")
 
         cln_gps_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.gps.id)
-        gps_response, _ = await cln_gps_cmd.call(uavcan.node.ExecuteCommand_1.Request(NodeCommands.BOOT))
-        if gps_response.status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
-            logger.error("GPS failed to respond to boot request.")
+        gps_response = await cln_gps_cmd.call(uavcan.node.ExecuteCommand_1.Request(NodeCommands.BOOT))
+        if gps_response is None:
+            logger.error("GPS failed to respond to boot command")
+        elif gps_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+            logger.error("GPS failed to respond to boot command")
         else:
-            logger.debug("GPS booted")
+            logger.debug("GPS powered off")
 
         self.boot.set()
 
@@ -1283,11 +1291,11 @@ class AFCS:
         self._pidf_alt_vpa = PID(kp=0.007, ti=0.006, td=0.1, integral_limit=0.05, maximum=0.1, minimum=-0.15)
         self._pidf_vpa_aoa = PID(kp=0.7, ti=3.0, td=0.05, integral_limit=0.2, maximum=math.pi/6, minimum=0.02)
         self._pidf_vpa_thr = PID(kp=0.35, ti=0.003, td=0.0, integral_limit=0.25, maximum=0.25, minimum=0.0)
-        self._pidf_aoa_out = PID(kp=-0.10, ti=-0.008, td=0.02, integral_limit=1, maximum=0.2, minimum=-0.2)
+        self._pidf_aoa_out = PID(kp=-0.10, ti=-0.008, td=0.02, integral_limit=2.5, maximum=0.2, minimum=-0.2)
         self._pidf_dyw_rol = PID(kp=-0.75, ti=-8.0, td=0.002, integral_limit=0.1, maximum=math.pi/6, minimum=-math.pi/6)
         self._pidf_rol_rls = PID(kp=1.5, ti=6.0, td=0.02, integral_limit=0.2, maximum=2.0, minimum=-2.0)
         self._pidf_rls_out = PID(kp=0.005, ti=0.003, td=0.005, integral_limit=0.1, maximum=0.1, minimum=-0.1)
-        self._pidf_ias_thr = PID(kp=0.08, ti=4.0, td=0.1, integral_limit=None, maximum=(1-AFCS.BASE_THROTTLE_PCT), minimum=0.0) # TODO
+        self._pidf_ias_thr = PID(kp=0.08, ti=4.0, td=0.1, integral_limit=1.0, maximum=(1-AFCS.BASE_THROTTLE_PCT), minimum=0.0) # TODO
 
         self._pidv_xdp_xsp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
         self._pidv_xsp_rol = PID(kp=0.1, ti=0.9, td=0.1, integral_limit=0.3, minimum=-math.pi/12, maximum=math.pi/12) # TODO
@@ -1305,7 +1313,7 @@ class AFCS:
         self._pidv_dyw_yws = PID(kp=-0.5, ti=1.0, td=0.0, integral_limit=0.2, minimum=-math.pi/6, maximum=math.pi/6)
         self._pidv_yws_out = PID(kp=0.2, ti=0.3, td=0.01, integral_limit=0.15, minimum=-math.pi/24, maximum=math.pi/24)
 
-        self._pidt_dep_out = PID(kp=0.5, ti=0.0, td=0.0, integral_limit=None, minimum=None, maximum=None)
+        self._pidt_dep_out = PID(kp=0.4, ti=0.0, td=0.0, integral_limit=None, minimum=None, maximum=None)
         self._pidt_arr_out = PID(kp=0.5, ti=0.0, td=0.0, integral_limit=None, minimum=None, maximum=None)
         # TODO: arrival needs to bleed off energy first
 
@@ -1382,7 +1390,7 @@ class AFCS:
                     self._outv_thr_mode = 0
 
             if alt.altitude < 0.05:
-                self._pidv_pts_out._integral = 0.21
+                self._pidv_pts_out._integral = 0.05
                 self._pidv_xdp_xsp._integral = 0.0
                 self._pidv_xsp_rol._integral = 0.0
                 self._pidv_rol_rls._integral = 0.0
@@ -1413,12 +1421,15 @@ class AFCS:
 
                 if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
                     self._last_tilt = self._outt_pitch
-                    self._outt_pitch = self._pidt_dep_out.cycle(att.pitch, 0.0, att.dt)
-                    if self._outt_pitch>self._last_tilt: # put the nose up (lower back wing a little)!
-                        self._rtilt -= self._outt_pitch-self._last_tilt
+                    self._outt_pitch = self._pidt_dep_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt) * att.dt * 1e-6
+                    # base = 3 * att.dt * 1e-7
+                    # self._rtilt-=base
+                    # self._ftilt-=1.2*base
+                    if self._outt_pitch>0.0: # put the nose up (lower back wing a little)!
+                        self._rtilt -= self._outt_pitch#-self._last_tilt
                         self._rtilt = max(min(self._rtilt, math.pi/2), 0.0)
                     else: # put the nose down (lower front wing a little)!
-                        self._ftilt -= self._last_tilt-self._outt_pitch
+                        self._ftilt += self._outt_pitch
                         self._ftilt = max(min(self._ftilt, math.pi/2), 0.0)
                 else:
                     self._outt_pitch = 0.0
@@ -1443,6 +1454,8 @@ class AFCS:
             self._outv_throttle = self._pidv_vsp_out.cycle(att.zspeed, self._spv_vs, att.dt)
             self._spv_roll = self._pidv_xsp_rol.cycle(att.xspeed, self._spv_xspeed, att.dt)
             self._spv_pitch = self._pidv_ysp_pit.cycle(att.yspeed, self._spv_yspeed, att.dt)
+            if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
+                self._spv_pitch = -0.5
             self._spv_rollspeed = self._pidv_rol_rls.cycle(att.roll, self._spv_roll, att.dt)
             self._spv_pitchspeed = self._pidv_pit_pts.cycle(att.pitch, self._spv_pitch, att.dt)
             self._outv_roll = self._pidv_rls_out.cycle(att.rollspeed, self._spv_rollspeed, att.dt)
@@ -1479,9 +1492,9 @@ class AFCS:
 
     @async_loop_decorator()
     async def _afcs_run_loop(self) -> None:
-        self._vtol_ratio = 1 - (self.main.rxdata.ias.ias/25) # 1 is VTOL
+        self._vtol_ratio = 1 - (self.main.rxdata.ias.ias/20) # 1 is VTOL
         try:
-            self._ias_scalar = 850 / (self.main.rxdata.ias.ias**2) # ~30**2 / ias**2
+            self._ias_scalar = 676 / (self.main.rxdata.ias.ias**2) # ~30**2 / ias**2
         except ZeroDivisionError:
             self._ias_scalar = 1.0
 
@@ -1551,6 +1564,7 @@ class AFCS:
             case g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
                 if self._vtol_ratio==0 and self._ftilt==0 and self._rtilt==0:
                     self.main.state.inc_mode()
+                    self._pidf_ias_thr.reset()
             case g.CUSTOM_SUBMODE_LANDING_TRANSIT:
                 # TODO
                 if False:

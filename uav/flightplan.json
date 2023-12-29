@@ -8,6 +8,6 @@
         {"lat": 18.3356792, "long": -64.9728502, "alt_m_agl": 200}
     ],
 
-    "hover_alt_m_agl": 50,
+    "hover_alt_m_agl": 20,
     "cruise_kias": 50
 }

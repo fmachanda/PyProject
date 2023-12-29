@@ -850,7 +850,7 @@ class GCSUI:
         self.pid_var = tk.StringVar(self.pid_tuner_window)
         self.pid_var.set(next(iter(self.pid_defaults.keys())))
 
-        self.pid_warning = tk.Label(self.pid_tuner_window, text="hic sunt dracones")
+        self.pid_warning = tk.Label(self.pid_tuner_window, text="hic sunt dracones!")
         self.pid_warning.pack()
 
         self.pid_dropdown = tk.OptionMenu(self.pid_tuner_window, self.pid_var, *self.pid_defaults.keys())

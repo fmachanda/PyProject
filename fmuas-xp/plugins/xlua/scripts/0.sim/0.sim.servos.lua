@@ -193,8 +193,8 @@ function SERVOS_flight_start()
     simDR_joystick_override = 1
     simDR_throttle_override = 1
 
-    uasSET_SERVOS_rate_limiter = 0.5
-    uasSET_SERVOS_tilt_rate_limiter = 0.3
+    uasSET_SERVOS_rate_limiter = 1--0.5
+    uasSET_SERVOS_tilt_rate_limiter = 0.6--0.3
     uasSET_SERVOS_stow_rate_limiter = 2.5
     uasSET_SERVOS_cover_rate_limiter = 2.5
 
@@ -232,7 +232,8 @@ function SERVOS_after_physics()
     servo_noiser()
 
     pitch_deflection_raw = simDR_axes_values_array[simSET_pitch_axis] - 0.5
-    -- pitch_deflection = -0.75 + 3*math.abs(pitch_deflection_raw)
+    -- pitch_deflection = -0.75+3.5*math.abs(pitch_deflection_raw)
+    -- pitch_deflection = 0.75 + 0.5*pitch_deflection_raw
     -- pitch_deflection = -(((uasDR_AFCS_elevon1 + uasDR_AFCS_elevon2) / 2) - 45) / 60.0
     roll_deflection_raw = simDR_axes_values_array[simSET_roll_axis] - 0.5
     -- roll_deflection = 0.0

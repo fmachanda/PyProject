@@ -12,7 +12,7 @@
 * [Important Files](#important-files)
 * [Credits](#credits)
 
-> See the [Operations Manual][flight-manual-link] for more documentation!
+See the [Operations Manual][flight-manual-link] for more documentation!
 
 ## Overview
 This project provides the software for a humanitarian remote-sensing UAV system.  
