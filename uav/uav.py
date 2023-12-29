@@ -1313,7 +1313,7 @@ class AFCS:
         self._pidv_dyw_yws = PID(kp=-0.5, ti=1.0, td=0.0, integral_limit=0.2, minimum=-math.pi/6, maximum=math.pi/6)
         self._pidv_yws_out = PID(kp=0.2, ti=0.3, td=0.01, integral_limit=0.15, minimum=-math.pi/24, maximum=math.pi/24)
 
-        self._pidt_dep_out = PID(kp=0.4, ti=0.0, td=0.0, integral_limit=None, minimum=None, maximum=None)
+        self._pidt_dep_out = PID(kp=0.3, ti=0.0, td=0.0, integral_limit=None, minimum=None, maximum=None)
         self._pidt_arr_out = PID(kp=0.12, ti=0.0, td=0.0, integral_limit=None, minimum=None, maximum=None)
         # TODO: arrival needs to bleed off energy first
 
@@ -1421,12 +1421,12 @@ class AFCS:
 
                 if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
                     self._outt_pitch = self._pidt_dep_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt) * att.dt * 1e-6
+                    self._rtilt -= att.dt*2e-7
+                    self._ftilt -= att.dt*2e-7
                     if self._outt_pitch>0.0: # put the nose up (lower back wing a little)!
                         self._rtilt -= self._outt_pitch
-                        self._rtilt = max(min(self._rtilt, math.pi/2), 0.0)
                     else: # put the nose down (lower front wing a little)!
                         self._ftilt += self._outt_pitch
-                        self._ftilt = max(min(self._ftilt, math.pi/2), 0.0)
                 else:
                     self._outt_pitch = 0.0
                     self._ftilt = math.pi/2
@@ -1435,13 +1435,11 @@ class AFCS:
                 # self._spv_yspeed = 0
                 self._spf_ias = 0
                 self._outt_pitch = self._pidt_arr_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt) * att.dt * 1e-6
+                # self._rtilt += att.dt*1e-7
                 if self._outt_pitch>0.0: # put the nose up (raise front wing a little)!
                     self._ftilt += self._outt_pitch
-                    self._ftilt = max(min(self._ftilt, math.pi/2), 0.0)
                 elif self.main.rxdata.ias.ias<25: # put the nose down (raise back wing a little)!
                     self._rtilt -= self._outt_pitch
-                    self._rtilt += 0.0001*att.dt*1e-6
-                    self._rtilt = max(min(self._rtilt, math.pi/2), 0.0)   
             else:
                 self._outt_pitch = 0.0
                 self._ftilt = 0.0
@@ -1450,8 +1448,8 @@ class AFCS:
             self._outv_throttle = self._pidv_vsp_out.cycle(att.zspeed, self._spv_vs, att.dt)
             self._spv_roll = self._pidv_xsp_rol.cycle(att.xspeed, self._spv_xspeed, att.dt)
             self._spv_pitch = self._pidv_ysp_pit.cycle(att.yspeed, self._spv_yspeed, att.dt)
-            if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
-                self._spv_pitch = -0.5
+            if self.main.state.custom_submode in (g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT, g.CUSTOM_SUBMODE_TAKEOFF_DEPART):
+                self._spv_pitch = -0.4
             self._spv_rollspeed = self._pidv_rol_rls.cycle(att.roll, self._spv_roll, att.dt)
             self._spv_pitchspeed = self._pidv_pit_pts.cycle(att.pitch, self._spv_pitch, att.dt)
             self._outv_roll = self._pidv_rls_out.cycle(att.rollspeed, self._spv_rollspeed, att.dt)
@@ -1479,6 +1477,9 @@ class AFCS:
         self._vthrottles = np.array([t1, t2, t3, t4], dtype=np.float16)
         self._vthrottles *= AFCS.MAX_THROTTLE
 
+        self._rtilt = max(min(self._rtilt, math.pi/2), 0.0)
+        self._ftilt = max(min(self._ftilt, math.pi/2), 0.0)
+
         self._vservos[0] = math.pi/2 - self._outv_yaw
         self._vservos[1] = math.pi/2 + self._outv_yaw
         self._vservos[2] = math.pi/2
@@ -1488,7 +1489,7 @@ class AFCS:
 
     @async_loop_decorator()
     async def _afcs_run_loop(self) -> None:
-        self._vtol_ratio = 1 - (self.main.rxdata.ias.ias/20) # 1 is VTOL
+        self._vtol_ratio = 1 - max(self.main.rxdata.ias.ias/20, 1) # 1 is VTOL
         try:
             self._ias_scalar = 676 / (self.main.rxdata.ias.ias**2) # ~26**2 / ias**2
         except ZeroDivisionError:
@@ -1556,12 +1557,11 @@ class AFCS:
                 if self.main.rxdata.alt.altitude > self.main.navigator.hover_alt-3:
                     self.main.state.inc_mode()
             case g.CUSTOM_SUBMODE_TAKEOFF_DEPART:
-                if self.main.rxdata.ias.ias > 3:
+                if self.main.rxdata.ias.ias > 4:
                     self.main.state.inc_mode()
             case g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
                 if self._vtol_ratio==0 and self._ftilt==0 and self._rtilt==0:
                     self.main.state.inc_mode()
-                    self._pidf_ias_thr.reset()
             case g.CUSTOM_SUBMODE_LANDING_TRANSIT:
                 # TODO
                 if self.main.rxdata.ias.ias<10 and self._ftilt==math.pi/2:
