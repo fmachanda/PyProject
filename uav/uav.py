@@ -1314,7 +1314,7 @@ class AFCS:
         self._pidv_yws_out = PID(kp=0.2, ti=0.3, td=0.01, integral_limit=0.15, minimum=-math.pi/24, maximum=math.pi/24)
 
         self._pidt_dep_out = PID(kp=0.4, ti=0.0, td=0.0, integral_limit=None, minimum=None, maximum=None)
-        self._pidt_arr_out = PID(kp=0.5, ti=0.0, td=0.0, integral_limit=None, minimum=None, maximum=None)
+        self._pidt_arr_out = PID(kp=0.12, ti=0.0, td=0.0, integral_limit=None, minimum=None, maximum=None)
         # TODO: arrival needs to bleed off energy first
 
     async def boot_proc(self) -> None:
@@ -1420,13 +1420,9 @@ class AFCS:
                 self._spv_yspeed = 30
 
                 if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
-                    self._last_tilt = self._outt_pitch
                     self._outt_pitch = self._pidt_dep_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt) * att.dt * 1e-6
-                    # base = 3 * att.dt * 1e-7
-                    # self._rtilt-=base
-                    # self._ftilt-=1.2*base
                     if self._outt_pitch>0.0: # put the nose up (lower back wing a little)!
-                        self._rtilt -= self._outt_pitch#-self._last_tilt
+                        self._rtilt -= self._outt_pitch
                         self._rtilt = max(min(self._rtilt, math.pi/2), 0.0)
                     else: # put the nose down (lower front wing a little)!
                         self._ftilt += self._outt_pitch
@@ -1436,16 +1432,16 @@ class AFCS:
                     self._ftilt = math.pi/2
                     self._rtilt = math.pi/2
             elif self.main.state.custom_submode == g.CUSTOM_SUBMODE_LANDING_TRANSIT:
-                self._spv_yspeed = 0
-
-                self._last_tilt = self._outt_pitch
-                self._outt_pitch = self._pidt_arr_out.cycle(att.pitch, 0.0, att.dt)
-                if self._outt_pitch>self._last_tilt: # put the nose up (raise front wing a little)!
-                    self._ftilt += self._outt_pitch-self._last_tilt
+                # self._spv_yspeed = 0
+                self._spf_ias = 0
+                self._outt_pitch = self._pidt_arr_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt) * att.dt * 1e-6
+                if self._outt_pitch>0.0: # put the nose up (raise front wing a little)!
+                    self._ftilt += self._outt_pitch
                     self._ftilt = max(min(self._ftilt, math.pi/2), 0.0)
-                else: # put the nose down (raise back wing a little)!
-                    self._rtilt += self._last_tilt-self._outt_pitch
-                    self._rtilt = max(min(self._rtilt, math.pi/2), 0.0)
+                elif self.main.rxdata.ias.ias<25: # put the nose down (raise back wing a little)!
+                    self._rtilt -= self._outt_pitch
+                    self._rtilt += 0.0001*att.dt*1e-6
+                    self._rtilt = max(min(self._rtilt, math.pi/2), 0.0)   
             else:
                 self._outt_pitch = 0.0
                 self._ftilt = 0.0
@@ -1494,7 +1490,7 @@ class AFCS:
     async def _afcs_run_loop(self) -> None:
         self._vtol_ratio = 1 - (self.main.rxdata.ias.ias/20) # 1 is VTOL
         try:
-            self._ias_scalar = 676 / (self.main.rxdata.ias.ias**2) # ~30**2 / ias**2
+            self._ias_scalar = 676 / (self.main.rxdata.ias.ias**2) # ~26**2 / ias**2
         except ZeroDivisionError:
             self._ias_scalar = 1.0
 
@@ -1538,6 +1534,7 @@ class AFCS:
                 fservos, fthrottles = self._flight_calc(wipe=False)
                 _, vthrottles = self._vtol_calc()
                 self._servos[2] = self._ftilt
+                self._vtol_ratio = math.sin(self._servos[2])
                 self._servos[:2] = (1-self._vtol_ratio)*fservos[:2] + self._rtilt
                 self._throttles = (1-self._vtol_ratio)*fthrottles + self._vtol_ratio*vthrottles
             case g.CUSTOM_SUBMODE_FLIGHT_NORMAL | g.CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE:
@@ -1567,11 +1564,11 @@ class AFCS:
                     self._pidf_ias_thr.reset()
             case g.CUSTOM_SUBMODE_LANDING_TRANSIT:
                 # TODO
-                if False:
+                if self.main.rxdata.ias.ias<10 and self._ftilt==math.pi/2:
                     self.main.state.inc_mode()
             case g.CUSTOM_SUBMODE_LANDING_HOVER:
                 # TODO
-                if False:
+                if self.main.rxdata.alt.altitude < self.main.navigator.hover_alt-3: # and over H
                     self.main.state.inc_mode()
             case g.CUSTOM_SUBMODE_LANDING_DESCENT:
                 # TODO
