@@ -587,7 +587,9 @@ class GCSUI:
 
             try:
                 lat, lon, alt = MultiEntryDialog(self.root, ["Lat (deg)", "Lon (deg)", "Ft AGL"]).result
-                alt = float(alt) if alt is not None else alt
+                lat = None if lat is None else float(lat)
+                lat = None if lon is None else float(lon)
+                alt = None if alt is None else float(FT_TO_M*alt)
             except (TypeError, ValueError):
                 return
 
@@ -618,9 +620,9 @@ class GCSUI:
 
             try:
                 lat, lon, alt = MultiEntryDialog(self.root, ["Lat (deg)", "Lon (deg)", "Ft AGL"]).result
-                lat = float(lat)
-                lon = float(lon)
-                alt = -1 if alt is None else float(alt)
+                lat = None if lat is None else float(lat)
+                lat = None if lon is None else float(lon)
+                alt = -1 if alt is None else float(FT_TO_M*alt)
             except (TypeError, ValueError):
                 return
             self.connect_instance.reposition(lat=lat, lon=lon, alt=alt)
@@ -629,11 +631,11 @@ class GCSUI:
     def show_set_alt_dialog(self):
         if self.connect_instance is not None:
             try:
-                alt = float(MultiEntryDialog(self.root, ["Ft AGL"]).result[0])
+                alt = MultiEntryDialog(self.root, ["Ft AGL"]).result[0]
             except TypeError:
                 return
             
-            alt = -2 if alt is None else alt
+            alt = -2 if alt is None else float(FT_TO_M*alt)
             self.connect_instance.set_alt(alt)
             self.log("Set alt")
             
@@ -641,10 +643,10 @@ class GCSUI:
     def show_set_speed_dialog(self):
         if self.connect_instance is not None:
             try:
-                speed = float(MultiEntryDialog(self.root, ["KIAS"]).result[0])
+                speed = MultiEntryDialog(self.root, ["KIAS"]).result[0]
             except TypeError:
                 return
-            speed = -2 if speed is None else speed
+            speed = -2 if speed is None else float(speed)
             self.connect_instance.set_speed(speed)
             self.log("Set speed")
 
@@ -668,7 +670,9 @@ class GCSUI:
 
             try:
                 lat, lon, alt = MultiEntryDialog(self.root, ["Lat (deg)", "Lon (deg)", "Ft AGL"]).result
-                alt = float(alt) if alt is not None else alt
+                lat = None if lat is None else float(lat)
+                lat = None if lon is None else float(lon)
+                alt = None if alt is None else float(FT_TO_M*alt)
             except (TypeError, ValueError):
                 return
             self.connect_instance.gimbal_roi(lat=lat, lon=lon, alt=alt)
@@ -850,7 +854,7 @@ class GCSUI:
         self.pid_var = tk.StringVar(self.pid_tuner_window)
         self.pid_var.set(next(iter(self.pid_defaults.keys())))
 
-        self.pid_warning = tk.Label(self.pid_tuner_window, text="hic sunt dracones!")
+        self.pid_warning = tk.Label(self.pid_tuner_window, text="WARNING\nhic sunt dracones!")
         self.pid_warning.pack()
 
         self.pid_dropdown = tk.OptionMenu(self.pid_tuner_window, self.pid_var, *self.pid_defaults.keys())

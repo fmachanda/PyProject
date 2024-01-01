@@ -1342,7 +1342,7 @@ class Camera:
     async def _capture(self) -> None:
         previous_file_list = [f for f in os.listdir(self.xp_path) if os.path.isfile(os.path.join(self.xp_path, f))]
 
-        logger.info("Commanding screenshot...")
+        logger.debug("Commanding screenshot...")
         self.sock.sendto(struct.pack('<4sx400s', b'CMND', b'fmuas/commands/image_capture'), (self.X_PLANE_IP, self.UDP_PORT))
 
         await asyncio.sleep(Camera.DELAY)
@@ -1373,7 +1373,7 @@ class Camera:
                     1, # success
                     url
                 )
-                logger.info(f"Captured {os.path.join(self.xp_path,f)}")
+                logger.debug(f"Captured {os.path.join(self.xp_path,f)}")
         
         try:
             self.sock.sendto(struct.pack('<4sx400s', b'CMND', b'fmuas/commands/image_capture_reset'), (self.X_PLANE_IP, self.UDP_PORT))

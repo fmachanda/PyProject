@@ -152,4 +152,4 @@ Thanks to Austin Meyers & Laminar Research, Peter Buckner, Katherine Picchione, 
 [prdt-link]: https://github.com/OpenCyphal/public_regulated_data_types
 [xplane-link]: https://www.x-plane.com/desktop/try-it/
 [fmuas-xp-link]: https://github.com/fmachanda/fmuas-xp
-[flight-manual-link]: https://drive.google.com/file/d/10-qno50bdPXd9zrQrpF1-gox775YPN9c/view
+[flight-manual-link]: https://drive.google.com/drive/folders/1hSJ1H_jyYHaTRjBD8h9e2u8aRmqUiNN7?usp=drive_link

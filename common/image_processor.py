@@ -40,7 +40,7 @@ async def find_contour(image: str | cv2.typing.MatLike) -> tuple[np.ndarray] | b
     """
     global last_time
     now = time.perf_counter_ns()
-    print(f"[IMG] Starting find_contour   {((now - last_time)/1e3):.2f}")
+    # print(f"[IMG] Starting find_contour   {((now - last_time)/1e3):.2f}")
     last_time = now
     await asyncio.sleep(0)
     
@@ -99,9 +99,9 @@ async def find_contour(image: str | cv2.typing.MatLike) -> tuple[np.ndarray] | b
     # plt.imshow(contoured)
     # plt.show()
 
-    print(f"[IMG] {len(contours)} contours detected")
+    # print(f"[IMG] {len(contours)} contours detected")
     now = time.perf_counter_ns()
-    print(f"[IMG] Ending find_contour     {((now - last_time)/1e3):.2f}")
+    # print(f"[IMG] Ending find_contour     {((now - last_time)/1e3):.2f}")
     last_time = now
     return contours, processed, image
 
@@ -133,18 +133,18 @@ async def find_h(img: str | cv2.typing.MatLike, display: bool = False, confidenc
 
     global last_time
     now = time.perf_counter_ns()
-    print(f"[IMG] Starting find_h...")
+    # print(f"[IMG] Starting find_h...")
     last_time = now
 
     await asyncio.sleep(0)
 
     now = time.perf_counter_ns()
-    print(f"[IMG] Calling find_contour    {((now - last_time)/1e3):.2f}")
+    # print(f"[IMG] Calling find_contour    {((now - last_time)/1e3):.2f}")
     last_time = now
     if out := await find_contour(img):
         contours, processed, image = out
     else:
-        print(f"[IMG] Cannot read image!")
+        # print(f"[IMG] Cannot read image!")
         return False
 
     if not contours:
@@ -155,7 +155,7 @@ async def find_h(img: str | cv2.typing.MatLike, display: bool = False, confidenc
     await asyncio.sleep(0)
 
     if VECTORIZE:
-        print(f"[IMG] Starting numpy loop...")
+        # print(f"[IMG] Starting numpy loop...")
         s_time = time.perf_counter_ns()
         rois = [
             cv2.resize(
@@ -171,7 +171,7 @@ async def find_h(img: str | cv2.typing.MatLike, display: bool = False, confidenc
         ]
         await asyncio.sleep(0)
         rois = np.stack(rois, axis=0)
-        print(f"[IMG] Loop time: ************ {((time.perf_counter_ns() - s_time)/1e3):.2f}")
+        # print(f"[IMG] Loop time: ************ {((time.perf_counter_ns() - s_time)/1e3):.2f}")
         await asyncio.sleep(0)
 
         posmatches = templates * rois[:, np.newaxis, :, :]
@@ -199,7 +199,7 @@ async def find_h(img: str | cv2.typing.MatLike, display: bool = False, confidenc
         strengths = ((templates.shape[1]*templates.shape[2])*(sum_posmatches - sum_negmatches - sum_posinvmatches)) / (sum_templates*sum_roi)
         await asyncio.sleep(0)
     else:
-        print(f"[IMG] Starting 'for' loop...")
+        # print(f"[IMG] Starting 'for' loop...")
         t_time = 0.0
         for n, contour in enumerate(contours):
             s_time = time.perf_counter_ns()
@@ -270,14 +270,14 @@ async def find_h(img: str | cv2.typing.MatLike, display: bool = False, confidenc
 
             strengths[n] = (templates.shape[1]*templates.shape[2]) * (posstrength - negstrength - posinvstrength) / np.sum(roi)
             await asyncio.sleep(0)
-        print(f"[IMG] Loop time: ************ {(t_time/1e3):.2f}")
+        # print(f"[IMG] Loop time: ************ {(t_time/1e3):.2f}")
     
     confidence = np.max(strengths)
     await asyncio.sleep(0)
 
     if confidence < confidence_threshold:
         now = time.perf_counter_ns()
-        print(f"[IMG] Ending find_h           {((now - last_time)/1e3):.2f}")
+        # print(f"[IMG] Ending find_h           {((now - last_time)/1e3):.2f}")
         last_time = now
         return False
 
@@ -306,13 +306,13 @@ async def find_h(img: str | cv2.typing.MatLike, display: bool = False, confidenc
     await asyncio.sleep(0)
 
     now = time.perf_counter_ns()
-    print(f"[IMG] Ending find_h           {((now - last_time)/1e3):.2f}")
+    # print(f"[IMG] Ending find_h           {((now - last_time)/1e3):.2f}")
     last_time = now
     threaded_output = (xc, yc, confidence, image)
     return xc, yc, confidence, image
 
 
-def sync_proc(img: str | cv2.typing.MatLike, display: bool = False, confidence_threshold: float = CONFIDENCE_THRESHOLD) -> tuple | bool:
+def sync_proc(img: str | cv2.typing.MatLike, display: bool = True, confidence_threshold: float = CONFIDENCE_THRESHOLD) -> tuple | bool:
     """Find 'H' in image for landing UAV.
     
     Parameters
@@ -336,17 +336,17 @@ def sync_proc(img: str | cv2.typing.MatLike, display: bool = False, confidence_t
 
     global last_time
     now = time.perf_counter_ns()
-    print(f"[IMG] Starting find_h...")
+    # print(f"[IMG] Starting find_h...")
     last_time = now
 
     
     if isinstance(img, str):
-        image = cv2.imread(img)
-        if image is None:
+        og = cv2.imread(img)
+        if og is None:
             return False
 
-    image = cv2.resize(image, (1024, int(image.shape[0] * (1024/image.shape[1]))))
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    og = cv2.resize(og, (1024, int(og.shape[0] * (1024/og.shape[1]))))
+    image = cv2.cvtColor(og, cv2.COLOR_BGR2RGB)
     image = cv2.GaussianBlur(image, (9, 9), 0)
 
     normed = cv2.normalize(image, None, 0, 1.0, cv2.NORM_MINMAX, dtype=cv2.CV_32F)
@@ -386,9 +386,9 @@ def sync_proc(img: str | cv2.typing.MatLike, display: bool = False, confidence_t
     # plt.imshow(contoured)
     # plt.show()
 
-    print(f"[IMG] {len(contours)} contours detected")
+    # print(f"[IMG] {len(contours)} contours detected")
     now = time.perf_counter_ns()
-    print(f"[IMG] Ending find_contour     {((now - last_time)/1e3):.2f}")
+    # print(f"[IMG] Ending find_contour     {((now - last_time)/1e3):.2f}")
     last_time = now
 
     if not contours:
@@ -397,7 +397,7 @@ def sync_proc(img: str | cv2.typing.MatLike, display: bool = False, confidence_t
     strengths = np.zeros((len(contours), len(templates)))
 
     if VECTORIZE:
-        print(f"[IMG] Starting numpy loop...")
+        # print(f"[IMG] Starting numpy loop...")
         s_time = time.perf_counter_ns()
         rois = [
             cv2.resize(
@@ -412,7 +412,7 @@ def sync_proc(img: str | cv2.typing.MatLike, display: bool = False, confidence_t
             ) for contour in contours
         ]
         rois = np.stack(rois, axis=0)
-        print(f"[IMG] Loop time: ************ {((time.perf_counter_ns() - s_time)/1e3):.2f}")
+        # print(f"[IMG] Loop time: ************ {((time.perf_counter_ns() - s_time)/1e3):.2f}")
 
         posmatches = templates * rois[:, np.newaxis, :, :]
         negmatches = invtemplates * rois[:, np.newaxis, :, :]
@@ -429,7 +429,7 @@ def sync_proc(img: str | cv2.typing.MatLike, display: bool = False, confidence_t
 
         strengths = ((templates.shape[1]*templates.shape[2])*(sum_posmatches - sum_negmatches - sum_posinvmatches)) / (sum_templates*sum_roi)
     else:
-        print(f"[IMG] Starting 'for' loop...")
+        # print(f"[IMG] Starting 'for' loop...")
         t_time = 0.0
         for n, contour in enumerate(contours):
             s_time = time.perf_counter_ns()
@@ -493,13 +493,13 @@ def sync_proc(img: str | cv2.typing.MatLike, display: bool = False, confidence_t
             posinvstrength = np.sum(posinvmatches, axis=(1,2)) / np.sum(templates, axis=(1,2))
 
             strengths[n] = (templates.shape[1]*templates.shape[2]) * (posstrength - negstrength - posinvstrength) / np.sum(roi)
-        print(f"[IMG] Loop time: ************ {(t_time/1e3):.2f}")
+        # print(f"[IMG] Loop time: ************ {(t_time/1e3):.2f}")
     
     confidence = np.max(strengths)
 
     if confidence < confidence_threshold:
         now = time.perf_counter_ns()
-        print(f"[IMG] Ending find_h           {((now - last_time)/1e3):.2f}")
+        # print(f"[IMG] Ending find_h           {((now - last_time)/1e3):.2f}")
         last_time = now
         return False
 
@@ -509,65 +509,29 @@ def sync_proc(img: str | cv2.typing.MatLike, display: bool = False, confidence_t
     yc = image.shape[0]//2 - (y + h//2)
     xc = (x + w//2) - image.shape[1]//2
 
-    cv2.rectangle(image, (x, y), (x+w, y+h), color=ANNOTATION_COLOR, thickness=2)
-    cv2.circle(image, (x + w//2, y + h//2), radius=2, color=ANNOTATION_COLOR, thickness=-1)
+    cv2.rectangle(og, (x, y), (x+w, y+h), color=ANNOTATION_COLOR, thickness=2)
+    cv2.circle(og, (x + w//2, y + h//2), radius=2, color=ANNOTATION_COLOR, thickness=-1)
 
     if __name__=='__main__':
         print(f"'H' detected in {img} at ({xc},{yc}) with a confidence of {confidence:.2f}.")
     if display:
-        plt.figure()
-        if VECTORIZE:
-            plt.imshow(rois[index[0][0]])
-            # np.save('./common/output_data.npy', rois[index[0][0]])
-            plt.show()
-        plt.imshow(image)
-        plt.show()
+        # plt.figure()
+        # if VECTORIZE:
+        #     plt.imshow(rois[index[0][0]])
+        #     # np.save('./common/output_data.npy', rois[index[0][0]])
+        #     plt.show()
+        # plt.imshow(image)
+        # plt.show()
+        cv2.imshow("Detected Landing Zone", og)
+        cv2.setWindowProperty("Detected Landing Zone", cv2.WND_PROP_TOPMOST, 1)
+        if cv2.waitKey(800):
+            cv2.destroyAllWindows()
 
     now = time.perf_counter_ns()
-    print(f"[IMG] Ending find_h           {((now - last_time)/1e3):.2f}")
+    # print(f"[IMG] Ending find_h           {((now - last_time)/1e3):.2f}")
     last_time = now
     threaded_output = (xc, yc, confidence, image)
     return xc, yc, confidence, image
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-def find_h_sync(*args, **kwargs) -> tuple | bool:
-    return asyncio.run(find_h(*args, **kwargs))
-
-async def detect(*args, **kwargs) -> tuple | bool:
-    global threaded_output
-    threaded_output = False
-
-    task = threading.Thread(target=find_h_sync, args=args, kwargs=kwargs)
-    await asyncio.sleep(0)
-    task.start()
-    await asyncio.sleep(0)
-    task.join()
-    await asyncio.sleep(0)
-
-    return threaded_output
 
 
 async def _test(file):
@@ -578,7 +542,7 @@ async def _test(file):
 
 
 if __name__ == '__main__':
-    print(f"[IMG] Starting...")
+    # print(f"[IMG] Starting...")
     start = time.perf_counter_ns()
     # for i in range(1,4):
     #     asyncio.run(_test(f'./common/test_images/image{i}.png'))
@@ -617,4 +581,4 @@ if __name__ == '__main__':
     for name in names:
         asyncio.run(_test(f'./common/test_images/{name}.png'))
 
-    print(f"[IMG] TOTAL TIME        {((time.perf_counter_ns() - start)/1e6):.2f} ms")
+    # print(f"[IMG] TOTAL TIME        {((time.perf_counter_ns() - start)/1e6):.2f} ms")

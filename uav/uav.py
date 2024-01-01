@@ -1041,41 +1041,41 @@ class UAVCANManager:
         """Close the instance."""
         logger.info("Closing UAVCANManager...") # TODO: Change to logger.debug()
 
-        # cln_clock_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.clock.id)
-        # clock_response = await cln_clock_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
-        # if clock_response is None:
-        #     logger.error("CLOCK failed to respond to power off request")
-        # elif clock_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
-        #     logger.error("CLOCK failed to respond to power off request")
-        # else:
-        #     logger.debug("CLOCK powered off")
+        cln_clock_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.clock.id)
+        clock_response = await cln_clock_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
+        if clock_response is None:
+            logger.error("CLOCK failed to respond to power off request")
+        elif clock_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+            logger.error("CLOCK failed to respond to power off request")
+        else:
+            logger.debug("CLOCK powered off")
 
-        # cln_sensorhub_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.sensorhub.id)
-        # sensorhub_response = await cln_sensorhub_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
-        # if sensorhub_response is None:
-        #     logger.error("SENSORHUB failed to respond to power off request")
-        # elif sensorhub_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
-        #     logger.error("SENSORHUB failed to respond to power off request")
-        # else:
-        #     logger.debug("SENSORHUB powered off")
+        cln_sensorhub_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.sensorhub.id)
+        sensorhub_response = await cln_sensorhub_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
+        if sensorhub_response is None:
+            logger.error("SENSORHUB failed to respond to power off request")
+        elif sensorhub_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+            logger.error("SENSORHUB failed to respond to power off request")
+        else:
+            logger.debug("SENSORHUB powered off")
 
-        # cln_motorhub_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.motorhub.id)
-        # motorhub_response = await cln_motorhub_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
-        # if motorhub_response is None:
-        #     logger.error("MOTORHUB failed to respond to power off request")
-        # elif motorhub_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
-        #     logger.error("MOTORHUB failed to respond to power off request")
-        # else:
-        #     logger.debug("MOTORHUB powered off")
+        cln_motorhub_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.motorhub.id)
+        motorhub_response = await cln_motorhub_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
+        if motorhub_response is None:
+            logger.error("MOTORHUB failed to respond to power off request")
+        elif motorhub_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+            logger.error("MOTORHUB failed to respond to power off request")
+        else:
+            logger.debug("MOTORHUB powered off")
 
-        # cln_gps_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.gps.id)
-        # gps_response = await cln_gps_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
-        # if gps_response is None:
-        #     logger.error("GPS failed to respond to power off request")
-        # elif gps_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
-        #     logger.error("GPS failed to respond to power off request")
-        # else:
-        #     logger.debug("GPS powered off")
+        cln_gps_cmd = self.node_manager.node.make_client(uavcan.node.ExecuteCommand_1, self.node_manager.gps.id)
+        gps_response = await cln_gps_cmd.call(uavcan.node.ExecuteCommand_1.Request(uavcan.node.ExecuteCommand_1.Request.COMMAND_POWER_OFF))
+        if gps_response is None:
+            logger.error("GPS failed to respond to power off request")
+        elif gps_response[0].status != uavcan.node.ExecuteCommand_1.Response.STATUS_SUCCESS:
+            logger.error("GPS failed to respond to power off request")
+        else:
+            logger.debug("GPS powered off")
 
         self._node.close()
 
@@ -1220,7 +1220,7 @@ class AFCS:
     """
 
     MAX_THROTTLE = 14000
-    BASE_THROTTLE_PCT = 0.36
+    BASE_THROTTLE_PCT = 0.4
 
     def __init__(self, main: 'Main') -> None:
         """Initialize the AFCS class.
@@ -1288,9 +1288,9 @@ class AFCS:
 
         # self._pid{f or v}_{from}_{to}
 
-        self._pidf_alt_vpa = PID(kp=0.007, ti=0.006, td=0.1, integral_limit=0.05, maximum=0.1, minimum=-0.15)
-        self._pidf_vpa_aoa = PID(kp=0.7, ti=3.0, td=0.05, integral_limit=0.2, maximum=math.pi/6, minimum=0.02)
-        self._pidf_vpa_thr = PID(kp=0.35, ti=0.003, td=0.0, integral_limit=0.25, maximum=0.25, minimum=0.0)
+        self._pidf_alt_vpa = PID(kp=0.007, ti=0.006, td=0.1, integral_limit=0.05, maximum=0.15, minimum=-0.2)
+        self._pidf_vpa_aoa = PID(kp=0.7, ti=3.0, td=0.05, integral_limit=0.3, maximum=math.pi/6, minimum=0.02)
+        self._pidf_vpa_thr = PID(kp=0.15, ti=0.003, td=0.0, integral_limit=0.5, maximum=0.25, minimum=0.0)
         self._pidf_aoa_out = PID(kp=-0.10, ti=-0.008, td=0.02, integral_limit=2.5, maximum=0.2, minimum=-0.2)
         self._pidf_dyw_rol = PID(kp=-0.75, ti=-8.0, td=0.002, integral_limit=0.1, maximum=math.pi/6, minimum=-math.pi/6)
         self._pidf_rol_rls = PID(kp=1.5, ti=6.0, td=0.02, integral_limit=0.2, maximum=2.0, minimum=-2.0)
@@ -1303,18 +1303,18 @@ class AFCS:
         self._pidv_rls_out = PID(kp=0.021, ti=0.05, td=0.04, integral_limit=0.3, minimum=-0.08, maximum=0.08)
 
         self._pidv_ydp_ysp = PID(kp=0.0, ti=0.0, td=0.0, integral_limit=None, minimum=-5.0, maximum=5.0)
-        self._pidv_ysp_pit = PID(kp=-0.35, ti=-1.5, td=0.0, integral_limit=0.3, minimum=-math.pi/8, maximum=math.pi/12)
+        self._pidv_ysp_pit = PID(kp=-0.13, ti=-1.5, td=0.1, integral_limit=3.0, minimum=-math.pi/8-0.3, maximum=math.pi/12+0.3)
         self._pidv_pit_pts = PID(kp=0.7, ti=0.8, td=0.0, integral_limit=0.1, minimum=-math.pi/6, maximum=math.pi/6)
         self._pidv_pts_out = PID(kp=0.027, ti=0.03, td=0.06, integral_limit=1.0, minimum=-0.1, maximum=0.1)
 
         self._pidv_alt_vsp = PID(kp=0.5, ti=1.0, td=0.05, integral_limit=0.5, minimum=-1.5, maximum=2.0)
         self._pidv_vsp_out = PID(kp=0.18, ti=0.4, td=0.001, integral_limit=5.0, minimum=0.0, maximum=0.68)
 
-        self._pidv_dyw_yws = PID(kp=-0.5, ti=1.0, td=0.0, integral_limit=0.2, minimum=-math.pi/6, maximum=math.pi/6)
+        self._pidv_dyw_yws = PID(kp=-0.9, ti=1.0, td=0.0, integral_limit=0.2, minimum=-math.pi/6, maximum=math.pi/6)
         self._pidv_yws_out = PID(kp=0.2, ti=0.3, td=0.01, integral_limit=0.15, minimum=-math.pi/24, maximum=math.pi/24)
 
-        self._pidt_dep_out = PID(kp=0.3, ti=0.0, td=0.0, integral_limit=None, minimum=None, maximum=None)
-        self._pidt_arr_out = PID(kp=0.12, ti=0.0, td=0.0, integral_limit=None, minimum=None, maximum=None)
+        self._pidt_dep_out = PID(kp=0.33, ti=3.0, td=0.6, integral_limit=None, minimum=None, maximum=None)
+        self._pidt_arr_out = PID(kp=0.3, ti=0.0, td=0.0, integral_limit=None, minimum=None, maximum=None)
         # TODO: arrival needs to bleed off energy first
 
     async def boot_proc(self) -> None:
@@ -1324,6 +1324,7 @@ class AFCS:
     #region Calculations
     def _flight_calc(self, wipe: bool = True) -> np.ndarray:
         """Calculate flight servo commands from sensors."""
+
         if (alt:=self.main.rxdata.alt).dt > 0.0:
             self._spf_vpath = self._pidf_alt_vpa.cycle(alt.altitude, self._sp_altitude, alt.dt)
             self.main.rxdata.alt.dt = 0.0 if wipe else alt.dt
@@ -1337,6 +1338,8 @@ class AFCS:
                 dt = (att.dt + aoa.dt) / 2
 
             self._vpath = att.pitch - math.cos(att.roll) * aoa.aoa
+            if self.main.state.custom_submode==g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
+                self._spf_vpath = 0.0
             self._spf_aoa = self._pidf_vpa_aoa.cycle(self._vpath, self._spf_vpath, dt)
             self._throttle_vpa_corr = self._pidf_vpa_thr.cycle(self._vpath, self._spf_vpath, dt)
 
@@ -1353,6 +1356,12 @@ class AFCS:
 
         if (aoa:=self.main.rxdata.aoa).dt > 0.0:
             self._outf_pitch = self._pidf_aoa_out.cycle(aoa.aoa, self._spf_aoa, aoa.dt)
+            if self.main.state.custom_submode==g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
+                self._pidf_aoa_out._integral = 1.3
+                self._pidf_vpa_aoa._integral = 0.248
+                self._pidf_ias_thr._integral = 0.8
+                self._pidf_vpa_thr._integral = 0.3
+                self._outf_pitch = -0.2
             self.main.rxdata.aoa.dt = 0.0 if wipe else aoa.dt
 
         if (ias:=self.main.rxdata.ias).dt > 0.0:
@@ -1390,13 +1399,13 @@ class AFCS:
                     self._outv_thr_mode = 0
 
             if alt.altitude < 0.05:
-                self._pidv_pts_out._integral = 0.05
+                self._pidv_pts_out._integral = 0.62
                 self._pidv_xdp_xsp._integral = 0.0
                 self._pidv_xsp_rol._integral = 0.0
                 self._pidv_rol_rls._integral = 0.0
                 self._pidv_rls_out._integral = 0.0
                 self._pidv_ydp_ysp._integral = 0.0
-                self._pidv_ysp_pit._integral = 0.0
+                self._pidv_ysp_pit._integral = 1.07
                 self._pidv_pit_pts._integral = 0.0
                 self._pidv_alt_vsp._integral = 0.0
                 self._pidv_vsp_out._integral = 0.0
@@ -1421,12 +1430,14 @@ class AFCS:
 
                 if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
                     self._outt_pitch = self._pidt_dep_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt) * att.dt * 1e-6
-                    self._rtilt -= att.dt*2e-7
-                    self._ftilt -= att.dt*2e-7
+                    if self._ftilt > -self.main.rxdata.aoa.aoa+0.02:
+                        self._ftilt -= att.dt*1e-7
+                    self._rtilt -= att.dt*1e-7
                     if self._outt_pitch>0.0: # put the nose up (lower back wing a little)!
                         self._rtilt -= self._outt_pitch
-                    else: # put the nose down (lower front wing a little)!
-                        self._ftilt += self._outt_pitch
+                    elif self._ftilt > -self.main.rxdata.aoa.aoa+0.02: # put the nose down (lower front wing a little)!
+                        self._ftilt += 1.9*self._outt_pitch
+                    self._ftilt = max(self._ftilt, -self.main.rxdata.aoa.aoa+0.02)
                 else:
                     self._outt_pitch = 0.0
                     self._ftilt = math.pi/2
@@ -1435,7 +1446,7 @@ class AFCS:
                 # self._spv_yspeed = 0
                 self._spf_ias = 0
                 self._outt_pitch = self._pidt_arr_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt) * att.dt * 1e-6
-                # self._rtilt += att.dt*1e-7
+                # self._ftilt += att.dt*1e-8
                 if self._outt_pitch>0.0: # put the nose up (raise front wing a little)!
                     self._ftilt += self._outt_pitch
                 elif self.main.rxdata.ias.ias<25: # put the nose down (raise back wing a little)!
@@ -1448,7 +1459,9 @@ class AFCS:
             self._outv_throttle = self._pidv_vsp_out.cycle(att.zspeed, self._spv_vs, att.dt)
             self._spv_roll = self._pidv_xsp_rol.cycle(att.xspeed, self._spv_xspeed, att.dt)
             self._spv_pitch = self._pidv_ysp_pit.cycle(att.yspeed, self._spv_yspeed, att.dt)
-            if self.main.state.custom_submode in (g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT, g.CUSTOM_SUBMODE_TAKEOFF_DEPART):
+            if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
+                self._spv_pitch = -0.4*self._vtol_ratio
+            elif self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_DEPART:
                 self._spv_pitch = -0.4
             self._spv_rollspeed = self._pidv_rol_rls.cycle(att.roll, self._spv_roll, att.dt)
             self._spv_pitchspeed = self._pidv_pit_pts.cycle(att.pitch, self._spv_pitch, att.dt)
@@ -1489,9 +1502,9 @@ class AFCS:
 
     @async_loop_decorator()
     async def _afcs_run_loop(self) -> None:
-        self._vtol_ratio = 1 - max(self.main.rxdata.ias.ias/20, 1) # 1 is VTOL
+        self._vtol_ratio = 2*self._rtilt / (math.pi)#1 - min(self.main.rxdata.ias.ias/20, 1) # 1 is VTOL
         try:
-            self._ias_scalar = 676 / (self.main.rxdata.ias.ias**2) # ~26**2 / ias**2
+            self._ias_scalar = min(676 / (self.main.rxdata.ias.ias**2), 1.0) # ~26**2 / ias**2
         except ZeroDivisionError:
             self._ias_scalar = 1.0
 
@@ -1557,7 +1570,7 @@ class AFCS:
                 if self.main.rxdata.alt.altitude > self.main.navigator.hover_alt-3:
                     self.main.state.inc_mode()
             case g.CUSTOM_SUBMODE_TAKEOFF_DEPART:
-                if self.main.rxdata.ias.ias > 4:
+                if self.main.rxdata.ias.ias > 4.5:
                     self.main.state.inc_mode()
             case g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
                 if self._vtol_ratio==0 and self._ftilt==0 and self._rtilt==0:
@@ -1986,8 +1999,7 @@ class CommManager:
                 self._mavlogger.log(MAVLOG_DEBUG, f"Heartbeat message from camera #{msg.get_srcSystem()}")
                 self._last_cam_beat = self.main.rxdata.time.time
             elif msg.get_type() == 'CAMERA_IMAGE_CAPTURED' and msg.get_srcSystem()==self._cam_id:
-                return
-                logger.info(f"Proccesing image {msg.file_url}")
+                logger.debug(f"Procesing image {msg.file_url}")
 
                 if out := await asyncio.to_thread(img.sync_proc, msg.file_url):
                     dx, dy, confidence, image = out
@@ -1996,7 +2008,7 @@ class CommManager:
                     # await grapher.imshow(image)
                 else:
                     self.main.rxdata.cam.dump(0.0, 0.0, self.main.rxdata.time.time)
-                    logger.info(f"None detected in {msg.file_url}.")
+                    logger.debug(f"None detected in {msg.file_url}.")
 
                 self._mav_conn_gcs.mav.camera_image_captured_send(
                     int(self.main.rxdata.time.time*1e-3),
@@ -2138,7 +2150,7 @@ class CommManager:
                     euler_to_quaternion(0.0, math.radians(-90), math.radians(0)),
                     0.0, 0.0, 0.0 # angular velocities
                 )
-                if not self._count%5:
+                if not self._count%4:
                     self._cam_conn.mav.command_long_send(
                         self._cam_id,
                         m.MAV_COMP_ID_CAMERA,

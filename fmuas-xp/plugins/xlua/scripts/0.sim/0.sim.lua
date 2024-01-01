@@ -105,9 +105,13 @@ reset_start = os.clock()
 arm_capture = 0
 arm_reset = 0
 
+simCMD_mem = find_command("sim/view/quick_look_19_mem")
+simCMD_goto = find_command("sim/view/quick_look_19")
+
 function image_capture(phase, duration)
 	if phase == 0 then
 		print("Commanding FLIR image")
+		simCMD_mem:once()
 		for i=0,199 do
 			old_cockpit_data[i] = simDR_cockpit_data[i]
 		end
@@ -128,7 +132,7 @@ function image_capture_reset(phase, duration)
 			simDR_cockpit_data[i] = old_cockpit_data[i]
 		end
 		uasDR_flir_view_on = 0
-		simCMD_circle:once()
+		simCMD_goto:once()
 		arm_reset = 0
 	end
 end
@@ -185,18 +189,18 @@ function flight_start()
 
     uasDR_hide_internals = 1
 
-	simDR_WEIGHT_empty = 0.36
+	simDR_WEIGHT_empty = 0.45
 
 	uasDR_python_running = 0
 	uasDR_flir_view_on = 0
 
-	simSET_WEIGHT_avionics = 0.12
+	simSET_WEIGHT_avionics = 0.16
 	simSET_WEIGHT_batt = 2.320
 	simSET_WEIGHT_dome = 0.6225
 
-	simSET_WEIGHT_fwing = 0.26
-	simSET_WEIGHT_iwing = 0.13
-	simSET_WEIGHT_owing = 0.34
+	simSET_WEIGHT_fwing = 0.34
+	simSET_WEIGHT_iwing = 0.18
+	simSET_WEIGHT_owing = 0.3
 	simSET_WEIGHT_stab = 0.145
 	simSET_WEIGHT_servo = 0.12
 
@@ -300,7 +304,7 @@ function before_physics()
 		simDR_view_the = uasDR_CAM_eff_pitch
 		simDR_view_x = 0.0
 		simDR_view_y = 0.0
-		simDR_view_z = -0.22
+		simDR_view_z = -0.36
 	end
 
 	if arm_capture == 1 then
