@@ -1399,13 +1399,13 @@ class AFCS:
                     self._outv_thr_mode = 0
 
             if alt.altitude < 0.05:
-                self._pidv_pts_out._integral = 0.62
+                self._pidv_pts_out._integral = 0.55
                 self._pidv_xdp_xsp._integral = 0.0
                 self._pidv_xsp_rol._integral = 0.0
                 self._pidv_rol_rls._integral = 0.0
                 self._pidv_rls_out._integral = 0.0
                 self._pidv_ydp_ysp._integral = 0.0
-                self._pidv_ysp_pit._integral = 1.07
+                self._pidv_ysp_pit._integral = 0.8
                 self._pidv_pit_pts._integral = 0.0
                 self._pidv_alt_vsp._integral = 0.0
                 self._pidv_vsp_out._integral = 0.0
@@ -1425,25 +1425,29 @@ class AFCS:
             self.main.rxdata.gps.dt = 0.0
 
         if (att:=self.main.rxdata.att).dt > 0.0:
-            if self.main.state.custom_submode in [g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT, g.CUSTOM_SUBMODE_TAKEOFF_DEPART]:
-                self._spv_yspeed = 30
+            if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
+                # Move both tilts by a base rate
+                if self._ftilt > -self.main.rxdata.aoa.aoa+0.02:
+                    self._ftilt -= att.dt*1e-7
+                self._rtilt -= att.dt*1e-7
 
-                if self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_TRANSIT:
-                    self._outt_pitch = self._pidt_dep_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt) * att.dt * 1e-6
-                    if self._ftilt > -self.main.rxdata.aoa.aoa+0.02:
-                        self._ftilt -= att.dt*1e-7
-                    self._rtilt -= att.dt*1e-7
-                    if self._outt_pitch>0.0: # put the nose up (lower back wing a little)!
-                        self._rtilt -= self._outt_pitch
-                    elif self._ftilt > -self.main.rxdata.aoa.aoa+0.02: # put the nose down (lower front wing a little)!
-                        self._ftilt += 1.9*self._outt_pitch
-                    self._ftilt = max(self._ftilt, -self.main.rxdata.aoa.aoa+0.02)
-                else:
-                    self._outt_pitch = 0.0
-                    self._ftilt = math.pi/2
-                    self._rtilt = math.pi/2
+                # Calculate desired pitch adjustment with PID
+                self._outt_pitch = self._pidt_dep_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt) * att.dt * 1e-6
+
+                # Put the nose up (lower rear wing a little)!
+                if self._outt_pitch>0.0:
+                    self._rtilt -= self._outt_pitch  
+                # OR put the nose down (lower front wing a little), but don't put the front wing at negative AOA!
+                elif self._ftilt > -self.main.rxdata.aoa.aoa+0.02:
+                    self._ftilt += 1.9*self._outt_pitch # Front wing has to move more because it's smaller
+                
+                # One more protection against negative AOA on front wing
+                self._ftilt = max(self._ftilt, -self.main.rxdata.aoa.aoa+0.02)
+            elif self.main.state.custom_submode == g.CUSTOM_SUBMODE_TAKEOFF_DEPART:
+                self._outt_pitch = 0.0
+                self._ftilt = math.pi/2
+                self._rtilt = math.pi/2
             elif self.main.state.custom_submode == g.CUSTOM_SUBMODE_LANDING_TRANSIT:
-                # self._spv_yspeed = 0
                 self._spf_ias = 0
                 self._outt_pitch = self._pidt_arr_out.cycle(att.pitchspeed, self._spv_pitchspeed, att.dt) * att.dt * 1e-6
                 # self._ftilt += att.dt*1e-8
@@ -1480,7 +1484,7 @@ class AFCS:
             case 1:
                 pass
             case 2:
-                self._outv_throttle = 0.58
+                self._outv_throttle = 0.55
                 self._pidv_vsp_out._integral = 3.2
 
         t1 = self._outv_pitch + self._outv_throttle
@@ -1999,6 +2003,7 @@ class CommManager:
                 self._mavlogger.log(MAVLOG_DEBUG, f"Heartbeat message from camera #{msg.get_srcSystem()}")
                 self._last_cam_beat = self.main.rxdata.time.time
             elif msg.get_type() == 'CAMERA_IMAGE_CAPTURED' and msg.get_srcSystem()==self._cam_id:
+                return
                 logger.debug(f"Procesing image {msg.file_url}")
 
                 if out := await asyncio.to_thread(img.sync_proc, msg.file_url):
@@ -2150,16 +2155,16 @@ class CommManager:
                     euler_to_quaternion(0.0, math.radians(-90), math.radians(0)),
                     0.0, 0.0, 0.0 # angular velocities
                 )
-                if not self._count%4:
-                    self._cam_conn.mav.command_long_send(
-                        self._cam_id,
-                        m.MAV_COMP_ID_CAMERA,
-                        m.MAV_CMD_IMAGE_START_CAPTURE,
-                        0,
-                        0, 1, 1, 0,
-                        0, 0, 0
-                    )
-                self._count += 1
+                # if not self._count%4:
+                #     self._cam_conn.mav.command_long_send(
+                #         self._cam_id,
+                #         m.MAV_COMP_ID_CAMERA,
+                #         m.MAV_CMD_IMAGE_START_CAPTURE,
+                #         0,
+                #         0, 1, 1, 0,
+                #         0, 0, 0
+                #     )
+                # self._count += 1
         except AttributeError:
             pass
 

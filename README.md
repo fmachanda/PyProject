@@ -84,6 +84,7 @@ To use with X-Plane 12:
 ├── fmuas-main 
     ├── ...
     ├── scripts
+        ├── setup.py
         ├── run.bat # Run this for Windows
         ├── run.command # Run this for MacOS
         ├── uav.bat
@@ -104,11 +105,13 @@ To use with X-Plane 12:
     └── fmuas-xp # Contains the X-Plane files for simulation
 ```
 
-`scripts/run.bat` (Windows) or `scripts/run.command` (MacOS) is an easy to run all UAV components and a GCS window simulataneously.
+`setup.py` installs necessary modules and compiles UAVCAN files
 
-`scripts/uav.bat` (Windows) or `scripts/uav.command` (MacOS) is an easy to run all UAV components simulataneously.
+`scripts/run.bat` (Windows) or `scripts/run.command` (MacOS) is an easy way to run all UAV components and a GCS window simulataneously
 
-`scripts/gcs.bat` (Windows) or `scripts/gcs.command` (MacOS) is an easy to run a GCS window.
+`scripts/uav.bat` (Windows) or `scripts/uav.command` (MacOS) is an easy way to run all UAV components simulataneously
+
+`scripts/gcs.bat` (Windows) or `scripts/gcs.command` (MacOS) is an easy way to run a GCS window
 
 `uav/uav.py` runs the UAV's main flight computer
 `uav/xpio.py` runs the connection with X-Plane 12 and simulates UAV components
@@ -116,14 +119,12 @@ To use with X-Plane 12:
 
 `gcs/gcs.py` runs a Ground Control window, or it can be used as a CLI if imported in a python terminal
 
-`fmuas-xp` contains the X-Plane aircraft files
+`fmuas-xp` contains the X-Plane 12 aircraft files
 
 `common/config.ini` contains changeable settings for the UAV and GCS  
 
 `common/key.py` contains the shared custom key used by MAVLINK connections
-> The `KEY = ...` line in `key.py` can be changed to any desired MAVLINK key (must be length 25). If using separate files for GCS and UAV, ensure that this key is the same for both.  
-
-**Important:** `common/public_regulated_data_types/` is a git [submodule][prdt-link] that must be initialized for scripts to work
+> The `KEY = ...` line in `key.py` can be changed to any desired MAVLINK key (must be length 25). If using separate files for GCS and UAV, ensure that this key is the same for both.
 
 ---
 ### Credits
