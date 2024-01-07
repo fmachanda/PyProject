@@ -9,17 +9,16 @@ gcs.log
 uav.log
 xpio.log
 mavlog.log
-_old
-test_images
-backups
 aptnav
-test
-test.py
-test.acf
 uav/clock.db
 uav/gps.db
 uav/sensorhub.db
 uav/uavmain.db
 uav/motorhub.db
 output.txt
+
+# Development
+test
+test.py
+test.acf
 simflow

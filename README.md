@@ -14,6 +14,8 @@
 
 See the [Operations Manual][flight-manual-link] for more documentation!
 
+Please ontact [fmuas.help@gmail.com](fmuas.help@gmail.com) with questions, concerns, feedback, or recommendations!
+
 ## Overview
 This project provides the software for a humanitarian remote-sensing UAV system.  
 
@@ -31,7 +33,7 @@ The software is designed to be simulated using the [X-Plane 12][xplane-link] fli
 
 > Ensure you have **python**/**python3** and **git** on your system path.
 
-Download `install.py` and place it into the desired directory. If you plan to use this project with the X-Plane flight simulator, ensure it's placed into the `X-Plane 12/Aircraft/` directory.
+Download [`install.py`](https://github.com/fmachanda/fmuas-main/blob/master/install.py) and place it into the desired installation directory. If you plan to use this project with the X-Plane flight simulator, ensure it's placed into the `X-Plane 12/Aircraft/` directory.
 
 Run `install.py`. You should see a terminal window open. If you've cloned the entire repository instead of just `install.py`, run `scripts/setup.py` instead
 

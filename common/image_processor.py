@@ -10,7 +10,7 @@ import time
 
 os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/..')
 sys.path.append(os.getcwd())
-templates: np.ndarray = np.load('./common/train_data_v3.npy')
+templates: np.ndarray = np.load('./common/train_data.npy')
 invtemplates = 1 - templates
 
 VECTORIZE = True
