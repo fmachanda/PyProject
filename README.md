@@ -14,7 +14,7 @@
 
 See the [Operations Manual][flight-manual-link] for more documentation!
 
-Please ontact [fmuas.help@gmail.com](fmuas.help@gmail.com) with questions, concerns, feedback, or recommendations!
+Please contact [fmuas.help@gmail.com](fmuas.help@gmail.com) with questions, concerns, recommendations, or other feedback!
 
 ## Overview
 This project provides the software for a humanitarian remote-sensing UAV system.  
@@ -25,9 +25,7 @@ The software is designed to be simulated using the [X-Plane 12][xplane-link] fli
 * Windows 11.0+ or MacOS 13.0+
 * Python 3.11.6+
     * **pip** modules listed in `requirements.txt`
-* X-Plane 12.07+ (if using simulation)
-
-> Not tested with older versions or Linux
+* X-Plane 12.08+ Stable (for simulation)
 
 ## Installation
 
@@ -73,7 +71,7 @@ To use with X-Plane 12:
 
     > The flight will remain paused until `xpio.py` starts running
 
-4. Either double-click on `scripts/run.bat` (Windows) or `scripts/run.command` (MacOS) or run the following scripts manually:
+4. Either double-click on `scripts/run.bat` (Windows) or `scripts/run.command` (MacOS) or run the following scripts manually at the same time:
     * `gcs/gcs.py`
     * `uav/uav.py`
     * `uav/xpio.py`
