@@ -117,6 +117,8 @@ class StateManager:
 
         self.boot = boot
 
+        self._stored_submode = self.custom_mode
+
     def set_mode(self, mode: int, custom_mode: int, custom_submode: int) -> bool:
         """Sets a new custom_mode and checks for compatibility."""
         try:
@@ -135,7 +137,9 @@ class StateManager:
                 self.boot.set()
 
             if custom_submode != self.custom_submode:
-                assert custom_submode in g.ALLOWED_SUBMODE_CHANGES[self.custom_submode]
+                assert custom_submode in g.ALLOWED_SUBMODE_CHANGES[self.custom_submode] \
+                    or g.CUSTOM_MODE_EMERGENCY in g.ALLOWED_CUSTOM_MODES[custom_submode] \
+                    or self.custom_mode == g.CUSTOM_MODE_EMERGENCY
                 self.custom_submode = custom_submode
                 logger.warning(f"Submode set to: {g.CUSTOM_SUBMODE_NAMES[self.custom_submode]}")
 
@@ -154,13 +158,19 @@ class StateManager:
                 else:
                     self.custom_mode = g.ALLOWED_CUSTOM_MODES[self.custom_submode][0]
 
+            if self.custom_submode != g.CUSTOM_MODE_EMERGENCY:
+                self._stored_submode = self.custom_submode
+
             return True
         except AssertionError:
             return False
 
     def inc_mode(self) -> None:
         """Steps the mode up one in the standard flight sequence."""
-        self.custom_submode = g.ALLOWED_SUBMODE_CHANGES[self.custom_submode][0]
+        if self.custom_mode == g.CUSTOM_MODE_EMERGENCY:
+            self.custom_submode = self._stored_submode
+        else:
+            self.custom_submode = g.ALLOWED_SUBMODE_CHANGES[self.custom_submode][0]
         logger.warning(f"Submode set to: {g.CUSTOM_SUBMODE_NAMES[self.custom_submode]}")
         self.mode = g.ALLOWED_MODES[self.custom_submode][0]
         self.custom_mode = g.ALLOWED_CUSTOM_MODES[self.custom_submode][0]
@@ -170,7 +180,7 @@ class StateManager:
 
     def dec_mode(self) -> None:
         """Steps the mode down one in the standard flight sequence."""
-        if self.custom_submode not in [g.CUSTOM_SUBMODE_FLIGHT_MANUAL, g.CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE, g.CUSTOM_SUBMODE_UNINIT]:
+        if self.custom_submode not in [g.CUSTOM_SUBMODE_FLIGHT_MANUAL, g.CUSTOM_SUBMODE_FLIGHT_TERRAIN_AVOIDANCE, g.CUSTOM_SUBMODE_UNINIT] and self.custom_mode != g.CUSTOM_MODE_EMERGENCY:
             self.custom_submode = g.ALLOWED_SUBMODE_CHANGES[self.custom_submode][1]
             logger.warning(f"Submode set to: {g.CUSTOM_SUBMODE_NAMES[self.custom_submode]}")
             self.mode = g.ALLOWED_MODES[self.custom_submode][0]

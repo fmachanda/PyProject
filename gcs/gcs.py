@@ -803,7 +803,10 @@ class GCSUI:
                         self.close(because_heartbeat=True)
 
                     if result == 'HIGH_LATENCY2':
-                        self.telem_label.config(text=f"MODE: {g.CUSTOM_SUBMODE_NAMES.get(self.connect_instance.hl_data.custom0, "Unknown")}    BATT: {self.connect_instance.hl_data.battery}%    KIAS: {int(self.connect_instance.hl_data.airspeed*0.388768)}    FT AGL: {int((self.connect_instance.hl_data.custom1+128)*32.8084)}    VS: {int(19.685*self.connect_instance.hl_data.climb_rate)}    ")
+                        self.telem_label.config(
+                            text=f"MODE: {g.CUSTOM_SUBMODE_NAMES.get(self.connect_instance.hl_data.custom0, "Unknown")}    BATT: {self.connect_instance.hl_data.battery}%    KIAS: {int(self.connect_instance.hl_data.airspeed*0.388768)}    FT AGL: {int((self.connect_instance.hl_data.custom1+128)*32.8084)}    VS: {int(19.685*self.connect_instance.hl_data.climb_rate)}    ",
+                            bg=('red' if g.ALLOWED_CUSTOM_MODES.get(self.connect_instance.hl_data.custom0, 0)[0] == g.CUSTOM_MODE_EMERGENCY else self.telem_label.cget('bg'))
+                        )
                         try:
                             if not hasattr(self, 'map_widget'):
                                 continue
