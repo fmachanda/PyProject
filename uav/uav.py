@@ -865,33 +865,34 @@ class UAVCANManager:
         self._sub_gps.receive_in_background(self._on_gps)
         self._sub_ias.receive_in_background(self._on_ias)
         self._sub_aoa.receive_in_background(self._on_aoa)
+
+        self._sub_elevon1_status.receive_in_background(self._on_srv_status)
+        self._sub_elevon2_status.receive_in_background(self._on_srv_status)
+        self._sub_tilt_status.receive_in_background(self._on_esc_status)
+        self._sub_esc1_status.receive_in_background(self._on_esc_status)
+        self._sub_esc2_status.receive_in_background(self._on_esc_status)
+        self._sub_esc3_status.receive_in_background(self._on_esc_status)
+        self._sub_esc4_status.receive_in_background(self._on_esc_status)
         
         self._sub_elevon1_feedback.receive_in_background(self._void_handler)
-        self._sub_elevon1_status.receive_in_background(self._void_handler)
         self._sub_elevon1_power.receive_in_background(self._void_handler)
         self._sub_elevon1_dynamics.receive_in_background(self._void_handler)
         self._sub_elevon2_feedback.receive_in_background(self._void_handler)
-        self._sub_elevon2_status.receive_in_background(self._void_handler)
         self._sub_elevon2_power.receive_in_background(self._void_handler)
         self._sub_elevon2_dynamics.receive_in_background(self._void_handler)
         self._sub_tilt_feedback.receive_in_background(self._void_handler)
-        self._sub_tilt_status.receive_in_background(self._void_handler)
         self._sub_tilt_power.receive_in_background(self._void_handler)
         self._sub_tilt_dynamics.receive_in_background(self._void_handler)
         self._sub_esc1_feedback.receive_in_background(self._void_handler)
-        self._sub_esc1_status.receive_in_background(self._void_handler)
         self._sub_esc1_power.receive_in_background(self._void_handler)
         self._sub_esc1_dynamics.receive_in_background(self._void_handler)
         self._sub_esc2_feedback.receive_in_background(self._void_handler)
-        self._sub_esc2_status.receive_in_background(self._void_handler)
         self._sub_esc2_power.receive_in_background(self._void_handler)
         self._sub_esc2_dynamics.receive_in_background(self._void_handler)
         self._sub_esc3_feedback.receive_in_background(self._void_handler)
-        self._sub_esc3_status.receive_in_background(self._void_handler)
         self._sub_esc3_power.receive_in_background(self._void_handler)
         self._sub_esc3_dynamics.receive_in_background(self._void_handler)
         self._sub_esc4_feedback.receive_in_background(self._void_handler)
-        self._sub_esc4_status.receive_in_background(self._void_handler)
         self._sub_esc4_power.receive_in_background(self._void_handler)
         self._sub_esc4_dynamics.receive_in_background(self._void_handler)
         self._sub_clock_sync_time_last.receive_in_background(self._void_handler)
@@ -1034,6 +1035,42 @@ class UAVCANManager:
     def _on_aoa(self, msg: uavcan.si.unit.angle.Scalar_1, _: pycyphal.transport.TransferFrom) -> None:
         t = self.main.rxdata.time.time
         self.main.rxdata.aoa.dump(msg, t)
+
+    def _on_srv_status(self, msg: reg.udral.service.actuator.common.Status_0, _: pycyphal.transport.TransferFrom) -> None:
+        if any(
+            [
+                msg.fault_flags.overload, 
+                msg.fault_flags.voltage,
+                msg.fault_flags.motor_temperature,
+                msg.fault_flags.velocity,
+                msg.fault_flags.mechanical,
+                msg.fault_flags.vibration,
+                msg.fault_flags.configuration,
+                msg.fault_flags.control_mode,
+                msg.fault_flags.other,
+            ]
+        ):
+            self.main.state.set_mode(self.main.state.mode, g.CUSTOM_MODE_EMERGENCY, g.CUSTOM_SUBMODE_EMERGENCY_FCON)
+
+    def _on_esc_status(self, msg: reg.udral.service.actuator.common.Status_0, _: pycyphal.transport.TransferFrom) -> None:
+        if any(
+            [
+                msg.fault_flags.overload, 
+                msg.fault_flags.voltage,
+                msg.fault_flags.motor_temperature,
+                msg.fault_flags.velocity,
+                msg.fault_flags.mechanical,
+                msg.fault_flags.vibration,
+                msg.fault_flags.configuration,
+                msg.fault_flags.control_mode,
+                msg.fault_flags.other,
+            ]
+        ):
+            if self.main.state.custom_submode == g.CUSTOM_SUBMODE_EMERGENCY_SINGLE_MOTOR:
+                self.main.state.set_mode(self.main.state.mode, g.CUSTOM_MODE_EMERGENCY, g.CUSTOM_SUBMODE_EMERGENCY_MULTI_MOTORS)
+            else:
+                self.main.state.set_mode(self.main.state.mode, g.CUSTOM_MODE_EMERGENCY, g.CUSTOM_SUBMODE_EMERGENCY_SINGLE_MOTOR)
+
     
     # TODO: other subscribers
     def _void_handler(self, msg, _: pycyphal.transport.TransferFrom) -> None:

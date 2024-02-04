@@ -568,13 +568,63 @@ class MotorHub:
                 self._esc4_publish_time = now
 
             if now > self._status_publish_time + 1.0:
-                await self._pub_elevon1_status.publish(reg.udral.service.actuator.common.Status_0())
-                await self._pub_elevon2_status.publish(reg.udral.service.actuator.common.Status_0())
-                await self._pub_tilt_status.publish(reg.udral.service.actuator.common.Status_0())
-                await self._pub_esc1_status.publish(reg.udral.service.actuator.common.Status_0())
-                await self._pub_esc2_status.publish(reg.udral.service.actuator.common.Status_0())
-                await self._pub_esc3_status.publish(reg.udral.service.actuator.common.Status_0())
-                await self._pub_esc4_status.publish(reg.udral.service.actuator.common.Status_0())
+                await self._pub_elevon1_status.publish(
+                    reg.udral.service.actuator.common.Status_0(
+                        uavcan.si.unit.temperature.Scalar_1(), # Motor temp (K)
+                        uavcan.si.unit.temperature.Scalar_1(), # Controller temp (K)
+                        None, # Error count
+                        reg.udral.service.actuator.common.FaultFlags_0() # Faults
+                    )
+                )
+                await self._pub_elevon2_status.publish(
+                    reg.udral.service.actuator.common.Status_0(
+                        uavcan.si.unit.temperature.Scalar_1(), # Motor temp (K)
+                        uavcan.si.unit.temperature.Scalar_1(), # Controller temp (K)
+                        None, # Error count
+                        reg.udral.service.actuator.common.FaultFlags_0() # Faults
+                    )
+                )
+                await self._pub_tilt_status.publish(
+                    reg.udral.service.actuator.common.Status_0(
+                        uavcan.si.unit.temperature.Scalar_1(), # Motor temp (K)
+                        uavcan.si.unit.temperature.Scalar_1(), # Controller temp (K)
+                        None, # Error count
+                        reg.udral.service.actuator.common.FaultFlags_0() # Faults
+                    )
+                )
+                await self._pub_esc1_status.publish(
+                    reg.udral.service.actuator.common.Status_0(
+                        uavcan.si.unit.temperature.Scalar_1(), # Motor temp (K)
+                        uavcan.si.unit.temperature.Scalar_1(), # Controller temp (K)
+                        None, # Error count
+                        reg.udral.service.actuator.common.FaultFlags_0() # Faults
+                    )
+                )
+                await self._pub_esc2_status.publish(
+                    reg.udral.service.actuator.common.Status_0(
+                        uavcan.si.unit.temperature.Scalar_1(), # Motor temp (K)
+                        uavcan.si.unit.temperature.Scalar_1(), # Controller temp (K)
+                        None, # Error count
+                        reg.udral.service.actuator.common.FaultFlags_0() # Faults
+                    )
+                )
+                await self._pub_esc3_status.publish
+                (
+                    reg.udral.service.actuator.common.Status_0(
+                        uavcan.si.unit.temperature.Scalar_1(), # Motor temp (K)
+                        uavcan.si.unit.temperature.Scalar_1(), # Controller temp (K)
+                        None, # Error count
+                        reg.udral.service.actuator.common.FaultFlags_0() # Faults
+                    )
+                )
+                await self._pub_esc4_status.publish(
+                    reg.udral.service.actuator.common.Status_0(
+                        uavcan.si.unit.temperature.Scalar_1(), # Motor temp (K)
+                        uavcan.si.unit.temperature.Scalar_1(), # Controller temp (K)
+                        None, # Error count
+                        reg.udral.service.actuator.common.FaultFlags_0() # Faults
+                    )
+                )
                 self._status_publish_time = now
         except pycyphal.presentation._port._error.PortClosedError:
             pass
